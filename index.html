@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Visualizador de velas en tiempo real para WLD/USDT Futuros de Binance">
+    <title>WLD/USDT Futures - Visualizador en Tiempo Real</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                            <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                            <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                    </div>
+                    <span class="logo-text">FibonacciBot</span>
+                </div>
+                <div class="pair-selector-wrapper">
+                    <div class="pair-search-container">
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="M21 21l-4.35-4.35"/>
+                        </svg>
+                        <input type="text" id="pairSearch" class="pair-search" placeholder="Buscar par..." autocomplete="off">
+                        <div class="pair-autocomplete" id="pairAutocomplete"></div>
+                    </div>
+                    <select id="pairSelect" class="pair-dropdown" title="Seleccionar par de trading">
+                        <option value="" disabled selected>Cargando...</option>
+                    </select>
+                    <span class="pair-badge">PERPETUO</span>
+                </div>
+            </div>
+            <div class="header-center">
+                <div class="price-display">
+                    <span class="current-price" id="currentPrice">--</span>
+                    <span class="price-change" id="priceChange">--%</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Conectando...</span>
+                </div>
+                <div class="time-display" id="timeDisplay">--:--:--</div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Toolbar -->
+            <div class="toolbar">
+                <div class="timeframe-selector">
+                    <button class="tf-btn" data-tf="1m">1m</button>
+                    <button class="tf-btn" data-tf="5m">5m</button>
+                    <button class="tf-btn" data-tf="15m">15m</button>
+                    <button class="tf-btn active" data-tf="1h">1H</button>
+                    <button class="tf-btn" data-tf="4h">4H</button>
+                    <button class="tf-btn" data-tf="1d">1D</button>
+                </div>
+                <div class="chart-controls">
+                    <button class="control-btn active" id="toggleAutoFibBtn" title="Ocultar/Ver Fibonacci Auto">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M4 20L20 4" />
+                            <path d="M4 16L20 4" stroke-dasharray="4 4" />
+                            <path d="M4 12L20 4" stroke-dasharray="4 4" />
+                        </svg>
+                    </button>
+                    <button class="control-btn active" id="toggleTradesBtn" title="Ocultar/Ver Líneas de Operaciones">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+                            <path d="M12 6v6l4 2" />
+                        </svg>
+                    </button>
+                    <button class="control-btn active" id="toggleRSIBtn" title="Ocultar/Ver RSI">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 3v18h18" />
+                            <path d="M18 9l-5 5-4-4-3 3" />
+                        </svg>
+                    </button>
+                    <button class="control-btn" id="resetZoom" title="Resetear Zoom">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                            <path d="M3 3v5h5" />
+                        </svg>
+                    </button>
+                    <button class="control-btn" id="screenshotBtn" title="Captura de pantalla">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path
+                                d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                            <circle cx="12" cy="13" r="4" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="stats-mini">
+                    <div class="stat-item">
+                        <span class="stat-label">24h Vol</span>
+                        <span class="stat-value" id="volume24h">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">24h High</span>
+                        <span class="stat-value high" id="high24h">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">24h Low</span>
+                        <span class="stat-value low" id="low24h">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart Container -->
+            <div class="chart-wrapper">
+                <div class="chart-container" id="chartContainer"></div>
+                <div class="chart-overlay" id="chartOverlay">
+                    <div class="loading-spinner">
+                        <div class="spinner"></div>
+                        <p>Cargando datos...</p>
+                    </div>
+                </div>
+
+                <!-- Panel de Operaciones Abiertas -->
+                <div class="trades-panel" id="tradesPanel">
+                    <div class="trades-panel-header">
+                        <h3>📊 Operaciones</h3>
+                        <span class="trades-count" id="tradesCount">0</span>
+                    </div>
+                    <div class="trades-list" id="tradesList">
+                        <div class="no-trades">Sin operaciones abiertas</div>
+                    </div>
+                    <div class="account-info" id="accountInfo">
+                        <div class="account-row">
+                            <span>Balance:</span>
+                            <span id="accountBalance">$30.00</span>
+                        </div>
+                        <div class="account-row">
+                            <span>PnL no realizado:</span>
+                            <span id="accountPnl" class="pnl-value">$0.00</span>
+                        </div>
+                        <div class="account-row margin-balance">
+                            <span>Balance de Margen:</span>
+                            <span id="marginBalance">$30.00</span>
+                        </div>
+                    </div>
+                    <!-- Historial de Trades Cerradas -->
+                    <div class="history-section" id="historySection">
+                        <div class="history-header">
+                            <h4>📜 Historial</h4>
+                            <span class="history-count" id="historyCount">0</span>
+                        </div>
+                        <div class="history-list" id="historyList">
+                            <div class="no-history">Sin trades cerradas</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OHLC Info Bar -->
+            <div class="ohlc-bar" id="ohlcBar">
+                <div class="ohlc-item">
+                    <span class="ohlc-label">O</span>
+                    <span class="ohlc-value" id="ohlcOpen">--</span>
+                </div>
+                <div class="ohlc-item">
+                    <span class="ohlc-label">H</span>
+                    <span class="ohlc-value high" id="ohlcHigh">--</span>
+                </div>
+                <div class="ohlc-item">
+                    <span class="ohlc-label">L</span>
+                    <span class="ohlc-value low" id="ohlcLow">--</span>
+                </div>
+                <div class="ohlc-item">
+                    <span class="ohlc-label">C</span>
+                    <span class="ohlc-value" id="ohlcClose">--</span>
+                </div>
+                <div class="ohlc-item">
+                    <span class="ohlc-label">Vol</span>
+                    <span class="ohlc-value" id="ohlcVolume">--</span>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer Stats -->
+        <footer class="footer">
+            <div class="footer-stats">
+                <div class="footer-stat">
+                    <span class="footer-label">Open Interest</span>
+                    <span class="footer-value" id="openInterest">--</span>
+                </div>
+                <div class="footer-stat">
+                    <span class="footer-label">Funding Rate</span>
+                    <span class="footer-value" id="fundingRate">--</span>
+                </div>
+                <div class="footer-stat">
+                    <span class="footer-label">Marca</span>
+                    <span class="footer-value" id="markPrice">--</span>
+                </div>
+                <div class="footer-stat">
+                    <span class="footer-label">Índice</span>
+                    <span class="footer-value" id="indexPrice">--</span>
+                </div>
+            </div>
+            <div class="footer-info">
+                <span>Actualización: <span id="lastUpdate">--</span></span>
+                <span class="separator">|</span>
+                <span>Binance Futures</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Lightweight Charts Library -->
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>

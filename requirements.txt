@@ -1,0 +1,10 @@
+# Bot de Trading Fibonacci - Dependencias
+websockets>=11.0
+aiohttp>=3.9.0
+python-dotenv>=1.0.0
+
+# Ya incluido en Python estándar (no requiere instalación):
+# sqlite3
+# asyncio
+# logging
+# json

@@ -1,0 +1,414 @@
+"""
+Bot de Telegram para Reportes del Trading Bot
+Envía reportes automáticos cada 20 minutos y responde a comandos
+"""
+import asyncio
+import aiohttp
+from datetime import datetime
+from typing import Optional, Dict, List
+from dataclasses import dataclass
+
+from logger import telegram_logger as logger
+from config import TELEGRAM_TOKEN
+
+# Configuración del Bot de Telegram
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+
+# IDs de chat autorizados (se llenarán cuando el usuario envíe /start)
+AUTHORIZED_CHATS: set = set()
+
+
+@dataclass
+class TelegramConfig:
+    token: str = TELEGRAM_TOKEN
+    report_interval: int = 20 * 60  # 20 minutos en segundos
+    enabled: bool = True
+
+
+class TelegramBot:
+    """Bot de Telegram para reportes y comandos"""
+    
+    def __init__(self, config: TelegramConfig = None):
+        self.config = config or TelegramConfig()
+        self.api_url = f"https://api.telegram.org/bot{self.config.token}"
+        self.last_update_id = 0
+        self.running = False
+        self.account = None  # Se asigna después
+        self.scanner = None  # Se asigna después
+        self.price_cache: Dict[str, float] = {}
+        
+    async def send_message(self, chat_id: int, text: str, 
+                           parse_mode: str = "HTML") -> bool:
+        """Enviar mensaje a un chat"""
+        url = f"{self.api_url}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": parse_mode
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as response:
+                    if response.status == 200:
+                        return True
+                    else:
+                        error = await response.text()
+                        logger.error(f"Error enviando mensaje: {error}")
+                        return False
+        except Exception as e:
+            logger.error(f"Error en send_message: {e}")
+            return False
+    
+    async def broadcast_message(self, text: str):
+        """Enviar mensaje a todos los chats autorizados"""
+        for chat_id in AUTHORIZED_CHATS:
+            await self.send_message(chat_id, text)
+    
+    def format_report(self) -> str:
+        """Generar reporte formateado para Telegram"""
+        if not self.account:
+            return "⚠️ Bot no inicializado"
+        
+        status = self.account.get_status()
+        now = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
+        
+        # Calcular métricas
+        total_trades = len(self.account.trade_history)
+        winning_trades = sum(1 for t in self.account.trade_history if t.get('pnl', 0) > 0)
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        total_pnl = sum(t.get('pnl', 0) for t in self.account.trade_history)
+        
+        # Emoji según PnL
+        pnl_emoji = "🟢" if status['total_unrealized_pnl'] >= 0 else "🔴"
+        balance_emoji = "📈" if self.account.balance >= self.account.initial_balance else "📉"
+        
+        report = f"""
+<b>📊 REPORTE DE TRADING</b>
+<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>
+🕐 <b>{now}</b>
+
+<b>💰 CUENTA</b>
+├ Balance: <code>${status['balance']:.2f}</code> {balance_emoji}
+├ PnL No Realizado: <code>${status['total_unrealized_pnl']:.4f}</code> {pnl_emoji}
+├ Balance Margen: <code>${status['margin_balance']:.2f}</code>
+└ Margen Disponible: <code>${status['available_margin']:.2f}</code>
+
+<b>📈 ESTADÍSTICAS</b>
+├ Total Trades: <code>{total_trades}</code>
+├ Win Rate: <code>{win_rate:.1f}%</code>
+├ PnL Total: <code>${total_pnl:.4f}</code>
+└ Trades Hoy: <code>{self._count_today_trades()}</code>
+
+<b>📂 OPERACIONES ABIERTAS ({status['open_positions']})</b>
+"""
+        
+        # Agregar posiciones abiertas
+        if self.account.open_positions:
+            for order_id, pos in self.account.open_positions.items():
+                current = self.price_cache.get(pos.symbol, pos.current_price)
+                pnl_pos = pos.unrealized_pnl
+                emoji = "🟢" if pnl_pos >= 0 else "🔴"
+                
+                report += f"""├ <b>{pos.symbol}</b> (C{pos.strategy_case})
+│  └ {pos.side.value if hasattr(pos.side, 'value') else pos.side} @ ${pos.entry_price:.4f} → ${current:.4f}
+│  └ {emoji} PnL: <code>${pnl_pos:.4f}</code>
+"""
+        else:
+            report += "└ <i>Sin posiciones abiertas</i>\n"
+        
+        # Agregar órdenes pendientes
+        if self.account.pending_orders:
+            report += f"\n<b>⏳ ÓRDENES PENDIENTES ({status['pending_orders']})</b>\n"
+            for order_id, order in self.account.pending_orders.items():
+                report += f"├ {order.symbol} LIMIT @ ${order.price:.4f}\n"
+        
+        report += "\n<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>"
+        report += "\n💡 Comandos: /report /balance /positions /stats"
+        
+        return report
+    
+    def _count_today_trades(self) -> int:
+        """Contar trades de hoy"""
+        today = datetime.now().date()
+        count = 0
+        for trade in self.account.trade_history:
+            try:
+                closed_at = trade.get('closed_at', '')
+                if closed_at:
+                    trade_date = datetime.fromisoformat(closed_at).date()
+                    if trade_date == today:
+                        count += 1
+            except:
+                pass
+        return count
+    
+    def format_balance(self) -> str:
+        """Formato corto solo con balance"""
+        if not self.account:
+            return "⚠️ Bot no inicializado"
+        
+        status = self.account.get_status()
+        return f"""
+<b>💰 BALANCE</b>
+├ Balance: <code>${status['balance']:.2f}</code>
+├ PnL No Realizado: <code>${status['total_unrealized_pnl']:.4f}</code>
+└ Margen Disponible: <code>${status['available_margin']:.2f}</code>
+"""
+    
+    def format_positions(self) -> str:
+        """Formato solo con posiciones"""
+        if not self.account:
+            return "⚠️ Bot no inicializado"
+        
+        if not self.account.open_positions:
+            return "📭 Sin posiciones abiertas"
+        
+        text = "<b>📂 POSICIONES ABIERTAS</b>\n"
+        for order_id, pos in self.account.open_positions.items():
+            current = self.price_cache.get(pos.symbol, pos.current_price)
+            pnl = pos.unrealized_pnl
+            emoji = "🟢" if pnl >= 0 else "🔴"
+            
+            text += f"""
+<b>{pos.symbol}</b> (Caso {pos.strategy_case})
+├ Lado: {pos.side.value if hasattr(pos.side, 'value') else pos.side}
+├ Entrada: <code>${pos.entry_price:.4f}</code>
+├ Actual: <code>${current:.4f}</code>
+├ TP: <code>${pos.take_profit:.4f}</code>
+└ {emoji} PnL: <code>${pnl:.4f}</code>
+"""
+        return text
+    
+    def format_stats(self) -> str:
+        """Formato con estadísticas detalladas"""
+        if not self.account:
+            return "⚠️ Bot no inicializado"
+        
+        history = self.account.trade_history
+        if not history:
+            return "📊 Sin historial de trades"
+        
+        total = len(history)
+        winners = [t for t in history if t.get('pnl', 0) > 0]
+        losers = [t for t in history if t.get('pnl', 0) < 0]
+        
+        win_rate = len(winners) / total * 100 if total > 0 else 0
+        total_pnl = sum(t.get('pnl', 0) for t in history)
+        avg_win = sum(t.get('pnl', 0) for t in winners) / len(winners) if winners else 0
+        avg_loss = sum(t.get('pnl', 0) for t in losers) / len(losers) if losers else 0
+        profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else float('inf')
+        
+        # Max drawdown
+        max_dd = min((t.get('min_pnl', 0) for t in history), default=0)
+        
+        # Por caso
+        cases = {1: [], 2: [], 3: [], 4: []}
+        for t in history:
+            case = t.get('strategy_case', 0)
+            if case in cases:
+                cases[case].append(t.get('pnl', 0))
+        
+        return f"""
+<b>📊 ESTADÍSTICAS DETALLADAS</b>
+<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>
+
+<b>📈 GENERAL</b>
+├ Total Trades: <code>{total}</code>
+├ Ganadores: <code>{len(winners)}</code>
+├ Perdedores: <code>{len(losers)}</code>
+├ Win Rate: <code>{win_rate:.1f}%</code>
+└ PnL Total: <code>${total_pnl:.4f}</code>
+
+<b>💹 PROMEDIOS</b>
+├ Ganancia Promedio: <code>${avg_win:.4f}</code>
+├ Pérdida Promedio: <code>${avg_loss:.4f}</code>
+├ Profit Factor: <code>{profit_factor:.2f}</code>
+└ Max Drawdown: <code>${max_dd:.4f}</code>
+
+<b>🎯 POR CASO</b>
+├ Caso 1: {len(cases[1])} trades | ${sum(cases[1]):.4f}
+├ Caso 2: {len(cases[2])} trades | ${sum(cases[2]):.4f}
+├ Caso 3: {len(cases[3])} trades | ${sum(cases[3]):.4f}
+└ Caso 4: {len(cases[4])} trades | ${sum(cases[4]):.4f}
+"""
+    
+    async def handle_command(self, chat_id: int, command: str, args: List[str]):
+        """Procesar comandos"""
+        command = command.lower().strip()
+        
+        if command == "/start":
+            AUTHORIZED_CHATS.add(chat_id)
+            await self.send_message(chat_id, """
+<b>🤖 Bot de Trading Fibonacci</b>
+
+¡Bienvenido! Este bot te enviará reportes automáticos cada 20 minutos.
+
+<b>Comandos disponibles:</b>
+/report - Reporte completo
+/balance - Ver balance actual
+/positions - Ver posiciones abiertas
+/stats - Estadísticas detalladas
+/help - Mostrar ayuda
+
+Tu chat ha sido registrado para recibir notificaciones.
+""")
+            logger.info(f"Nuevo chat autorizado: {chat_id}")
+            
+        elif command == "/report":
+            await self.send_message(chat_id, self.format_report())
+            
+        elif command == "/balance":
+            await self.send_message(chat_id, self.format_balance())
+            
+        elif command == "/positions":
+            await self.send_message(chat_id, self.format_positions())
+            
+        elif command == "/stats":
+            await self.send_message(chat_id, self.format_stats())
+            
+        elif command == "/help":
+            await self.send_message(chat_id, """
+<b>📚 AYUDA</b>
+
+<b>Comandos:</b>
+/report - Reporte completo del bot
+/balance - Ver balance y márgenes
+/positions - Ver posiciones abiertas
+/stats - Estadísticas detalladas
+
+<b>Notificaciones automáticas:</b>
+• Reportes cada 20 minutos
+• Alertas cuando se abre/cierra una posición
+• Alertas cuando se ejecuta una orden límite
+""")
+        else:
+            await self.send_message(chat_id, "❓ Comando no reconocido. Usa /help")
+    
+    async def poll_updates(self):
+        """Obtener actualizaciones de Telegram (polling)"""
+        url = f"{self.api_url}/getUpdates"
+        params = {
+            "offset": self.last_update_id + 1,
+            "timeout": 30
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, timeout=35) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get("ok"):
+                            for update in data.get("result", []):
+                                self.last_update_id = update["update_id"]
+                                await self.process_update(update)
+        except asyncio.TimeoutError:
+            pass  # Normal en long polling
+        except Exception as e:
+            logger.error(f"Error en polling: {e}")
+    
+    async def process_update(self, update: dict):
+        """Procesar una actualización de Telegram"""
+        if "message" in update:
+            message = update["message"]
+            chat_id = message["chat"]["id"]
+            text = message.get("text", "")
+            
+            if text.startswith("/"):
+                parts = text.split()
+                command = parts[0]
+                args = parts[1:] if len(parts) > 1 else []
+                await self.handle_command(chat_id, command, args)
+    
+    async def send_trade_alert(self, action: str, symbol: str, side: str, 
+                                price: float, pnl: float = None, case: int = None):
+        """Enviar alerta de trade a todos los chats"""
+        emoji = "🟢" if action == "OPEN" else ("💰" if pnl and pnl > 0 else "📉")
+        
+        if action == "OPEN":
+            text = f"""
+{emoji} <b>NUEVA POSICIÓN</b>
+
+📊 {symbol} (Caso {case})
+├ Lado: {side}
+└ Entrada: <code>${price:.4f}</code>
+"""
+        elif action == "CLOSE":
+            pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+            text = f"""
+{emoji} <b>POSICIÓN CERRADA</b>
+
+📊 {symbol}
+├ Precio: <code>${price:.4f}</code>
+└ {pnl_emoji} PnL: <code>${pnl:.4f}</code>
+"""
+        elif action == "LIMIT_FILLED":
+            text = f"""
+⚡ <b>ORDEN LÍMITE EJECUTADA</b>
+
+📊 {symbol} (Caso {case})
+├ Lado: {side}
+└ Precio: <code>${price:.4f}</code>
+"""
+        else:
+            text = f"{emoji} {action}: {symbol} @ ${price:.4f}"
+        
+        await self.broadcast_message(text)
+    
+    async def run_polling_loop(self):
+        """Loop principal de polling"""
+        logger.info("Iniciando bot de Telegram...")
+        self.running = True
+        
+        while self.running:
+            await self.poll_updates()
+            await asyncio.sleep(1)
+    
+    async def run_report_loop(self):
+        """Loop de reportes automáticos cada 20 minutos"""
+        logger.info(f"Iniciando reportes automáticos cada {self.config.report_interval // 60} minutos")
+        
+        while self.running:
+            await asyncio.sleep(self.config.report_interval)
+            
+            if AUTHORIZED_CHATS:
+                logger.info(f"Enviando reporte automático a {len(AUTHORIZED_CHATS)} chats")
+                report = self.format_report()
+                await self.broadcast_message(f"🔄 <b>REPORTE AUTOMÁTICO</b>\n{report}")
+    
+    async def start(self, account=None, scanner=None, price_cache: dict = None):
+        """Iniciar el bot con las referencias necesarias"""
+        self.account = account
+        self.scanner = scanner
+        if price_cache is not None:
+            self.price_cache = price_cache
+        
+        # Ejecutar ambos loops en paralelo
+        await asyncio.gather(
+            self.run_polling_loop(),
+            self.run_report_loop()
+        )
+    
+    def stop(self):
+        """Detener el bot"""
+        self.running = False
+        logger.info("Bot de Telegram detenido")
+
+
+# Instancia global del bot
+telegram_bot = TelegramBot()
+
+
+async def notify_trade_open(symbol: str, side: str, price: float, case: int):
+    """Notificar apertura de trade"""
+    await telegram_bot.send_trade_alert("OPEN", symbol, side, price, case=case)
+
+
+async def notify_trade_close(symbol: str, price: float, pnl: float):
+    """Notificar cierre de trade"""
+    await telegram_bot.send_trade_alert("CLOSE", symbol, "", price, pnl=pnl)
+
+
+async def notify_limit_filled(symbol: str, side: str, price: float, case: int):
+    """Notificar ejecución de orden límite"""
+    await telegram_bot.send_trade_alert("LIMIT_FILLED", symbol, side, price, case=case)
