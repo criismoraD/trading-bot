@@ -378,10 +378,10 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                     print(f"   🟡 CASO 2 | {result.symbol}: MARKET + LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
         
         elif case_num == 1:
-            # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 55%, SL 90%
+            # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 50%, SL 90%
             if account.get_available_margin() < MIN_AVAILABLE_MARGIN * 2:
                 continue
-            tp_price = result.fib_levels['55']
+            tp_price = result.fib_levels['50']
             limit_price_1 = result.fib_levels['618']
             # SL en nivel 90%
             fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
@@ -588,11 +588,11 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                         print(f"   🟡 [REAL] CASO 2 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
             
             elif case_num == 1:
-                # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 55%, SL 90%
+                # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 50%, SL 90%
                 if available_balance < MIN_AVAILABLE_MARGIN * 2:
                     continue
                 
-                tp_price = result.fib_levels['55']
+                tp_price = result.fib_levels['50']
                 limit_price_1 = result.fib_levels['618']
                 limit_price_2 = result.fib_levels['786']
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
