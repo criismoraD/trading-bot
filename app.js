@@ -100,19 +100,47 @@ function getConfig(section, key, defaultValue) {
 }
 
 // Fibonacci levels for SHORT entries (retracements up after a drop)
-// Note: Colors and labels are visual-only, levels can be from shared_config.json
-const FIBONACCI_LEVELS = [
-    { level: 0.236, color: 'rgba(255, 235, 59, 0.8)', label: '23.6%' },
-    { level: 0.382, color: 'rgba(255, 152, 0, 0.8)', label: '38.2%' },
-    { level: 0.5, color: 'rgba(156, 39, 176, 0.8)', label: '50%' },
-    { level: 0.55, color: 'rgba(76, 175, 80, 0.9)', label: '55% TP' },
-    { level: 0.60, color: 'rgba(139, 195, 74, 0.9)', label: '60% TP' },
-    { level: 0.618, color: 'rgba(233, 30, 99, 0.9)', label: '61.8% ⭐' },
-    { level: 0.69, color: 'rgba(255, 193, 7, 0.9)', label: '69% 🔶' },
-    { level: 0.75, color: 'rgba(0, 188, 212, 0.9)', label: '75% 🟢' },
-    { level: 0.786, color: 'rgba(244, 67, 54, 0.9)', label: '78.6% ENTRY' },
-    { level: 0.9, color: 'rgba(183, 28, 28, 0.9)', label: '90% ⛔' }
+// Niveles predeterminados - se pueden editar y guardar en localStorage
+const DEFAULT_FIBONACCI_LEVELS = [
+    { level: 0.236, color: 'rgba(255, 235, 59, 0.8)', label: '23.6%', visible: true },
+    { level: 0.382, color: 'rgba(255, 152, 0, 0.8)', label: '38.2%', visible: true },
+    { level: 0.5, color: 'rgba(156, 39, 176, 0.8)', label: '50%', visible: true },
+    { level: 0.55, color: 'rgba(76, 175, 80, 0.9)', label: '55% TP', visible: true },
+    { level: 0.60, color: 'rgba(139, 195, 74, 0.9)', label: '60% TP', visible: true },
+    { level: 0.618, color: 'rgba(233, 30, 99, 0.9)', label: '61.8% ⭐', visible: true },
+    { level: 0.69, color: 'rgba(255, 193, 7, 0.9)', label: '69% 🔶', visible: false },
+    { level: 0.75, color: 'rgba(0, 188, 212, 0.9)', label: '75% 🟢', visible: false },
+    { level: 0.786, color: 'rgba(244, 67, 54, 0.9)', label: '78.6% ENTRY', visible: true },
+    { level: 0.9, color: 'rgba(183, 28, 28, 0.9)', label: '90% ⛔', visible: true }
 ];
+
+// Cargar niveles desde localStorage o usar predeterminados
+let FIBONACCI_LEVELS = loadFibonacciLevels();
+
+function loadFibonacciLevels() {
+    try {
+        const saved = localStorage.getItem('fibonacciLevels');
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch (e) {
+        console.log('Error loading Fibonacci levels from localStorage');
+    }
+    return JSON.parse(JSON.stringify(DEFAULT_FIBONACCI_LEVELS));
+}
+
+function saveFibonacciLevels() {
+    try {
+        localStorage.setItem('fibonacciLevels', JSON.stringify(FIBONACCI_LEVELS));
+        console.log('✅ Fibonacci levels saved to localStorage');
+    } catch (e) {
+        console.log('Error saving Fibonacci levels');
+    }
+}
+
+function getVisibleFibonacciLevels() {
+    return FIBONACCI_LEVELS.filter(f => f.visible !== false);
+}
 
 // Connection tracking - track each WebSocket separately
 let wsConnections = {
@@ -1515,7 +1543,7 @@ function drawFibonacciForShort() {
     const extendedTime = lastCandleTime + (lastCandleTime - swingLow.time);
 
     // Draw Fibonacci retracement levels
-    FIBONACCI_LEVELS.forEach((fib, index) => {
+    getVisibleFibonacciLevels().forEach((fib, index) => {
         const fibPrice = swingLow.price + (range * fib.level);
 
         const fibLine = chart.addLineSeries({
@@ -1572,7 +1600,7 @@ function drawFibonacciForShort() {
     console.log('📉 SHORT Fibonacci Levels:');
     console.log(`   Swing High: ${swingHigh.price.toFixed(4)}`);
     console.log(`   Swing Low: ${swingLow.price.toFixed(4)}`);
-    FIBONACCI_LEVELS.forEach(fib => {
+    getVisibleFibonacciLevels().forEach(fib => {
         const price = swingLow.price + (range * fib.level);
         console.log(`   ${fib.label}: ${price.toFixed(4)}`);
     });
@@ -2501,29 +2529,45 @@ async function showTradeOnChart(trade) {
         analysisLines.push(slLine);
     }
     
-    // Fib High/Low (gris)
-    if (trade.fib_high) {
-        const fibHighLine = candleSeries.createPriceLine({
-            price: trade.fib_high,
-            color: '#9e9e9e',
-            lineWidth: 1,
-            lineStyle: 1,
-            axisLabelVisible: true,
-            title: 'FIB HIGH'
-        });
-        analysisLines.push(fibHighLine);
-    }
-    
-    if (trade.fib_low) {
+    // Dibujar todos los niveles de Fibonacci del trade usando fib_high y fib_low
+    if (trade.fib_high && trade.fib_low) {
+        const fibRange = trade.fib_high - trade.fib_low;
+        
+        // Línea 0% (Low)
         const fibLowLine = candleSeries.createPriceLine({
             price: trade.fib_low,
-            color: '#9e9e9e',
-            lineWidth: 1,
-            lineStyle: 1,
+            color: 'rgba(76, 175, 80, 0.9)',
+            lineWidth: 2,
+            lineStyle: 0,
             axisLabelVisible: true,
-            title: 'FIB LOW'
+            title: '0% LOW'
         });
         analysisLines.push(fibLowLine);
+        
+        // Línea 100% (High)
+        const fibHighLine = candleSeries.createPriceLine({
+            price: trade.fib_high,
+            color: 'rgba(244, 67, 54, 0.9)',
+            lineWidth: 2,
+            lineStyle: 0,
+            axisLabelVisible: true,
+            title: '100% HIGH'
+        });
+        analysisLines.push(fibHighLine);
+        
+        // Dibujar niveles de Fibonacci visibles
+        getVisibleFibonacciLevels().forEach(fib => {
+            const fibPrice = trade.fib_low + (fibRange * fib.level);
+            const fibLine = candleSeries.createPriceLine({
+                price: fibPrice,
+                color: fib.color,
+                lineWidth: 1,
+                lineStyle: 2,
+                axisLabelVisible: true,
+                title: fib.label
+            });
+            analysisLines.push(fibLine);
+        });
     }
     
     // Ejecuciones individuales (puntos azules)
@@ -2544,6 +2588,162 @@ async function showTradeOnChart(trade) {
     console.log(`📈 Mostrando trade: ${trade.symbol} C${trade.strategy_case} - ${trade.reason} ($${trade.pnl?.toFixed(4)})`);
 }
 
+// ===== Editor de Niveles Fibonacci =====
+function setupFibonacciEditor() {
+    const editBtn = document.getElementById('editFibLevelsBtn');
+    const modal = document.getElementById('fibEditorModal');
+    const closeBtn = document.getElementById('closeFibEditor');
+    const saveBtn = document.getElementById('saveFibLevels');
+    const resetBtn = document.getElementById('resetFibLevels');
+    const addBtn = document.getElementById('addFibLevelBtn');
+    
+    if (!editBtn || !modal) return;
+    
+    // Abrir modal
+    editBtn.addEventListener('click', () => {
+        renderFibonacciLevelsList();
+        modal.style.display = 'flex';
+    });
+    
+    // Cerrar modal
+    closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+    
+    // Click fuera del modal para cerrar
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+    
+    // Guardar cambios
+    saveBtn.addEventListener('click', () => {
+        saveFibonacciLevelsFromEditor();
+        modal.style.display = 'none';
+        // Redibujar Fibonacci
+        drawZigZag();
+        showToast('Niveles Fibonacci actualizados');
+    });
+    
+    // Restaurar predeterminados
+    resetBtn.addEventListener('click', () => {
+        FIBONACCI_LEVELS = JSON.parse(JSON.stringify(DEFAULT_FIBONACCI_LEVELS));
+        renderFibonacciLevelsList();
+        showToast('Niveles restaurados a predeterminados');
+    });
+    
+    // Añadir nuevo nivel
+    addBtn.addEventListener('click', () => {
+        const levelInput = document.getElementById('newFibLevel');
+        const labelInput = document.getElementById('newFibLabel');
+        const colorInput = document.getElementById('newFibColor');
+        
+        const level = parseFloat(levelInput.value);
+        if (isNaN(level) || level < 0 || level > 200) {
+            showToast('Nivel debe ser entre 0 y 200', 'error');
+            return;
+        }
+        
+        const newFib = {
+            level: level / 100, // Convertir % a decimal
+            color: hexToRgba(colorInput.value, 0.9),
+            label: labelInput.value || `${level}%`,
+            visible: true
+        };
+        
+        FIBONACCI_LEVELS.push(newFib);
+        FIBONACCI_LEVELS.sort((a, b) => a.level - b.level);
+        
+        // Limpiar inputs
+        levelInput.value = '';
+        labelInput.value = '';
+        
+        renderFibonacciLevelsList();
+        showToast(`Nivel ${level}% añadido`);
+    });
+}
+
+function renderFibonacciLevelsList() {
+    const list = document.getElementById('fibLevelsList');
+    if (!list) return;
+    
+    let html = '';
+    FIBONACCI_LEVELS.forEach((fib, index) => {
+        const levelPercent = (fib.level * 100).toFixed(1);
+        const colorHex = rgbaToHex(fib.color);
+        const hiddenClass = fib.visible === false ? 'hidden' : '';
+        
+        html += `
+        <div class="fib-level-item ${hiddenClass}" data-index="${index}">
+            <input type="checkbox" class="fib-visible-checkbox" ${fib.visible !== false ? 'checked' : ''} data-index="${index}">
+            <input type="color" class="fib-level-color" value="${colorHex}" data-index="${index}">
+            <input type="text" class="fib-level-value" value="${levelPercent}" data-index="${index}" readonly>
+            <input type="text" class="fib-level-label" value="${fib.label}" data-index="${index}">
+            <button class="fib-level-delete" data-index="${index}">🗑</button>
+        </div>
+    `;
+    });
+    
+    list.innerHTML = html;
+    
+    // Event listeners para checkboxes
+    list.querySelectorAll('.fib-visible-checkbox').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            const idx = parseInt(e.target.dataset.index);
+            FIBONACCI_LEVELS[idx].visible = e.target.checked;
+            e.target.closest('.fib-level-item').classList.toggle('hidden', !e.target.checked);
+        });
+    });
+    
+    // Event listeners para colores
+    list.querySelectorAll('.fib-level-color').forEach(input => {
+        input.addEventListener('change', (e) => {
+            const idx = parseInt(e.target.dataset.index);
+            FIBONACCI_LEVELS[idx].color = hexToRgba(e.target.value, 0.9);
+        });
+    });
+    
+    // Event listeners para labels
+    list.querySelectorAll('.fib-level-label').forEach(input => {
+        input.addEventListener('change', (e) => {
+            const idx = parseInt(e.target.dataset.index);
+            FIBONACCI_LEVELS[idx].label = e.target.value;
+        });
+    });
+    
+    // Event listeners para eliminar
+    list.querySelectorAll('.fib-level-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const idx = parseInt(e.target.dataset.index);
+            FIBONACCI_LEVELS.splice(idx, 1);
+            renderFibonacciLevelsList();
+        });
+    });
+}
+
+function saveFibonacciLevelsFromEditor() {
+    saveFibonacciLevels();
+}
+
+// Utilidades de conversión de colores
+function hexToRgba(hex, alpha = 1) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function rgbaToHex(rgba) {
+    if (!rgba) return '#ff9800';
+    const match = rgba.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (!match) return '#ff9800';
+    const r = parseInt(match[1]).toString(16).padStart(2, '0');
+    const g = parseInt(match[2]).toString(16).padStart(2, '0');
+    const b = parseInt(match[3]).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`;
+}
+
 // Hacer función global para onclick
 window.selectAnalysisTrade = selectAnalysisTrade;
 
@@ -2551,4 +2751,5 @@ window.selectAnalysisTrade = selectAnalysisTrade;
 document.addEventListener('DOMContentLoaded', () => {
     init();
     setupAnalysisMode();
+    setupFibonacciEditor();
 });
