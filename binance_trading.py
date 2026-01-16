@@ -82,6 +82,7 @@ class BinanceFuturesTrader:
         self.available_balance: float = 0.0
         self.positions: Dict[str, BinancePosition] = {}
         self.open_orders: Dict[str, BinanceOrder] = {}
+        self.limit_orders: List[dict] = []  # Órdenes LIMIT activas en Binance
         self.symbol_info: Dict[str, dict] = {}  # Precisión de cada símbolo
         
         # Tracking de ejecuciones (compatible con paper trading)
@@ -367,6 +368,27 @@ class BinanceFuturesTrader:
                     time=datetime.fromtimestamp(order["time"] / 1000).isoformat()
                 ))
         return orders
+    
+    async def get_limit_orders(self) -> List[dict]:
+        """Obtener órdenes LIMIT abiertas (no TP/SL)"""
+        data = await self._request("GET", "/fapi/v1/openOrders", signed=True)
+        self.limit_orders = []
+        
+        if data:
+            for order in data:
+                order_type = order.get("type", "")
+                # Solo órdenes LIMIT (no TP/SL)
+                if order_type == "LIMIT":
+                    self.limit_orders.append({
+                        "order_id": order["orderId"],
+                        "symbol": order["symbol"],
+                        "side": order["side"],
+                        "price": float(order["price"]),
+                        "quantity": float(order["origQty"]),
+                        "status": order["status"]
+                    })
+        
+        return self.limit_orders
     
     async def set_leverage(self, symbol: str, leverage: int) -> bool:
         """Configurar apalancamiento para un símbolo"""

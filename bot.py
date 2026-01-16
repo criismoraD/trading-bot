@@ -469,14 +469,16 @@ async def main():
             # Obtener órdenes pendientes
             try:
                 orders = await binance_trader.get_open_orders()
+                limit_orders = await binance_trader.get_limit_orders()  # Actualizar lista interna
+                
                 if orders:
                     # Filtrar solo órdenes LIMIT (no TP/SL)
-                    limit_orders = [o for o in orders if o.order_type == "LIMIT"]
-                    tp_sl_orders = [o for o in orders if o.order_type in ["TAKE_PROFIT_MARKET", "STOP_MARKET"]]
+                    limit_order_objs = [o for o in orders if o.order_type == "LIMIT"]
+                    tp_sl_orders = [o for o in orders if o.order_type in ["TAKE_PROFIT_MARKET", "STOP_MARKET", "TAKE_PROFIT", "STOP"]]
                     
-                    if limit_orders:
-                        print(f"   📋 {len(limit_orders)} orden(es) límite pendiente(s):")
-                        for order in limit_orders:
+                    if limit_order_objs:
+                        print(f"   📋 {len(limit_order_objs)} orden(es) límite pendiente(s):")
+                        for order in limit_order_objs:
                             binance_orders.append(order)
                             print(f"      • {order.symbol}: {order.side} @ ${order.price:.4f} (qty: {order.quantity:.4f})")
                     
@@ -715,7 +717,7 @@ async def main():
                 'margin_balance': balance,
                 'total_unrealized_pnl': pnl,
                 'open_positions': len(binance_trader.positions),
-                'pending_orders': len(binance_trader.pending_orders_tp_sl)  # Órdenes LIMIT pendientes
+                'pending_orders': len(binance_trader.limit_orders)  # Órdenes LIMIT reales de Binance
             }
         else:
             # Modo paper
@@ -777,20 +779,24 @@ async def main():
             
         # Órdenes Pendientes (en modo real, son las de pending_orders_tp_sl)
         pending_orders_to_show = None
-        if trading_mode == "real" and binance_trader and binance_trader.pending_orders_tp_sl:
+        if trading_mode == "real" and binance_trader and binance_trader.limit_orders:
             print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
             print(f"{C_CYAN}│ 📋 ÓRDENES LÍMITE (Binance){C_RESET}{' '*43}{C_CYAN}│{C_RESET}")
             print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
-            for order_id, info in binance_trader.pending_orders_tp_sl.items():
-                linked_str = "(L)" if info.get('is_linked_order') else ""
-                # Línea 1
-                print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{info['symbol']:<10}{C_RESET} {C_YELLOW}{linked_str:>3}{C_RESET} │ {C_RED}LIMIT SELL{C_RESET} │ Qty: {C_WHITE}{info['quantity']:.4f}{C_RESET}{' '*20}{C_CYAN}│{C_RESET}")
-                # Línea 2
-                tp_str = f"${info['take_profit']:.4f}" if info.get('take_profit') else "?"
-                limit_price = info.get('limit_price', 0)
-                print(f"{C_CYAN}│{C_RESET}      Price: {C_WHITE}${limit_price:.4f}{C_RESET} │ TP: {C_WHITE}{tp_str}{C_RESET}{' '*28}{C_CYAN}│{C_RESET}")
+            for order in binance_trader.limit_orders:
+                side_color = C_RED if order['side'] == 'SELL' else C_GREEN
+                # Buscar info adicional en pending_orders_tp_sl
+                order_info = binance_trader.pending_orders_tp_sl.get(order['order_id'], {})
+                linked_str = "(L)" if order_info.get('is_linked_order') else ""
+                tp_price = order_info.get('take_profit')
+                tp_str = f"${tp_price:.4f}" if tp_price else "?"
                 
-                if order_id != list(binance_trader.pending_orders_tp_sl.keys())[-1]:
+                # Línea 1
+                print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{order['symbol']:<10}{C_RESET} {C_YELLOW}{linked_str:>3}{C_RESET} │ {side_color}LIMIT {order['side']}{C_RESET} │ Qty: {C_WHITE}{order['quantity']:.4f}{C_RESET}{' '*18}{C_CYAN}│{C_RESET}")
+                # Línea 2
+                print(f"{C_CYAN}│{C_RESET}      Price: {C_WHITE}${order['price']:.4f}{C_RESET} │ TP: {C_WHITE}{tp_str}{C_RESET}{' '*28}{C_CYAN}│{C_RESET}")
+                
+                if order != binance_trader.limit_orders[-1]:
                     print(f"{C_CYAN}│{' '*72}│{C_RESET}")
         elif account.pending_orders:
             print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
@@ -883,6 +889,12 @@ async def main():
                     for symbol in closed_positions:
                         print(f"🔔 Posición cerrada detectada: {symbol}")
                         binance_trader.clear_position_info(symbol)
+                
+                # Cada 10 segundos, verificar TP/SL faltantes y actualizar órdenes
+                if scan_countdown % 10 == 0 and binance_trader:
+                    await binance_trader.ensure_tp_sl_for_positions()
+                    # Actualizar lista de órdenes LIMIT para mostrar en monitor
+                    await binance_trader.get_limit_orders()
 
             # 2. Verificar si es hora de escanear
             if scan_countdown <= 0:
