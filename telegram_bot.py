@@ -233,6 +233,58 @@ class TelegramBot:
 └ Caso 4: {len(cases[4])} trades | ${sum(cases[4]):.4f}
 """
     
+    def format_history(self, case_filter: int = None, limit: int = 10) -> str:
+        """Formato de operaciones cerradas con filtro por caso"""
+        if not self.account:
+            return "⚠️ Bot no inicializado"
+        
+        history = self.account.trade_history
+        if not history:
+            return "📜 Sin historial de operaciones cerradas"
+        
+        # Filtrar por caso si se especifica
+        if case_filter:
+            history = [t for t in history if t.get('strategy_case') == case_filter]
+            if not history:
+                return f"📜 Sin operaciones cerradas para Caso {case_filter}"
+        
+        # Tomar las últimas N operaciones (más recientes primero)
+        recent = list(reversed(history[-limit:]))
+        
+        header = f"📜 <b>HISTORIAL DE OPERACIONES</b>"
+        if case_filter:
+            header += f" (Caso {case_filter})"
+        header += f"\n<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+        header += f"Mostrando últimas {len(recent)} de {len(history)} operaciones\n\n"
+        
+        lines = []
+        for t in recent:
+            pnl = t.get('pnl', 0)
+            emoji = "🟢" if pnl >= 0 else "🔴"
+            reason = t.get('reason', '?')
+            reason_emoji = "✅" if reason == 'TP' else "❌"
+            
+            lines.append(f"{emoji} <b>{t.get('symbol', '?')}</b> (C{t.get('strategy_case', '?')})")
+            lines.append(f"   {reason_emoji} {reason} | PnL: <code>${pnl:.4f}</code>")
+            lines.append(f"   📊 Entry: ${t.get('entry_price', 0):.4f} → Close: ${t.get('close_price', 0):.4f}")
+            lines.append(f"   🎯 TP: ${t.get('take_profit', 0):.4f} | SL: ${t.get('stop_loss', 0):.4f}")
+            
+            # Mostrar ejecuciones
+            executions = t.get('executions', [])
+            if executions:
+                exec_str = ", ".join([f"{e.get('type', '?')}@${e.get('price', 0):.4f}" for e in executions])
+                lines.append(f"   ⚡ {exec_str}")
+            lines.append("")
+        
+        # Resumen
+        total_pnl = sum(t.get('pnl', 0) for t in history)
+        winners = sum(1 for t in history if t.get('pnl', 0) > 0)
+        
+        summary = f"<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+        summary += f"📈 Total PnL: <code>${total_pnl:.4f}</code> | Win Rate: {winners}/{len(history)}"
+        
+        return header + "\n".join(lines) + summary
+    
     async def handle_command(self, chat_id: int, command: str, args: List[str]):
         """Procesar comandos"""
         command = command.lower().strip()
@@ -248,6 +300,7 @@ class TelegramBot:
 /report - Reporte completo
 /balance - Ver balance actual
 /positions - Ver posiciones abiertas
+/history - Operaciones cerradas (+ caso)
 /stats - Estadísticas detalladas
 /help - Mostrar ayuda
 
@@ -266,6 +319,19 @@ Tu chat ha sido registrado para recibir notificaciones.
             
         elif command == "/stats":
             await self.send_message(chat_id, self.format_stats())
+        
+        elif command == "/history":
+            # /history o /history 1 (filtrar por caso)
+            case_filter = None
+            if args:
+                try:
+                    case_filter = int(args[0])
+                    if case_filter not in [1, 2, 3, 4]:
+                        await self.send_message(chat_id, "⚠️ Caso debe ser 1, 2, 3 o 4")
+                        return
+                except ValueError:
+                    pass
+            await self.send_message(chat_id, self.format_history(case_filter))
             
         elif command == "/help":
             await self.send_message(chat_id, """
@@ -276,6 +342,8 @@ Tu chat ha sido registrado para recibir notificaciones.
 /balance - Ver balance y márgenes
 /positions - Ver posiciones abiertas
 /stats - Estadísticas detalladas
+/history - Historial de operaciones cerradas
+/history 1 - Filtrar por caso (1, 2, 3 o 4)
 
 <b>Notificaciones automáticas:</b>
 • Reportes cada 20 minutos

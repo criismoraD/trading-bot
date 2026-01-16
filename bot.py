@@ -613,10 +613,9 @@ async def main():
                 await asyncio.sleep(5)
     
     def clear_screen():
-        """Limpiar pantalla - DESACTIVADO para debug"""
-        # import os
-        # os.system('cls' if os.name == 'nt' else 'clear')
-        pass  # Desactivado para ver logs
+        """Limpiar pantalla"""
+        import os
+        os.system('cls' if os.name == 'nt' else 'clear')
     
     def print_monitor():
         """Imprimir modo monitor con secciones separadas"""

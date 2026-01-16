@@ -2133,5 +2133,312 @@ function setupPairAutocomplete() {
     }
 }
 
+// ===== Modo Análisis de Historial =====
+let analysisMode = false;
+let analysisData = null;
+let filteredTrades = [];
+let currentTradeIndex = 0;
+let currentCaseFilter = 'all';
+
+function setupAnalysisMode() {
+    const toggle = document.getElementById('analysisModeToggle');
+    const controls = document.getElementById('analysisControls');
+    const fileSelect = document.getElementById('analysisFileSelect');
+    const navigation = document.getElementById('analysisNavigation');
+    const caseButtons = document.querySelectorAll('.case-btn');
+    const prevBtn = document.getElementById('prevTradeBtn');
+    const nextBtn = document.getElementById('nextTradeBtn');
+    
+    if (!toggle) return;
+    
+    // Toggle modo análisis
+    toggle.addEventListener('change', async () => {
+        analysisMode = toggle.checked;
+        controls.style.display = analysisMode ? 'flex' : 'none';
+        navigation.style.display = analysisMode ? 'flex' : 'none';
+        
+        if (analysisMode) {
+            await loadAnalysisFile(fileSelect.value);
+        } else {
+            // Volver al modo normal
+            clearAnalysisLines();
+            analysisData = null;
+            filteredTrades = [];
+        }
+    });
+    
+    // Cambiar archivo
+    fileSelect.addEventListener('change', async () => {
+        if (analysisMode) {
+            await loadAnalysisFile(fileSelect.value);
+        }
+    });
+    
+    // Filtros por caso
+    caseButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            caseButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentCaseFilter = btn.dataset.case;
+            applyAnalysisFilter();
+        });
+    });
+    
+    // Navegación
+    prevBtn.addEventListener('click', () => navigateTrade(-1));
+    nextBtn.addEventListener('click', () => navigateTrade(1));
+    
+    // Atajos de teclado
+    document.addEventListener('keydown', (e) => {
+        if (!analysisMode) return;
+        if (e.key === 'ArrowLeft') navigateTrade(-1);
+        if (e.key === 'ArrowRight') navigateTrade(1);
+    });
+}
+
+async function loadAnalysisFile(filename) {
+    try {
+        const response = await fetch(`/${filename}?t=${Date.now()}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        analysisData = await response.json();
+        
+        console.log(`📊 Cargado ${filename}: ${analysisData.history?.length || 0} trades`);
+        
+        currentCaseFilter = 'all';
+        document.querySelectorAll('.case-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector('.case-btn[data-case="all"]')?.classList.add('active');
+        
+        applyAnalysisFilter();
+        showToast(`Cargado: ${analysisData.history?.length || 0} trades`);
+    } catch (error) {
+        console.error('Error cargando archivo de análisis:', error);
+        showToast('Error cargando archivo', 'error');
+    }
+}
+
+function applyAnalysisFilter() {
+    if (!analysisData || !analysisData.history) {
+        filteredTrades = [];
+        updateAnalysisStats();
+        updateAnalysisHistoryList();
+        return;
+    }
+    
+    if (currentCaseFilter === 'all') {
+        filteredTrades = [...analysisData.history];
+    } else {
+        const caseNum = parseInt(currentCaseFilter);
+        filteredTrades = analysisData.history.filter(t => t.strategy_case === caseNum);
+    }
+    
+    currentTradeIndex = 0;
+    updateAnalysisStats();
+    updateAnalysisHistoryList();
+    
+    if (filteredTrades.length > 0) {
+        showTradeOnChart(filteredTrades[0]);
+    }
+}
+
+function updateAnalysisStats() {
+    const totalEl = document.getElementById('analysisTotalTrades');
+    const winRateEl = document.getElementById('analysisWinRate');
+    const pnlEl = document.getElementById('analysisTotalPnl');
+    
+    if (!totalEl) return;
+    
+    const total = filteredTrades.length;
+    const winners = filteredTrades.filter(t => (t.pnl || 0) > 0).length;
+    const totalPnl = filteredTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+    const winRate = total > 0 ? (winners / total * 100).toFixed(1) : 0;
+    
+    totalEl.textContent = total;
+    winRateEl.textContent = `${winRate}%`;
+    pnlEl.textContent = `$${totalPnl.toFixed(2)}`;
+    pnlEl.style.color = totalPnl >= 0 ? 'var(--color-bullish)' : 'var(--color-bearish)';
+}
+
+function updateAnalysisHistoryList() {
+    const historyList = document.getElementById('historyList');
+    const historyCount = document.getElementById('historyCount');
+    const navInfo = document.getElementById('tradeNavInfo');
+    
+    if (!historyList) return;
+    
+    historyCount.textContent = filteredTrades.length;
+    navInfo.textContent = filteredTrades.length > 0 ? `${currentTradeIndex + 1}/${filteredTrades.length}` : '0/0';
+    
+    if (filteredTrades.length === 0) {
+        historyList.innerHTML = '<div class="no-history">Sin trades para este filtro</div>';
+        return;
+    }
+    
+    let html = '';
+    filteredTrades.forEach((trade, index) => {
+        const pnlClass = (trade.pnl || 0) >= 0 ? 'positive' : 'negative';
+        const reasonClass = trade.reason === 'TP' ? 'tp' : 'sl';
+        const selectedClass = index === currentTradeIndex ? 'selected' : '';
+        
+        html += `
+        <div class="history-item ${selectedClass}" data-index="${index}" onclick="selectAnalysisTrade(${index})">
+            <div class="trade-row">
+                <span>${trade.symbol} <small>(C${trade.strategy_case || '?'})</small></span>
+                <span class="trade-reason ${reasonClass}">${trade.reason}</span>
+            </div>
+            <div class="trade-row">
+                <span>$${(trade.entry_price || 0).toFixed(4)} → $${(trade.close_price || 0).toFixed(4)}</span>
+                <span class="trade-pnl ${pnlClass}">$${(trade.pnl || 0).toFixed(4)}</span>
+            </div>
+        </div>
+    `;
+    });
+    
+    historyList.innerHTML = html;
+    
+    // Scroll al trade seleccionado
+    const selectedItem = historyList.querySelector('.history-item.selected');
+    if (selectedItem) {
+        selectedItem.scrollIntoView({ block: 'nearest' });
+    }
+}
+
+function selectAnalysisTrade(index) {
+    currentTradeIndex = index;
+    updateAnalysisHistoryList();
+    showTradeOnChart(filteredTrades[index]);
+}
+
+function navigateTrade(direction) {
+    if (filteredTrades.length === 0) return;
+    
+    currentTradeIndex += direction;
+    if (currentTradeIndex < 0) currentTradeIndex = filteredTrades.length - 1;
+    if (currentTradeIndex >= filteredTrades.length) currentTradeIndex = 0;
+    
+    updateAnalysisHistoryList();
+    showTradeOnChart(filteredTrades[currentTradeIndex]);
+}
+
+// Líneas de análisis en el gráfico
+let analysisLines = [];
+
+function clearAnalysisLines() {
+    analysisLines.forEach(line => {
+        try {
+            candleSeries.removePriceLine(line);
+        } catch (e) {}
+    });
+    analysisLines = [];
+}
+
+async function showTradeOnChart(trade) {
+    if (!trade || !candleSeries) return;
+    
+    // Cambiar al símbolo del trade si es diferente
+    if (trade.symbol !== currentSymbol) {
+        await changeSymbol(trade.symbol);
+    }
+    
+    // Limpiar líneas anteriores
+    clearAnalysisLines();
+    
+    // Dibujar líneas del trade
+    // Entry (naranja)
+    const entryLine = candleSeries.createPriceLine({
+        price: trade.entry_price,
+        color: '#ff9800',
+        lineWidth: 2,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: `ENTRY ${trade.executions?.length > 1 ? '(avg)' : ''}`
+    });
+    analysisLines.push(entryLine);
+    
+    // Close (cyan)
+    const closeLine = candleSeries.createPriceLine({
+        price: trade.close_price,
+        color: '#00bcd4',
+        lineWidth: 2,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: 'CLOSE'
+    });
+    analysisLines.push(closeLine);
+    
+    // TP (verde)
+    if (trade.take_profit) {
+        const tpLine = candleSeries.createPriceLine({
+            price: trade.take_profit,
+            color: '#4caf50',
+            lineWidth: 2,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'TP'
+        });
+        analysisLines.push(tpLine);
+    }
+    
+    // SL (rojo)
+    if (trade.stop_loss) {
+        const slLine = candleSeries.createPriceLine({
+            price: trade.stop_loss,
+            color: '#f44336',
+            lineWidth: 2,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'SL'
+        });
+        analysisLines.push(slLine);
+    }
+    
+    // Fib High/Low (gris)
+    if (trade.fib_high) {
+        const fibHighLine = candleSeries.createPriceLine({
+            price: trade.fib_high,
+            color: '#9e9e9e',
+            lineWidth: 1,
+            lineStyle: 1,
+            axisLabelVisible: true,
+            title: 'FIB HIGH'
+        });
+        analysisLines.push(fibHighLine);
+    }
+    
+    if (trade.fib_low) {
+        const fibLowLine = candleSeries.createPriceLine({
+            price: trade.fib_low,
+            color: '#9e9e9e',
+            lineWidth: 1,
+            lineStyle: 1,
+            axisLabelVisible: true,
+            title: 'FIB LOW'
+        });
+        analysisLines.push(fibLowLine);
+    }
+    
+    // Ejecuciones individuales (puntos azules)
+    if (trade.executions && trade.executions.length > 1) {
+        trade.executions.forEach((exec, i) => {
+            const execLine = candleSeries.createPriceLine({
+                price: exec.price,
+                color: '#2196f3',
+                lineWidth: 1,
+                lineStyle: 1,
+                axisLabelVisible: true,
+                title: `EXEC${i + 1}`
+            });
+            analysisLines.push(execLine);
+        });
+    }
+    
+    console.log(`📈 Mostrando trade: ${trade.symbol} C${trade.strategy_case} - ${trade.reason} ($${trade.pnl?.toFixed(4)})`);
+}
+
+// Hacer función global para onclick
+window.selectAnalysisTrade = selectAnalysisTrade;
+
 // Start the application
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+    init();
+    setupAnalysisMode();
+});

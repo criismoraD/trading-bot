@@ -155,6 +155,37 @@
                             <span id="marginBalance">$30.00</span>
                         </div>
                     </div>
+                    
+                    <!-- Modo Análisis de Historial -->
+                    <div class="analysis-mode-section" id="analysisModeSection">
+                        <div class="analysis-header">
+                            <h4>🔬 Modo Análisis</h4>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="analysisModeToggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="analysis-controls" id="analysisControls" style="display: none;">
+                            <select id="analysisFileSelect" class="analysis-select">
+                                <option value="trades.json">trades.json (actual)</option>
+                                <option value="Test_Histoy_trades.json">Test_Histoy_trades.json</option>
+                            </select>
+                            <div class="case-filter">
+                                <span>Filtrar:</span>
+                                <button class="case-btn active" data-case="all">Todos</button>
+                                <button class="case-btn" data-case="1">C1</button>
+                                <button class="case-btn" data-case="2">C2</button>
+                                <button class="case-btn" data-case="3">C3</button>
+                                <button class="case-btn" data-case="4">C4</button>
+                            </div>
+                            <div class="analysis-stats" id="analysisStats">
+                                <span>Total: <b id="analysisTotalTrades">0</b></span>
+                                <span>Win: <b id="analysisWinRate">0%</b></span>
+                                <span>PnL: <b id="analysisTotalPnl">$0.00</b></span>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <!-- Historial de Trades Cerradas -->
                     <div class="history-section" id="historySection">
                         <div class="history-header">
@@ -163,6 +194,12 @@
                         </div>
                         <div class="history-list" id="historyList">
                             <div class="no-history">Sin trades cerradas</div>
+                        </div>
+                        <!-- Navegación para análisis -->
+                        <div class="analysis-navigation" id="analysisNavigation" style="display: none;">
+                            <button class="nav-btn" id="prevTradeBtn">◀ Anterior</button>
+                            <span id="tradeNavInfo">0/0</span>
+                            <button class="nav-btn" id="nextTradeBtn">Siguiente ▶</button>
                         </div>
                     </div>
                 </div>
