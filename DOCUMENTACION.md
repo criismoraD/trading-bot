@@ -21,8 +21,8 @@
 Bot de trading automatizado para **Binance Futures** que utiliza niveles de **Fibonacci** combinados con el indicador **RSI** para identificar oportunidades de entrada en corto (SHORT).
 
 ### Características Principales:
-- ✅ Escaneo automático del Top 100 pares por volumen
-- ✅ Filtrado por RSI >= 75 (sobrecompra)
+- ✅ Escaneo automático de **todos los pares USDT** de Binance Futures (~600+)
+- ✅ Filtrado por RSI >= 70 (sobrecompra)
 - ✅ Detección de swings Fibonacci válidos
 - ✅ 4 casos de trading con diferentes configuraciones de TP/SL
 - ✅ Paper Trading y Trading Real
@@ -70,7 +70,7 @@ Bot de trading automatizado para **Binance Futures** que utiliza niveles de **Fi
 ## Estrategia de Trading
 
 ### Condiciones de Entrada (SHORT)
-1. **RSI >= 75** en timeframe 5m (sobrecompra)
+1. **RSI >= 70** en timeframe 5m (sobrecompra)
 2. **Swing Fibonacci válido** detectado:
    - High y Low identificados con ZigZag
    - Precio actual en zona de retroceso (entre 61.8% y 100%)
@@ -192,7 +192,7 @@ Precio supera el High → Abre SHORT MARKET inmediato
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
-│  1. Obtener Top 100 pares por volumen       │
+│  1. Obtener todos los pares USDT (~600+)    │
 │     (excluir pares prohibidos)              │
 └─────────────────────────────────────────────┘
                     │
@@ -200,12 +200,12 @@ Precio supera el High → Abre SHORT MARKET inmediato
 ┌─────────────────────────────────────────────┐
 │  2. Para cada par:                          │
 │     - Calcular RSI (5m)                     │
-│     - Si RSI < 75 → Descartar               │
+│     - Si RSI < 70 → Descartar               │
 └─────────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
-│  3. Para pares con RSI >= 75:               │
+│  3. Para pares con RSI >= 70:               │
 │     - Obtener velas (15m o 1h)              │
 │     - Calcular ZigZag                       │
 │     - Buscar swing Fibonacci válido         │
@@ -286,10 +286,10 @@ MARGIN_PER_TRADE = 3.0       # Margen por operación
 MIN_AVAILABLE_MARGIN = 2.0   # Margen mínimo para operar
 
 # Escaneo
-TOP_PAIRS_LIMIT = 100        # Top N pares por volumen
-RSI_THRESHOLD = 75           # RSI mínimo para entrada
-SCAN_INTERVAL = 60           # Segundos entre escaneos
-FIRST_SCAN_DELAY = 5         # Delay antes del primer escaneo
+TOP_PAIRS_LIMIT = 600        # Cantidad de pares a escanear (~todos)
+RSI_THRESHOLD = 70           # RSI mínimo para entrada
+SCAN_INTERVAL = 66           # Segundos entre escaneos
+FIRST_SCAN_DELAY = 2         # Delay antes del primer escaneo
 
 # Timeframes
 TIMEFRAME = "15m"            # Timeframe para Fibonacci
