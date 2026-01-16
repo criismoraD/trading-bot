@@ -13,16 +13,36 @@ from logger import telegram_logger as logger
 from config import TELEGRAM_TOKEN
 
 # Configuración del Bot de Telegram
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+# Archivo para guardar los chats autorizados
+CHATS_FILE = "telegram_chats.json"
 
-# IDs de chat autorizados (se llenarán cuando el usuario envíe /start)
-AUTHORIZED_CHATS: set = set()
+def load_authorized_chats() -> set:
+    """Cargar chats autorizados desde archivo"""
+    if os.path.exists(CHATS_FILE):
+        try:
+            with open(CHATS_FILE, 'r') as f:
+                return set(json.load(f))
+        except Exception as e:
+            logger.error(f"Error cargando chats: {e}")
+            return set()
+    return set()
+
+def save_authorized_chats():
+    """Guardar chats autorizados a archivo"""
+    try:
+        with open(CHATS_FILE, 'w') as f:
+            json.dump(list(AUTHORIZED_CHATS), f)
+    except Exception as e:
+        logger.error(f"Error guardando chats: {e}")
+
+# Inicializar chats autorizados
+AUTHORIZED_CHATS: set = load_authorized_chats()
 
 
 @dataclass
 class TelegramConfig:
     token: str = TELEGRAM_TOKEN
-    report_interval: int = 20 * 60  # 20 minutos en segundos
+    report_interval: int = 30 * 60  # 30 minutos
     enabled: bool = True
 
 
@@ -89,72 +109,87 @@ class TelegramBot:
     
     async def broadcast_message(self, text: str):
         """Enviar mensaje a todos los chats autorizados"""
+        if not AUTHORIZED_CHATS:
+            return
+            
         for chat_id in AUTHORIZED_CHATS:
             await self.send_message(chat_id, text)
     
     def format_report(self) -> str:
-        """Generar reporte formateado para Telegram"""
+        """Generar reporte formateado para Telegram (Resumen + Stats)"""
         if not self.account:
             return "⚠️ Bot no inicializado"
         
         status = self.account.get_status()
         now = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
         
-        # Calcular métricas
-        total_trades = len(self.account.trade_history)
-        winning_trades = sum(1 for t in self.account.trade_history if t.get('pnl', 0) > 0)
-        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-        total_pnl = sum(t.get('pnl', 0) for t in self.account.trade_history)
+        # Historial
+        history = self.account.trade_history
+        total_trades = len(history)
+        winners = sum(1 for t in history if t.get('pnl', 0) > 0)
+        losers = sum(1 for t in history if t.get('pnl', 0) < 0)
+        win_rate = (winners / total_trades * 100) if total_trades > 0 else 0
+        
+        # PnL
+        total_pnl = sum(t.get('pnl', 0) for t in history)
+        avg_win = sum(t.get('pnl', 0) for t in winners_list) if (winners_list := [t for t in history if t.get('pnl', 0) > 0]) else 0
+        avg_win = avg_win / len(winners_list) if winners_list else 0
         
         # Emoji según PnL
         pnl_emoji = "🟢" if status['total_unrealized_pnl'] >= 0 else "🔴"
         balance_emoji = "📈" if self.account.balance >= self.account.initial_balance else "📉"
         
         report = f"""
-<b>📊 REPORTE DE TRADING</b>
+<b>📊 REPORTE PERIÓDICO (30 min)</b>
 <code>━━━━━━━━━━━━━━━━━━━━━━━━</code>
 🕐 <b>{now}</b>
 
 <b>💰 CUENTA</b>
 ├ Balance: <code>${status['balance']:.2f}</code> {balance_emoji}
-├ PnL No Realizado: <code>${status['total_unrealized_pnl']:.4f}</code> {pnl_emoji}
-├ Balance Margen: <code>${status['margin_balance']:.2f}</code>
-└ Margen Disponible: <code>${status['available_margin']:.2f}</code>
+├ PnL Flotante: <code>${status['total_unrealized_pnl']:.4f}</code> {pnl_emoji}
+└ Margen Disp.: <code>${status['available_margin']:.2f}</code>
 
-<b>📈 ESTADÍSTICAS</b>
-├ Total Trades: <code>{total_trades}</code>
-├ Win Rate: <code>{win_rate:.1f}%</code>
-├ PnL Total: <code>${total_pnl:.4f}</code>
-└ Trades Hoy: <code>{self._count_today_trades()}</code>
+<b>📈 RENDIMIENTO</b>
+├ Total Trades: <code>{total_trades}</code> (Hoy: {self._count_today_trades()})
+├ Win Rate: <code>{win_rate:.1f}%</code> ({winners}W - {losers}L)
+├ PnL Acumulado: <code>${total_pnl:.4f}</code>
+└ Profit Factor: <code>{self._calculate_profit_factor():.2f}</code>
 
-<b>📂 OPERACIONES ABIERTAS ({status['open_positions']})</b>
+<b>📂 ESTADO ACTUAL</b>
+├ Posiciones: <code>{status['open_positions']}</code>
+└ Órdenes: <code>{status['pending_orders']}</code>
 """
         
-        # Agregar posiciones abiertas
+        # Agregar detalle de posiciones si hay pocas (max 3) para no saturar
         if self.account.open_positions:
+            report += "\n<b>👁️ POSICIONES ACTIVAS:</b>\n"
+            count = 0
             for order_id, pos in self.account.open_positions.items():
+                if count >= 3:
+                    report += f"└ <i>... y {len(self.account.open_positions) - 3} más</i>"
+                    break
                 current = self.price_cache.get(pos.symbol, pos.current_price)
                 pnl_pos = pos.unrealized_pnl
                 emoji = "🟢" if pnl_pos >= 0 else "🔴"
+                report += f"├ {pos.symbol} {emoji} <code>${pnl_pos:.2f}</code>\n"
+                count += 1
                 
-                report += f"""├ <b>{pos.symbol}</b> (C{pos.strategy_case})
-│  └ {pos.side.value if hasattr(pos.side, 'value') else pos.side} @ ${pos.entry_price:.4f} → ${current:.4f}
-│  └ {emoji} PnL: <code>${pnl_pos:.4f}</code>
-"""
-        else:
-            report += "└ <i>Sin posiciones abiertas</i>\n"
-        
-        # Agregar órdenes pendientes
-        if self.account.pending_orders:
-            report += f"\n<b>⏳ ÓRDENES PENDIENTES ({status['pending_orders']})</b>\n"
-            for order_id, order in self.account.pending_orders.items():
-                report += f"├ {order.symbol} LIMIT @ ${order.price:.4f}\n"
-        
-        report += "\n<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>"
-        report += "\n💡 Comandos: /report /balance /positions /stats"
-        
+        report += "\n💡 /download para bajar el historial"
         return report
     
+    def _calculate_profit_factor(self) -> float:
+        if not self.account or not self.account.trade_history:
+            return 0.0
+        winners = [t.get('pnl', 0) for t in self.account.trade_history if t.get('pnl', 0) > 0]
+        losers = [t.get('pnl', 0) for t in self.account.trade_history if t.get('pnl', 0) < 0]
+        
+        gross_profit = sum(winners)
+        gross_loss = abs(sum(losers))
+        
+        if gross_loss == 0:
+            return float('inf') if gross_profit > 0 else 0.0
+        return gross_profit / gross_loss
+
     def _count_today_trades(self) -> int:
         """Contar trades de hoy"""
         today = datetime.now().date()
@@ -224,7 +259,7 @@ class TelegramBot:
         total_pnl = sum(t.get('pnl', 0) for t in history)
         avg_win = sum(t.get('pnl', 0) for t in winners) / len(winners) if winners else 0
         avg_loss = sum(t.get('pnl', 0) for t in losers) / len(losers) if losers else 0
-        profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else float('inf')
+        profit_factor = self._calculate_profit_factor()
         
         # Max drawdown
         max_dd = min((t.get('min_pnl', 0) for t in history), default=0)
@@ -317,11 +352,15 @@ class TelegramBot:
         command = command.lower().strip()
         
         if command == "/start":
-            AUTHORIZED_CHATS.add(chat_id)
+            if chat_id not in AUTHORIZED_CHATS:
+                AUTHORIZED_CHATS.add(chat_id)
+                save_authorized_chats()
+                logger.info(f"Nuevo chat autorizado: {chat_id}")
+            
             await self.send_message(chat_id, """
 <b>🤖 Bot de Trading Fibonacci</b>
 
-¡Bienvenido! Este bot te enviará reportes automáticos cada 20 minutos.
+¡Bienvenido! Este bot te enviará reportes automáticos cada 30 minutos.
 
 <b>Comandos disponibles:</b>
 /report - Reporte completo
@@ -334,7 +373,6 @@ class TelegramBot:
 
 Tu chat ha sido registrado para recibir notificaciones.
 """)
-            logger.info(f"Nuevo chat autorizado: {chat_id}")
             
         elif command == "/report":
             await self.send_message(chat_id, self.format_report())
@@ -379,7 +417,7 @@ Tu chat ha sido registrado para recibir notificaciones.
 /download - Descargar archivo trades.json
 
 <b>Notificaciones automáticas:</b>
-• Reportes cada 20 minutos
+• Reportes cada 30 minutos
 • Alertas cuando se abre/cierra una posición
 • Alertas cuando se ejecuta una orden límite
 """)
@@ -461,13 +499,22 @@ Tu chat ha sido registrado para recibir notificaciones.
         logger.info("Iniciando bot de Telegram...")
         self.running = True
         
+        # MENSAJE DE BIENVENIDA AL INICIAR
+        if AUTHORIZED_CHATS:
+             await self.broadcast_message("🚀 <b>BOT INICIADO</b>\nEl sistema está en línea y operando.")
+        
         while self.running:
             await self.poll_updates()
             await asyncio.sleep(1)
+        
+        # Mensaje de cierre
+        if AUTHORIZED_CHATS:
+             await self.broadcast_message("🛑 <b>BOT DETENIDO</b>\nEl sistema se está apagando.")
     
     async def run_report_loop(self):
-        """Loop de reportes automáticos cada 20 minutos"""
-        logger.info(f"Iniciando reportes automáticos cada {self.config.report_interval // 60} minutos")
+        """Loop de reportes automáticos cada N minutos"""
+        minutes = self.config.report_interval // 60
+        logger.info(f"Iniciando reportes automáticos cada {minutes} minutos")
         
         while self.running:
             await asyncio.sleep(self.config.report_interval)
@@ -475,7 +522,7 @@ Tu chat ha sido registrado para recibir notificaciones.
             if AUTHORIZED_CHATS:
                 logger.info(f"Enviando reporte automático a {len(AUTHORIZED_CHATS)} chats")
                 report = self.format_report()
-                await self.broadcast_message(f"🔄 <b>REPORTE AUTOMÁTICO</b>\n{report}")
+                await self.broadcast_message(report)
     
     async def start(self, account=None, scanner=None, price_cache: dict = None):
         """Iniciar el bot con las referencias necesarias"""
