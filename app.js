@@ -1358,11 +1358,11 @@ function drawFibonacciForShort() {
         // Get from shared config (default: 1.0 means disabled)
         const secondaryInvalidationLevel = (window.sharedConfig?.fibonacci?.invalidation_level_secondary) ?? 1.0;
         let invalidatedBySecondary = false;
-        
+
         if (secondaryInvalidationLevel < 1.0) {
             const fibSecondaryLevel = lowestLow.price + (range * secondaryInvalidationLevel);
             const excludeFromIndexSec = Math.max(lowestLow.index + 1, candleData.length - 3);
-            
+
             for (let k = lowestLow.index + 1; k < excludeFromIndexSec; k++) {
                 if (candleData[k].high >= fibSecondaryLevel) {
                     invalidatedBySecondary = true;
@@ -1370,7 +1370,7 @@ function drawFibonacciForShort() {
                     break;
                 }
             }
-            
+
             if (invalidatedBySecondary) {
                 console.log(`   ⛔ Swing invalidated by ${(secondaryInvalidationLevel * 100).toFixed(1)}% touch - Moving to next High...`);
                 continue; // Skip to next High
@@ -1458,11 +1458,11 @@ function drawFibonacciForShort() {
         // Touched 61.8% -> Cases 1,2 invalidated -> minValidCase = 3
         // Touched 78.6% -> Cases 1,2,3 invalidated -> minValidCase = 4
         let minValidCase = 1;  // Default: all cases valid
-        
+
         const fib786Level = lowestLow.price + (range * 0.786);
         let hasTouched786 = false;
         const excludeFromIndex786 = Math.max(lowestLow.index + 1, lastCandleIndex - 2);
-        
+
         for (let k = lowestLow.index + 1; k < excludeFromIndex786; k++) {
             if (candleData[k].high >= fib786Level) {
                 hasTouched786 = true;
@@ -1470,7 +1470,7 @@ function drawFibonacciForShort() {
                 break;
             }
         }
-        
+
         // Check 61.8% (use invalidatedBySecondary from config check above)
         let hasTouched618 = false;
         const excludeFromIndex618 = Math.max(lowestLow.index + 1, lastCandleIndex - 2);
@@ -1480,7 +1480,7 @@ function drawFibonacciForShort() {
                 break;
             }
         }
-        
+
         // Determine minValidCase
         if (hasTouched786) {
             minValidCase = 4;  // Only Case 4 valid
@@ -1720,7 +1720,7 @@ async function init() {
         } else if (currentSymbol) {
             pairSelect.value = currentSymbol;
         }
-        
+
         // Fallback si aún no hay símbolo
         if (!currentSymbol) {
             currentSymbol = 'BTCUSDT';
@@ -1994,7 +1994,7 @@ async function init() {
 
     // Refresh panel every 2 seconds
     let tradesPanelInterval = setInterval(loadTradesPanel, 2000);
-    
+
     // Exponer función para pausar/reanudar polling desde modo análisis
     window.pauseTradesPolling = () => {
         if (tradesPanelInterval) {
@@ -2003,7 +2003,7 @@ async function init() {
             console.log('⏸️ Trades polling pausado (modo análisis)');
         }
     };
-    
+
     window.resumeTradesPolling = () => {
         if (!tradesPanelInterval) {
             tradesPanelInterval = setInterval(loadTradesPanel, 2000);
@@ -2040,30 +2040,30 @@ async function init() {
 function setupPairAutocomplete() {
     const pairSearch = document.getElementById('pairSearch');
     const autocomplete = document.getElementById('pairAutocomplete');
-    
+
     if (!pairSearch || !autocomplete) return;
-    
+
     let debounceTimer = null;
-    
+
     // Input event - filter pairs
     pairSearch.addEventListener('input', (e) => {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
             const query = e.target.value.toUpperCase().trim();
-            
+
             if (query.length === 0) {
                 hideAutocomplete();
                 return;
             }
-            
+
             const filtered = allTradingPairs
                 .filter(p => p.symbol.includes(query) || p.display.includes(query))
                 .slice(0, 15); // Limitar a 15 resultados
-            
+
             renderAutocomplete(filtered, query);
         }, 100);
     });
-    
+
     // Focus event - show dropdown if there's text
     pairSearch.addEventListener('focus', () => {
         if (pairSearch.value.length > 0) {
@@ -2074,11 +2074,11 @@ function setupPairAutocomplete() {
             renderAutocomplete(filtered, query);
         }
     });
-    
+
     // Keyboard navigation
     pairSearch.addEventListener('keydown', (e) => {
         const items = autocomplete.querySelectorAll('.autocomplete-item');
-        
+
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             autocompleteSelectedIndex = Math.min(autocompleteSelectedIndex + 1, items.length - 1);
@@ -2100,27 +2100,27 @@ function setupPairAutocomplete() {
             pairSearch.blur();
         }
     });
-    
+
     // Click outside to close
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.pair-search-container')) {
             hideAutocomplete();
         }
     });
-    
+
     function renderAutocomplete(pairs, query) {
         if (pairs.length === 0) {
             autocomplete.innerHTML = '<div class="autocomplete-empty">No se encontraron pares</div>';
             autocomplete.classList.add('active');
             return;
         }
-        
+
         autocomplete.innerHTML = pairs.map((pair, index) => {
             const highlightedName = pair.display.replace(
                 new RegExp(`(${query})`, 'gi'),
                 '<span class="highlight">$1</span>'
             );
-            
+
             return `
                 <div class="autocomplete-item${index === autocompleteSelectedIndex ? ' selected' : ''}" 
                      data-symbol="${pair.symbol}" 
@@ -2130,49 +2130,49 @@ function setupPairAutocomplete() {
                 </div>
             `;
         }).join('');
-        
+
         autocomplete.classList.add('active');
         autocompleteSelectedIndex = -1;
-        
+
         // Add click listeners
         autocomplete.querySelectorAll('.autocomplete-item').forEach(item => {
             item.addEventListener('click', () => {
                 selectPair(item.dataset.symbol);
             });
-            
+
             item.addEventListener('mouseenter', () => {
                 autocompleteSelectedIndex = parseInt(item.dataset.index);
                 updateAutocompleteSelection(autocomplete.querySelectorAll('.autocomplete-item'));
             });
         });
     }
-    
+
     function updateAutocompleteSelection(items) {
         items.forEach((item, i) => {
             item.classList.toggle('selected', i === autocompleteSelectedIndex);
         });
-        
+
         // Scroll into view
         if (items[autocompleteSelectedIndex]) {
             items[autocompleteSelectedIndex].scrollIntoView({ block: 'nearest' });
         }
     }
-    
+
     function hideAutocomplete() {
         autocomplete.classList.remove('active');
         autocompleteSelectedIndex = -1;
     }
-    
+
     async function selectPair(symbol) {
         hideAutocomplete();
         pairSearch.value = '';
-        
+
         if (symbol && symbol !== currentSymbol) {
             await changeSymbol(symbol);
-            
+
             const pairSelect = document.getElementById('pairSelect');
             if (pairSelect) pairSelect.value = symbol;
-            
+
             showToast(`Cambiado a ${symbol.replace('USDT', '/USDT')}`);
         }
     }
@@ -2188,24 +2188,25 @@ let currentCaseFilter = 'all';
 function setupAnalysisMode() {
     const toggle = document.getElementById('analysisModeToggle');
     const controls = document.getElementById('analysisControls');
-    const fileSelect = document.getElementById('analysisFileSelect');
+    const fileInput = document.getElementById('analysisFileInput');
     const navigation = document.getElementById('analysisNavigation');
     const caseButtons = document.querySelectorAll('.case-btn');
     const prevBtn = document.getElementById('prevTradeBtn');
     const nextBtn = document.getElementById('nextTradeBtn');
-    
+
     if (!toggle) return;
-    
+
     // Toggle modo análisis
     toggle.addEventListener('change', async () => {
         analysisMode = toggle.checked;
         controls.style.display = analysisMode ? 'flex' : 'none';
         navigation.style.display = analysisMode ? 'flex' : 'none';
-        
+
         if (analysisMode) {
             // Pausar polling de trades.json normal
             if (window.pauseTradesPolling) window.pauseTradesPolling();
-            await loadAnalysisFile(fileSelect.value);
+            // Si ya hay archivo
+            if (fileInput.files.length > 0) await processAnalysisFile(fileInput.files[0]);
         } else {
             // Volver al modo normal - reanudar polling
             clearAnalysisLines();
@@ -2214,14 +2215,14 @@ function setupAnalysisMode() {
             if (window.resumeTradesPolling) window.resumeTradesPolling();
         }
     });
-    
+
     // Cambiar archivo
-    fileSelect.addEventListener('change', async () => {
-        if (analysisMode) {
-            await loadAnalysisFile(fileSelect.value);
+    fileInput.addEventListener('change', async (e) => {
+        if (analysisMode && e.target.files.length > 0) {
+            await processAnalysisFile(e.target.files[0]);
         }
     });
-    
+
     // Filtros por caso
     caseButtons.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2231,11 +2232,11 @@ function setupAnalysisMode() {
             applyAnalysisFilter();
         });
     });
-    
+
     // Navegación
     prevBtn.addEventListener('click', () => navigateTrade(-1));
     nextBtn.addEventListener('click', () => navigateTrade(1));
-    
+
     // Atajos de teclado
     document.addEventListener('keydown', (e) => {
         if (!analysisMode) return;
@@ -2244,26 +2245,34 @@ function setupAnalysisMode() {
     });
 }
 
-async function loadAnalysisFile(filename) {
+async function processAnalysisFile(file) {
     try {
-        const response = await fetch(`/${filename}?t=${Date.now()}`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        analysisData = await response.json();
-        
-        console.log(`📊 Cargado ${filename}: ${analysisData.history?.length || 0} trades cerradas`);
-        
+        const text = await file.text();
+        analysisData = JSON.parse(text);
+
+        console.log(`📊 Cargado local: ${file.name}: ${analysisData.history?.length || 0} trades cerradas`);
+
         // Actualizar panel de operaciones con datos del archivo de análisis
         updateAnalysisTradesPanel(analysisData);
-        
+
+        // Reset filtros
         currentCaseFilter = 'all';
         document.querySelectorAll('.case-btn').forEach(b => b.classList.remove('active'));
         document.querySelector('.case-btn[data-case="all"]')?.classList.add('active');
-        
+
         applyAnalysisFilter();
+
+        // Actualizar etiqueta
+        const label = document.querySelector('label[for="analysisFileInput"]');
+        if (label) {
+            const truncate = (str, n) => (str.length > n) ? str.substr(0, n - 1) + '...' : str;
+            label.textContent = `📂 ${truncate(file.name, 20)}`;
+        }
+
         showToast(`Cargado: ${analysisData.history?.length || 0} trades`);
     } catch (error) {
-        console.error('Error cargando archivo de análisis:', error);
-        showToast('Error cargando archivo', 'error');
+        console.error('Error procesando archivo JSON:', error);
+        showToast('Error al leer el archivo JSON', 'error');
     }
 }
 
@@ -2274,34 +2283,34 @@ function updateAnalysisTradesPanel(data) {
     const accountBalance = document.getElementById('accountBalance');
     const accountPnl = document.getElementById('accountPnl');
     const marginBalance = document.getElementById('marginBalance');
-    
+
     if (!tradesList) return;
-    
+
     // Actualizar balance del archivo
     if (accountBalance && data.balance !== undefined) {
         accountBalance.textContent = `$${data.balance.toFixed(2)}`;
     }
-    
+
     // Calcular PnL total del historial
     const totalPnl = (data.history || []).reduce((sum, t) => sum + (t.pnl || 0), 0);
     if (accountPnl) {
         accountPnl.textContent = `$${totalPnl.toFixed(4)}`;
         accountPnl.className = totalPnl >= 0 ? 'pnl-value positive' : 'pnl-value negative';
     }
-    
+
     if (marginBalance) {
         marginBalance.textContent = `$${(data.balance || 0).toFixed(2)}`;
     }
-    
+
     // Posiciones abiertas del archivo (si existen - congeladas)
     const openPositions = Object.entries(data.open_positions || {});
     const pendingOrders = Object.entries(data.pending_orders || {});
     const allTrades = [...openPositions, ...pendingOrders];
-    
+
     if (tradesCount) {
         tradesCount.textContent = allTrades.length;
     }
-    
+
     // Siempre limpiar y mostrar estado del archivo de análisis
     if (allTrades.length === 0) {
         tradesList.innerHTML = `
@@ -2316,9 +2325,9 @@ function updateAnalysisTradesPanel(data) {
             </div>`;
         return;
     }
-    
+
     let html = '';
-    
+
     // Mostrar posiciones (congeladas - snapshot)
     openPositions.forEach(([id, pos]) => {
         html += `
@@ -2334,7 +2343,7 @@ function updateAnalysisTradesPanel(data) {
         </div>
     `;
     });
-    
+
     // Mostrar órdenes pendientes (congeladas - snapshot)
     pendingOrders.forEach(([id, order]) => {
         html += `
@@ -2350,7 +2359,7 @@ function updateAnalysisTradesPanel(data) {
         </div>
     `;
     });
-    
+
     tradesList.innerHTML = html;
 }
 
@@ -2361,18 +2370,18 @@ function applyAnalysisFilter() {
         updateAnalysisHistoryList();
         return;
     }
-    
+
     if (currentCaseFilter === 'all') {
         filteredTrades = [...analysisData.history];
     } else {
         const caseNum = parseInt(currentCaseFilter);
         filteredTrades = analysisData.history.filter(t => t.strategy_case === caseNum);
     }
-    
+
     currentTradeIndex = 0;
     updateAnalysisStats();
     updateAnalysisHistoryList();
-    
+
     if (filteredTrades.length > 0) {
         showTradeOnChart(filteredTrades[0]);
     }
@@ -2382,14 +2391,14 @@ function updateAnalysisStats() {
     const totalEl = document.getElementById('analysisTotalTrades');
     const winRateEl = document.getElementById('analysisWinRate');
     const pnlEl = document.getElementById('analysisTotalPnl');
-    
+
     if (!totalEl) return;
-    
+
     const total = filteredTrades.length;
     const winners = filteredTrades.filter(t => (t.pnl || 0) > 0).length;
     const totalPnl = filteredTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
     const winRate = total > 0 ? (winners / total * 100).toFixed(1) : 0;
-    
+
     totalEl.textContent = total;
     winRateEl.textContent = `${winRate}%`;
     pnlEl.textContent = `$${totalPnl.toFixed(2)}`;
@@ -2400,23 +2409,23 @@ function updateAnalysisHistoryList() {
     const historyList = document.getElementById('historyList');
     const historyCount = document.getElementById('historyCount');
     const navInfo = document.getElementById('tradeNavInfo');
-    
+
     if (!historyList) return;
-    
+
     historyCount.textContent = filteredTrades.length;
     navInfo.textContent = filteredTrades.length > 0 ? `${currentTradeIndex + 1}/${filteredTrades.length}` : '0/0';
-    
+
     if (filteredTrades.length === 0) {
         historyList.innerHTML = '<div class="no-history">Sin trades para este filtro</div>';
         return;
     }
-    
+
     let html = '';
     filteredTrades.forEach((trade, index) => {
         const pnlClass = (trade.pnl || 0) >= 0 ? 'positive' : 'negative';
         const reasonClass = trade.reason === 'TP' ? 'tp' : 'sl';
         const selectedClass = index === currentTradeIndex ? 'selected' : '';
-        
+
         html += `
         <div class="history-item ${selectedClass}" data-index="${index}" onclick="selectAnalysisTrade(${index})">
             <div class="trade-row">
@@ -2430,9 +2439,9 @@ function updateAnalysisHistoryList() {
         </div>
     `;
     });
-    
+
     historyList.innerHTML = html;
-    
+
     // Scroll al trade seleccionado
     const selectedItem = historyList.querySelector('.history-item.selected');
     if (selectedItem) {
@@ -2448,11 +2457,11 @@ function selectAnalysisTrade(index) {
 
 function navigateTrade(direction) {
     if (filteredTrades.length === 0) return;
-    
+
     currentTradeIndex += direction;
     if (currentTradeIndex < 0) currentTradeIndex = filteredTrades.length - 1;
     if (currentTradeIndex >= filteredTrades.length) currentTradeIndex = 0;
-    
+
     updateAnalysisHistoryList();
     showTradeOnChart(filteredTrades[currentTradeIndex]);
 }
@@ -2464,22 +2473,22 @@ function clearAnalysisLines() {
     analysisLines.forEach(line => {
         try {
             candleSeries.removePriceLine(line);
-        } catch (e) {}
+        } catch (e) { }
     });
     analysisLines = [];
 }
 
 async function showTradeOnChart(trade) {
     if (!trade || !candleSeries) return;
-    
+
     // Cambiar al símbolo del trade si es diferente
     if (trade.symbol !== currentSymbol) {
         await changeSymbol(trade.symbol);
     }
-    
+
     // Limpiar líneas anteriores
     clearAnalysisLines();
-    
+
     // Dibujar líneas del trade
     // Entry (naranja)
     const entryLine = candleSeries.createPriceLine({
@@ -2491,7 +2500,7 @@ async function showTradeOnChart(trade) {
         title: `ENTRY ${trade.executions?.length > 1 ? '(avg)' : ''}`
     });
     analysisLines.push(entryLine);
-    
+
     // Close (cyan)
     const closeLine = candleSeries.createPriceLine({
         price: trade.close_price,
@@ -2502,7 +2511,7 @@ async function showTradeOnChart(trade) {
         title: 'CLOSE'
     });
     analysisLines.push(closeLine);
-    
+
     // TP (verde)
     if (trade.take_profit) {
         const tpLine = candleSeries.createPriceLine({
@@ -2515,7 +2524,7 @@ async function showTradeOnChart(trade) {
         });
         analysisLines.push(tpLine);
     }
-    
+
     // SL (rojo)
     if (trade.stop_loss) {
         const slLine = candleSeries.createPriceLine({
@@ -2528,11 +2537,11 @@ async function showTradeOnChart(trade) {
         });
         analysisLines.push(slLine);
     }
-    
+
     // Dibujar todos los niveles de Fibonacci del trade usando fib_high y fib_low
     if (trade.fib_high && trade.fib_low) {
         const fibRange = trade.fib_high - trade.fib_low;
-        
+
         // Línea 0% (Low)
         const fibLowLine = candleSeries.createPriceLine({
             price: trade.fib_low,
@@ -2543,7 +2552,7 @@ async function showTradeOnChart(trade) {
             title: '0% LOW'
         });
         analysisLines.push(fibLowLine);
-        
+
         // Línea 100% (High)
         const fibHighLine = candleSeries.createPriceLine({
             price: trade.fib_high,
@@ -2554,7 +2563,7 @@ async function showTradeOnChart(trade) {
             title: '100% HIGH'
         });
         analysisLines.push(fibHighLine);
-        
+
         // Dibujar niveles de Fibonacci visibles
         getVisibleFibonacciLevels().forEach(fib => {
             const fibPrice = trade.fib_low + (fibRange * fib.level);
@@ -2569,7 +2578,7 @@ async function showTradeOnChart(trade) {
             analysisLines.push(fibLine);
         });
     }
-    
+
     // Ejecuciones individuales (puntos azules)
     if (trade.executions && trade.executions.length > 1) {
         trade.executions.forEach((exec, i) => {
@@ -2584,7 +2593,7 @@ async function showTradeOnChart(trade) {
             analysisLines.push(execLine);
         });
     }
-    
+
     console.log(`📈 Mostrando trade: ${trade.symbol} C${trade.strategy_case} - ${trade.reason} ($${trade.pnl?.toFixed(4)})`);
 }
 
@@ -2596,27 +2605,27 @@ function setupFibonacciEditor() {
     const saveBtn = document.getElementById('saveFibLevels');
     const resetBtn = document.getElementById('resetFibLevels');
     const addBtn = document.getElementById('addFibLevelBtn');
-    
+
     if (!editBtn || !modal) return;
-    
+
     // Abrir modal
     editBtn.addEventListener('click', () => {
         renderFibonacciLevelsList();
         modal.style.display = 'flex';
     });
-    
+
     // Cerrar modal
     closeBtn.addEventListener('click', () => {
         modal.style.display = 'none';
     });
-    
+
     // Click fuera del modal para cerrar
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
             modal.style.display = 'none';
         }
     });
-    
+
     // Guardar cambios
     saveBtn.addEventListener('click', () => {
         saveFibonacciLevelsFromEditor();
@@ -2625,40 +2634,40 @@ function setupFibonacciEditor() {
         drawZigZag();
         showToast('Niveles Fibonacci actualizados');
     });
-    
+
     // Restaurar predeterminados
     resetBtn.addEventListener('click', () => {
         FIBONACCI_LEVELS = JSON.parse(JSON.stringify(DEFAULT_FIBONACCI_LEVELS));
         renderFibonacciLevelsList();
         showToast('Niveles restaurados a predeterminados');
     });
-    
+
     // Añadir nuevo nivel
     addBtn.addEventListener('click', () => {
         const levelInput = document.getElementById('newFibLevel');
         const labelInput = document.getElementById('newFibLabel');
         const colorInput = document.getElementById('newFibColor');
-        
+
         const level = parseFloat(levelInput.value);
         if (isNaN(level) || level < 0 || level > 200) {
             showToast('Nivel debe ser entre 0 y 200', 'error');
             return;
         }
-        
+
         const newFib = {
             level: level / 100, // Convertir % a decimal
             color: hexToRgba(colorInput.value, 0.9),
             label: labelInput.value || `${level}%`,
             visible: true
         };
-        
+
         FIBONACCI_LEVELS.push(newFib);
         FIBONACCI_LEVELS.sort((a, b) => a.level - b.level);
-        
+
         // Limpiar inputs
         levelInput.value = '';
         labelInput.value = '';
-        
+
         renderFibonacciLevelsList();
         showToast(`Nivel ${level}% añadido`);
     });
@@ -2667,13 +2676,13 @@ function setupFibonacciEditor() {
 function renderFibonacciLevelsList() {
     const list = document.getElementById('fibLevelsList');
     if (!list) return;
-    
+
     let html = '';
     FIBONACCI_LEVELS.forEach((fib, index) => {
         const levelPercent = (fib.level * 100).toFixed(1);
         const colorHex = rgbaToHex(fib.color);
         const hiddenClass = fib.visible === false ? 'hidden' : '';
-        
+
         html += `
         <div class="fib-level-item ${hiddenClass}" data-index="${index}">
             <input type="checkbox" class="fib-visible-checkbox" ${fib.visible !== false ? 'checked' : ''} data-index="${index}">
@@ -2684,9 +2693,9 @@ function renderFibonacciLevelsList() {
         </div>
     `;
     });
-    
+
     list.innerHTML = html;
-    
+
     // Event listeners para checkboxes
     list.querySelectorAll('.fib-visible-checkbox').forEach(cb => {
         cb.addEventListener('change', (e) => {
@@ -2695,7 +2704,7 @@ function renderFibonacciLevelsList() {
             e.target.closest('.fib-level-item').classList.toggle('hidden', !e.target.checked);
         });
     });
-    
+
     // Event listeners para colores
     list.querySelectorAll('.fib-level-color').forEach(input => {
         input.addEventListener('change', (e) => {
@@ -2703,7 +2712,7 @@ function renderFibonacciLevelsList() {
             FIBONACCI_LEVELS[idx].color = hexToRgba(e.target.value, 0.9);
         });
     });
-    
+
     // Event listeners para labels
     list.querySelectorAll('.fib-level-label').forEach(input => {
         input.addEventListener('change', (e) => {
@@ -2711,7 +2720,7 @@ function renderFibonacciLevelsList() {
             FIBONACCI_LEVELS[idx].label = e.target.value;
         });
     });
-    
+
     // Event listeners para eliminar
     list.querySelectorAll('.fib-level-delete').forEach(btn => {
         btn.addEventListener('click', (e) => {
