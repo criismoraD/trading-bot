@@ -887,6 +887,8 @@ async def main():
                     closed_positions = old_positions - current_positions
                     for symbol in closed_positions:
                         print(f"🔔 Posición cerrada detectada: {symbol}")
+                        # Cancelar órdenes LIMIT pendientes (igual que paper trading)
+                        await binance_trader.cancel_pending_orders_for_symbol(symbol)
                         binance_trader.clear_position_info(symbol)
                 
                 # Cada segundo, verificar TP/SL faltantes y actualizar órdenes

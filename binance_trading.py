@@ -1117,6 +1117,32 @@ class BinanceFuturesTrader:
         if symbol in self.active_tp_orders:
             del self.active_tp_orders[symbol]
     
+    async def cancel_pending_orders_for_symbol(self, symbol: str) -> bool:
+        """
+        Cancelar todas las órdenes pendientes de un símbolo cuando la posición se cierra.
+        Esto incluye órdenes LIMIT que estaban esperando para promediar la posición.
+        Similar a _cancel_linked_orders en paper_trading.py
+        """
+        try:
+            # Cancelar todas las órdenes abiertas del símbolo
+            result = await self.cancel_all_orders(symbol)
+            if result:
+                print(f"   🗑️ Órdenes pendientes canceladas para {symbol}")
+                
+                # Limpiar del tracking local
+                orders_to_remove = [
+                    order_id for order_id, info in self.pending_orders_tp_sl.items()
+                    if info.get("symbol") == symbol
+                ]
+                for order_id in orders_to_remove:
+                    del self.pending_orders_tp_sl[order_id]
+                
+                return True
+            return False
+        except Exception as e:
+            print(f"   ⚠️ Error cancelando órdenes de {symbol}: {e}")
+            return False
+    
     async def ensure_tp_sl_for_positions(self):
         """
         Verificar posiciones abiertas que no tienen TP/SL y añadírselos.
