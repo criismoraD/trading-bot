@@ -343,12 +343,11 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                 print(f"   🟠 CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
         
         elif case_num == 2:
-            # Caso 2: MARKET + LIMIT 78.6% + LIMIT 120%, SL 130%
+            # Caso 2: MARKET + LIMIT 78.6%, TP 55%, SL 90%
             tp_price = result.fib_levels['55']
-            # Calcular niveles adicionales
             fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-            limit_price_120 = result.fib_levels.get('low', 0) + (fib_range * 1.20) if fib_range > 0 else None
-            sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.30) if fib_range > 0 else None
+            # SL en nivel 90%
+            sl_price = result.fib_levels.get('low', 0) + (fib_range * 0.90) if fib_range > 0 else None
             
             position = account.place_market_order(
                 symbol=result.symbol,
@@ -375,23 +374,7 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                     fib_high=result.fib_levels.get('high'),
                     fib_low=result.fib_levels.get('low')
                 )
-                # Tercera orden límite en 120%
-                if linked_order and limit_price_120 and account.get_available_margin() >= MIN_AVAILABLE_MARGIN:
-                    third_order = account.place_limit_order(
-                        symbol=result.symbol,
-                        side=OrderSide.SELL,
-                        price=limit_price_120,
-                        margin=margin_per_trade,
-                        take_profit=tp_price,
-                        stop_loss=sl_price,
-                        linked_order_id=position.order_id,
-                        strategy_case=case_num,
-                        fib_high=result.fib_levels.get('high'),
-                        fib_low=result.fib_levels.get('low')
-                    )
-                    if third_order:
-                        print(f"   🟡 CASO 2 | {result.symbol}: MARKET + LIMIT@${limit_price:.4f} + LIMIT@${limit_price_120:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
-                elif linked_order:
+                if linked_order:
                     print(f"   🟡 CASO 2 | {result.symbol}: MARKET + LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
         
         elif case_num == 1:
@@ -557,12 +540,12 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                     available_balance -= margin_per_trade
             
             elif case_num == 2:
-                # Caso 2: MARKET + LIMIT 78.6% + LIMIT 120%, SL 130%
+                # Caso 2: MARKET + LIMIT 78.6%, TP 55%, SL 90%
                 tp_price = result.fib_levels['55']
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
                 limit_price_786 = result.fib_levels['786']
-                limit_price_120 = result.fib_levels.get('low', 0) + (fib_range * 1.20) if fib_range > 0 else None
-                sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.30) if fib_range > 0 else None
+                # SL en nivel 90%
+                sl_price = result.fib_levels.get('low', 0) + (fib_range * 0.90) if fib_range > 0 else None
                 fib_high = result.fib_levels.get('high')
                 fib_low = result.fib_levels.get('low')
                 
@@ -581,7 +564,6 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                 
                 if success1:
                     available_balance -= margin_per_trade
-                    orders_placed = ["MARKET"]
                     
                     # Segunda orden LIMIT en 78.6% (LINKED - TP dinámico)
                     if available_balance >= MIN_AVAILABLE_MARGIN:
@@ -599,27 +581,11 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                         )
                         if success2:
                             available_balance -= margin_per_trade
-                            orders_placed.append(f"LIMIT@${limit_price_786:.4f}")
-                    
-                    # Tercera orden LIMIT en 120% (LINKED - TP dinámico)
-                    if limit_price_120 and available_balance >= MIN_AVAILABLE_MARGIN:
-                        success3 = await binance_trader.execute_limit_short(
-                            symbol=result.symbol,
-                            margin=margin_per_trade,
-                            leverage=leverage,
-                            limit_price=limit_price_120,
-                            take_profit=tp_price,
-                            stop_loss=sl_price,
-                            strategy_case=case_num,
-                            fib_high=fib_high,
-                            fib_low=fib_low,
-                            is_linked_order=True  # TP dinámico
-                        )
-                        if success3:
-                            available_balance -= margin_per_trade
-                            orders_placed.append(f"LIMIT@${limit_price_120:.4f}")
-                    
-                    print(f"   🟡 [REAL] CASO 2 | {result.symbol}: {' + '.join(orders_placed)} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
+                            print(f"   🟡 [REAL] CASO 2 | {result.symbol}: MARKET + LIMIT @ ${limit_price_786:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
+                        else:
+                            print(f"   🟡 [REAL] CASO 2 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
+                    else:
+                        print(f"   🟡 [REAL] CASO 2 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
             
             elif case_num == 1:
                 # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 55%, SL 90%
