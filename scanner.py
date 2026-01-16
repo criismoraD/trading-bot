@@ -2,6 +2,7 @@
 Scanner Multi-Par para Binance Futures
 Escanea top 100 pares, filtra por RSI >= 75, aplica prioridad de casos
 """
+import json
 import asyncio
 import aiohttp
 from typing import List, Dict, Optional, Tuple
@@ -9,6 +10,15 @@ from dataclasses import dataclass
 
 from config import REST_BASE_URL, MARGIN_PER_TRADE, MIN_AVAILABLE_MARGIN, TIMEFRAME, CANDLE_LIMIT
 from fibonacci import calculate_zigzag, find_valid_fibonacci_swing, determine_trading_case
+
+# Cargar límite de operaciones simultáneas desde config
+def get_max_simultaneous_operations() -> int:
+    try:
+        with open('shared_config.json', 'r') as f:
+            config = json.load(f)
+            return config.get('trading', {}).get('max_simultaneous_operations', 20)
+    except:
+        return 20  # Valor por defecto
 
 
 @dataclass
@@ -268,6 +278,9 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
     """
     from paper_trading import OrderSide
     
+    # Obtener límite de operaciones simultáneas
+    max_ops = get_max_simultaneous_operations()
+    
     # Usar cache si está definido, sino hacer fetch
     if scanner.pairs_cache:
         pairs = scanner.pairs_cache
@@ -291,6 +304,12 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
     
     # Procesar todos los resultados en orden de aparición
     for case_num, result in all_results:
+        # Verificar límite de operaciones simultáneas
+        current_ops = len(account.open_positions) + len(account.pending_orders)
+        if current_ops >= max_ops:
+            print(f"⚠️ Límite de operaciones alcanzado: {current_ops}/{max_ops}")
+            break
+        
         if account.get_available_margin() < MIN_AVAILABLE_MARGIN:
             print(f"⚠️ Margen mínimo alcanzado: ${account.get_available_margin():.2f}")
             break
@@ -344,11 +363,11 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                 print(f"   🟠 CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
         
         elif case_num == 2:
-            # Caso 2: MARKET + LIMIT 78.6%, TP 45%, SL 100%
+            # Caso 2: MARKET + LIMIT 78.6%, TP 45%, SL 105%
             tp_price = result.fib_levels['45']
             fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-            # SL en nivel 100% (High)
-            sl_price = result.fib_levels.get('high') if fib_range > 0 else None
+            # SL en nivel 105% (5% por encima del High)
+            sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
             
             position = account.place_market_order(
                 symbol=result.symbol,
@@ -379,14 +398,14 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                     print(f"   🟡 CASO 2 | {result.symbol}: MARKET + LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
         
         elif case_num == 1:
-            # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 45%, SL 100%
+            # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 45%, SL 105%
             if account.get_available_margin() < MIN_AVAILABLE_MARGIN * 2:
                 continue
             tp_price = result.fib_levels['45']
             limit_price_1 = result.fib_levels['618']
-            # SL en nivel 100% (High)
+            # SL en nivel 105% (5% por encima del High)
             fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-            sl_price = result.fib_levels.get('high') if fib_range > 0 else None
+            sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
             
             order1 = account.place_limit_order(
                 symbol=result.symbol,
@@ -425,12 +444,17 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
     Usa margen cruzado y las mismas reglas que paper trading
     """
     
-    # Usar cache si está definido, sino hacer fetch
+    # Obtener pares a escanear (igual que paper trading)
     if scanner.pairs_cache:
         pairs = scanner.pairs_cache
-        print(f"📊 [REAL] Usando {len(pairs)} par(es) definidos: {', '.join(pairs)}")
+        print(f"📊 [REAL] Usando {len(pairs)} par(es) definidos: {', '.join(pairs[:5])}{'...' if len(pairs) > 5 else ''}")
     else:
+        # Fetch de todos los pares (igual que paper trading)
         pairs = await scanner.get_top_pairs()
+        # Añadir pares activos si existen
+        if hasattr(scanner, 'active_pairs_to_include') and scanner.active_pairs_to_include:
+            pairs = list(set(pairs) | scanner.active_pairs_to_include)
+        print(f"📊 [REAL] Escaneando {len(pairs)} pares del mercado")
     
     if not pairs:
         print("❌ No se pudieron obtener pares")
@@ -445,6 +469,9 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
             all_results.append((case_num, result))
     
     print(f"\n📊 [REAL] Encontrados: {len(all_results)} pares con swing válido")
+    
+    # Obtener límite de operaciones simultáneas
+    max_ops = get_max_simultaneous_operations()
     
     # Obtener balance actual de Binance
     try:
@@ -475,8 +502,17 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
         print(f"⚠️ Error obteniendo órdenes: {e}")
         order_symbols = []
     
+    # Actualizar estadísticas de máximo simultáneo
+    binance_trader.update_max_simultaneous(len(open_symbols), len(order_symbols))
+    
     # Procesar todos los resultados en orden de aparición
     for case_num, result in all_results:
+        # Verificar límite de operaciones simultáneas
+        current_ops = len(open_symbols) + len(order_symbols)
+        if current_ops >= max_ops:
+            print(f"⚠️ [REAL] Límite de operaciones alcanzado: {current_ops}/{max_ops}")
+            break
+        
         # Verificar margen mínimo
         if available_balance < MIN_AVAILABLE_MARGIN:
             print(f"⚠️ [REAL] Margen mínimo alcanzado: ${available_balance:.2f}")
@@ -541,12 +577,12 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                     available_balance -= margin_per_trade
             
             elif case_num == 2:
-                # Caso 2: MARKET + LIMIT 78.6%, TP 45%, SL 100%
+                # Caso 2: MARKET + LIMIT 78.6%, TP 45%, SL 105%
                 tp_price = result.fib_levels['45']
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
                 limit_price_786 = result.fib_levels['786']
-                # SL en nivel 100% (High)
-                sl_price = result.fib_levels.get('high') if fib_range > 0 else None
+                # SL en nivel 105% (5% por encima del High)
+                sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
                 fib_high = result.fib_levels.get('high')
                 fib_low = result.fib_levels.get('low')
                 
@@ -589,7 +625,7 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                         print(f"   🟡 [REAL] CASO 2 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
             
             elif case_num == 1:
-                # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 45%, SL 100%
+                # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 45%, SL 105%
                 if available_balance < MIN_AVAILABLE_MARGIN * 2:
                     continue
                 
@@ -597,8 +633,8 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                 limit_price_1 = result.fib_levels['618']
                 limit_price_2 = result.fib_levels['786']
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-                # SL en nivel 100% (High)
-                sl_price = result.fib_levels.get('high') if fib_range > 0 else None
+                # SL en nivel 105% (5% por encima del High)
+                sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
                 fib_high = result.fib_levels.get('high')
                 fib_low = result.fib_levels.get('low')
                 

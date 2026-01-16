@@ -57,8 +57,8 @@ def get_zigzag_config(timeframe: str) -> dict:
 
 def calculate_zigzag(candle_data: List[dict], timeframe: str = "1h") -> List[ZigZagPoint]:
     """
-    Calcular puntos ZigZag - SINCRONIZADO con app.js
-    Esta implementación replica exactamente la lógica de JavaScript
+    Calcular puntos ZigZag - VERSIÓN MEJORADA
+    Detecta correctamente máximos y mínimos locales significativos
     """
     config = get_zigzag_config(timeframe)
     deviation = config["deviation"] / 100
@@ -70,114 +70,148 @@ def calculate_zigzag(candle_data: List[dict], timeframe: str = "1h") -> List[Zig
     
     pivots = []
     
-    # Find initial direction (same as JS)
-    max_price = data[0]["high"]
-    min_price = data[0]["low"]
-    max_index = 0
-    min_index = 0
+    # ===== FASE 1: Encontrar todos los extremos locales =====
+    # Usar una ventana deslizante para detectar máximos y mínimos locales
+    local_highs = []
+    local_lows = []
     
-    for i in range(1, min(depth * 2, len(data))):
-        if data[i]["high"] > max_price:
-            max_price = data[i]["high"]
-            max_index = i
-        if data[i]["low"] < min_price:
-            min_price = data[i]["low"]
-            min_index = i
-    
-    # Determine initial pivot
-    if max_index < min_index:
-        # Started with a high
-        pivots.append(ZigZagPoint(
-            index=max_index,
-            time=data[max_index]["time"],
-            price=max_price,
-            type="high"
-        ))
-        last_pivot_index = max_index
-        last_pivot_price = max_price
-        last_pivot_type = "high"
-    else:
-        # Started with a low
-        pivots.append(ZigZagPoint(
-            index=min_index,
-            time=data[min_index]["time"],
-            price=min_price,
-            type="low"
-        ))
-        last_pivot_index = min_index
-        last_pivot_price = min_price
-        last_pivot_type = "low"
-    
-    # Find subsequent pivots (same algorithm as JS)
-    for i in range(last_pivot_index + 1, len(data)):
-        candle = data[i]
+    for i in range(depth, len(data) - depth):
+        # Verificar si es un máximo local
+        is_high = True
+        current_high = data[i]["high"]
+        for j in range(i - depth, i + depth + 1):
+            if j != i and data[j]["high"] > current_high:
+                is_high = False
+                break
+        if is_high:
+            local_highs.append((i, current_high))
         
-        if last_pivot_type == "high":
-            # Looking for a low
-            if candle["low"] < last_pivot_price * (1 - deviation):
-                # Check if this is a valid low
-                if i - last_pivot_index >= depth:
-                    # Find the actual lowest point in this swing
-                    lowest_price = candle["low"]
-                    lowest_index = i
-                    
-                    for j in range(last_pivot_index + 1, i + 1):
-                        if data[j]["low"] < lowest_price:
-                            lowest_price = data[j]["low"]
-                            lowest_index = j
-                    
-                    pivots.append(ZigZagPoint(
-                        index=lowest_index,
-                        time=data[lowest_index]["time"],
-                        price=lowest_price,
-                        type="low"
-                    ))
-                    last_pivot_index = lowest_index
-                    last_pivot_price = lowest_price
-                    last_pivot_type = "low"
-            elif candle["high"] > last_pivot_price:
-                # Update the high (same as JS: update last pivot)
-                pivots[-1] = ZigZagPoint(
-                    index=i,
-                    time=candle["time"],
-                    price=candle["high"],
-                    type="high"
-                )
-                last_pivot_index = i
-                last_pivot_price = candle["high"]
-        else:
-            # Looking for a high
-            if candle["high"] > last_pivot_price * (1 + deviation):
-                # Check if this is a valid high
-                if i - last_pivot_index >= depth:
-                    # Find the actual highest point in this swing
-                    highest_price = candle["high"]
-                    highest_index = i
-                    
-                    for j in range(last_pivot_index + 1, i + 1):
-                        if data[j]["high"] > highest_price:
-                            highest_price = data[j]["high"]
-                            highest_index = j
-                    
-                    pivots.append(ZigZagPoint(
-                        index=highest_index,
-                        time=data[highest_index]["time"],
-                        price=highest_price,
-                        type="high"
-                    ))
-                    last_pivot_index = highest_index
-                    last_pivot_price = highest_price
-                    last_pivot_type = "high"
-            elif candle["low"] < last_pivot_price:
-                # Update the low (same as JS: update last pivot)
-                pivots[-1] = ZigZagPoint(
-                    index=i,
-                    time=candle["time"],
-                    price=candle["low"],
-                    type="low"
-                )
-                last_pivot_index = i
-                last_pivot_price = candle["low"]
+        # Verificar si es un mínimo local
+        is_low = True
+        current_low = data[i]["low"]
+        for j in range(i - depth, i + depth + 1):
+            if j != i and data[j]["low"] < current_low:
+                is_low = False
+                break
+        if is_low:
+            local_lows.append((i, current_low))
+    
+    # También verificar las últimas velas (pueden ser extremos)
+    # Buscar el máximo en las últimas 'depth' velas
+    if len(data) > depth:
+        last_section_start = len(data) - depth
+        max_in_last = max(range(last_section_start, len(data)), key=lambda x: data[x]["high"])
+        min_in_last = min(range(last_section_start, len(data)), key=lambda x: data[x]["low"])
+        
+        # Añadir si es significativo
+        if not any(h[0] == max_in_last for h in local_highs):
+            # Verificar que sea un máximo real comparado con velas anteriores
+            is_significant_high = True
+            for j in range(max(0, max_in_last - depth), max_in_last):
+                if data[j]["high"] > data[max_in_last]["high"]:
+                    is_significant_high = False
+                    break
+            if is_significant_high:
+                local_highs.append((max_in_last, data[max_in_last]["high"]))
+        
+        if not any(l[0] == min_in_last for l in local_lows):
+            is_significant_low = True
+            for j in range(max(0, min_in_last - depth), min_in_last):
+                if data[j]["low"] < data[min_in_last]["low"]:
+                    is_significant_low = False
+                    break
+            if is_significant_low:
+                local_lows.append((min_in_last, data[min_in_last]["low"]))
+    
+    # ===== FASE 2: Combinar y filtrar por desviación =====
+    # Crear lista combinada de todos los extremos
+    all_extremes = []
+    for idx, price in local_highs:
+        all_extremes.append({"index": idx, "price": price, "type": "high"})
+    for idx, price in local_lows:
+        all_extremes.append({"index": idx, "price": price, "type": "low"})
+    
+    # Ordenar por índice
+    all_extremes.sort(key=lambda x: x["index"])
+    
+    if not all_extremes:
+        return []
+    
+    # ===== FASE 3: Construir ZigZag alternando High-Low =====
+    # Filtrar para alternar entre highs y lows, manteniendo los más significativos
+    
+    # Determinar dirección inicial
+    first_high_idx = next((i for i, e in enumerate(all_extremes) if e["type"] == "high"), None)
+    first_low_idx = next((i for i, e in enumerate(all_extremes) if e["type"] == "low"), None)
+    
+    if first_high_idx is None or first_low_idx is None:
+        return []
+    
+    # Empezar con el que viene primero cronológicamente
+    if first_high_idx < first_low_idx:
+        current_type = "high"
+    else:
+        current_type = "low"
+    
+    filtered_pivots = []
+    
+    i = 0
+    while i < len(all_extremes):
+        # Buscar el mejor extremo del tipo actual
+        best_extreme = None
+        best_idx = i
+        
+        # Agrupar extremos consecutivos del mismo tipo y elegir el mejor
+        while i < len(all_extremes):
+            extreme = all_extremes[i]
+            
+            if extreme["type"] == current_type:
+                if best_extreme is None:
+                    best_extreme = extreme
+                    best_idx = i
+                else:
+                    # Para HIGH, queremos el más alto; para LOW, el más bajo
+                    if current_type == "high" and extreme["price"] > best_extreme["price"]:
+                        best_extreme = extreme
+                        best_idx = i
+                    elif current_type == "low" and extreme["price"] < best_extreme["price"]:
+                        best_extreme = extreme
+                        best_idx = i
+                i += 1
+            else:
+                # Encontramos un extremo del tipo opuesto
+                if best_extreme is not None:
+                    break
+                i += 1
+        
+        if best_extreme is not None:
+            # Verificar desviación mínima respecto al último pivot
+            if filtered_pivots:
+                last_pivot = filtered_pivots[-1]
+                price_change = abs(best_extreme["price"] - last_pivot["price"]) / last_pivot["price"]
+                
+                if price_change >= deviation:
+                    filtered_pivots.append(best_extreme)
+                    current_type = "low" if current_type == "high" else "high"
+                else:
+                    # No cumple desviación, pero si es mejor que el último del mismo tipo, reemplazar
+                    if best_extreme["type"] == last_pivot["type"]:
+                        if (current_type == "high" and best_extreme["price"] > last_pivot["price"]) or \
+                           (current_type == "low" and best_extreme["price"] < last_pivot["price"]):
+                            filtered_pivots[-1] = best_extreme
+            else:
+                filtered_pivots.append(best_extreme)
+                current_type = "low" if current_type == "high" else "high"
+    
+    # ===== FASE 4: Convertir a ZigZagPoint =====
+    for extreme in filtered_pivots:
+        idx = extreme["index"]
+        pivots.append(ZigZagPoint(
+            index=idx,
+            time=data[idx]["time"],
+            price=extreme["price"],
+            type=extreme["type"]
+        ))
     
     return pivots
 
@@ -224,14 +258,30 @@ def find_valid_fibonacci_swing(
     
     # Iterar por los Highs de derecha a izquierda (más reciente primero)
     for current_high in high_points:
-        # Encontrar todos los Lows después de este High
-        lows_after_high = [low for low in low_points if low.index > current_high.index]
-        
-        if not lows_after_high:
+        # Verificar que hay velas después del High
+        if current_high.index >= last_candle_index:
             continue
         
-        # Encontrar el Low más bajo (precio mínimo)
-        lowest_low = min(lows_after_high, key=lambda l: l.price)
+        # ===== BUSCAR EL LOW REAL (precio mínimo de TODAS las velas después del High) =====
+        # No solo entre puntos ZigZag, sino el precio más bajo real
+        lowest_price = float('inf')
+        lowest_index = current_high.index + 1
+        
+        for k in range(current_high.index + 1, last_candle_index + 1):
+            if candle_data[k]["low"] < lowest_price:
+                lowest_price = candle_data[k]["low"]
+                lowest_index = k
+        
+        if lowest_price == float('inf'):
+            continue
+        
+        # Crear un ZigZagPoint virtual con el Low real
+        lowest_low = ZigZagPoint(
+            index=lowest_index,
+            time=candle_data[lowest_index]["time"],
+            price=lowest_price,
+            type="low"
+        )
         
         # Calcular niveles
         range_val = current_high.price - lowest_low.price
@@ -403,10 +453,9 @@ def determine_trading_case(current_price: float, swing: FibonacciSwing) -> int:
     
     # VALIDAR contra min_valid_case del swing
     # Si el swing fue parcialmente invalidado, solo casos >= min_valid_case son válidos
-    # NOTA: Desactivado temporalmente para debug - siempre permitir el caso detectado
-    # if detected_case > 0 and detected_case < swing.min_valid_case:
-    #     print(f"   ⚠️ Case {detected_case} detected but invalidated (min valid = Case {swing.min_valid_case})")
-    #     return 0
+    if detected_case > 0 and detected_case < swing.min_valid_case:
+        print(f"   ⚠️ Case {detected_case} detected but invalidated (min valid = Case {swing.min_valid_case})")
+        return 0
     
     return detected_case
 

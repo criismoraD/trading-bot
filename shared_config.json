@@ -8,10 +8,11 @@
         "case_3_max": 0.75,
         "case_4_min": 0.75,
         "case_4_max": 0.90,
-        "initial_balance": 50.0,
-        "margin_per_trade": 3.0,
-        "min_available_margin": 3.0,
-        "leverage": 10
+        "initial_balance": 80.0,
+        "margin_per_trade": 2.0,
+        "min_available_margin": 2.0,
+        "leverage": 10,
+        "max_simultaneous_operations": 9999
     },
     "fibonacci": {
         "levels": {
@@ -31,14 +32,7 @@
             "100": 1.0
         },
         "invalidation_level": 0.90,
-        "invalidation_level_secondary": 1.0,
-        "tp_levels": {
-            "case_1_initial": 0.55,
-            "case_2_initial": 0.55,
-            "case_3": 0.62,
-            "case_4": 0.62,
-            "dynamic_tp": 0.60
-        }
+        "invalidation_level_secondary": 1.0
     },
     "scanner": {
         "rsi_threshold": 70,

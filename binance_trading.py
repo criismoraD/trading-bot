@@ -70,12 +70,13 @@ class BinanceOrder:
 class BinanceFuturesTrader:
     """Clase para trading real en Binance Futures"""
     
-    def __init__(self):
+    def __init__(self, trades_file: str = "trades_real.json"):
         self.api_key = BINANCE_API_KEY
         self.api_secret = BINANCE_API_SECRET
         self.base_url = FUTURES_BASE_URL
         self.session: Optional[aiohttp.ClientSession] = None
         self.is_connected = False
+        self.trades_file = trades_file
         
         # Cache de información
         self.account_balance: float = 0.0
@@ -98,6 +99,21 @@ class BinanceFuturesTrader:
         
         # Tracking de TP orders activos por símbolo (para cancelar y actualizar)
         self.active_tp_orders: Dict[str, int] = {}  # symbol -> tp_order_id
+        
+        # === NUEVO: Registro de operaciones y estadísticas ===
+        self.trade_history: List[dict] = []  # Historial de trades cerrados
+        self.stats = {
+            "max_simultaneous_positions": 0,
+            "max_simultaneous_orders": 0,
+            "max_simultaneous_total": 0,  # positions + orders
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "total_pnl": 0.0
+        }
+        
+        # Cargar historial si existe
+        self._load_trades()
         
     async def connect(self) -> bool:
         """Conectar y verificar credenciales"""
@@ -129,6 +145,10 @@ class BinanceFuturesTrader:
                 print(f"   💰 Balance USDT: ${balance_info['balance']:.2f}")
                 print(f"   💵 Disponible: ${balance_info['availableBalance']:.2f}")
                 
+                # Mostrar estadísticas cargadas
+                if self.trade_history:
+                    print(f"   📂 Historial: {len(self.trade_history)} trades | Max simultáneo: {self.stats['max_simultaneous_total']}")
+                
                 # Cargar información de símbolos
                 await self.load_symbol_info()
                 print(f"   📊 {len(self.symbol_info)} símbolos cargados")
@@ -142,6 +162,75 @@ class BinanceFuturesTrader:
             traceback.print_exc()
             return False
     
+    def _load_trades(self):
+        """Cargar historial de trades desde JSON"""
+        import os
+        if os.path.exists(self.trades_file):
+            try:
+                with open(self.trades_file, 'r') as f:
+                    data = json.load(f)
+                    self.trade_history = data.get("history", [])
+                    self.stats = data.get("stats", self.stats)
+                    print(f"📂 [REAL] Historial cargado: {len(self.trade_history)} trades")
+            except Exception as e:
+                print(f"⚠️ Error cargando historial real: {e}")
+    
+    def _save_trades(self):
+        """Guardar historial de trades a JSON"""
+        try:
+            data = {
+                "history": self.trade_history,
+                "stats": self.stats,
+                "active_positions_info": self.active_positions_info,
+                "last_updated": datetime.now().isoformat()
+            }
+            with open(self.trades_file, 'w') as f:
+                json.dump(data, f, indent=2, default=str)
+        except Exception as e:
+            print(f"⚠️ Error guardando trades real: {e}")
+    
+    def update_max_simultaneous(self, num_positions: int, num_orders: int):
+        """Actualizar estadística de máximo de operaciones simultáneas"""
+        total = num_positions + num_orders
+        
+        if num_positions > self.stats["max_simultaneous_positions"]:
+            self.stats["max_simultaneous_positions"] = num_positions
+        
+        if num_orders > self.stats["max_simultaneous_orders"]:
+            self.stats["max_simultaneous_orders"] = num_orders
+        
+        if total > self.stats["max_simultaneous_total"]:
+            self.stats["max_simultaneous_total"] = total
+            print(f"📊 [REAL] Nuevo máximo simultáneo: {total} ({num_positions} pos + {num_orders} órd)")
+            self._save_trades()
+    
+    def record_trade_close(self, symbol: str, side: str, entry_price: float, exit_price: float, 
+                           quantity: float, pnl: float, case: int = 0, reason: str = ""):
+        """Registrar cierre de trade en historial"""
+        trade = {
+            "symbol": symbol,
+            "side": side,
+            "entry_price": entry_price,
+            "exit_price": exit_price,
+            "quantity": quantity,
+            "pnl": pnl,
+            "case": case,
+            "reason": reason,
+            "closed_at": datetime.now().isoformat()
+        }
+        
+        self.trade_history.append(trade)
+        self.stats["total_trades"] += 1
+        self.stats["total_pnl"] += pnl
+        
+        if pnl >= 0:
+            self.stats["winning_trades"] += 1
+        else:
+            self.stats["losing_trades"] += 1
+        
+        self._save_trades()
+        print(f"📝 [REAL] Trade registrado: {symbol} PnL: ${pnl:.4f}")
+
     async def _sync_server_time(self):
         """Sincronizar tiempo local con servidor de Binance"""
         global _server_time_offset

@@ -149,12 +149,38 @@ class PaperTradingAccount:
         self.trade_history: List[dict] = []
         self.order_counter = 0
         
+        # === NUEVO: Estadísticas de operaciones simultáneas ===
+        self.stats = {
+            "max_simultaneous_positions": 0,
+            "max_simultaneous_orders": 0,
+            "max_simultaneous_total": 0,  # positions + orders
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0
+        }
+        
         # Cargar historial si existe
         self._load_trades()
     
     def _generate_order_id(self) -> str:
         self.order_counter += 1
         return f"ORD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{self.order_counter}"
+    
+    def update_max_simultaneous(self):
+        """Actualizar estadística de máximo de operaciones simultáneas"""
+        num_positions = len(self.open_positions)
+        num_orders = len(self.pending_orders)
+        total = num_positions + num_orders
+        
+        if num_positions > self.stats["max_simultaneous_positions"]:
+            self.stats["max_simultaneous_positions"] = num_positions
+        
+        if num_orders > self.stats["max_simultaneous_orders"]:
+            self.stats["max_simultaneous_orders"] = num_orders
+        
+        if total > self.stats["max_simultaneous_total"]:
+            self.stats["max_simultaneous_total"] = total
+            print(f"📊 Nuevo máximo simultáneo: {total} ({num_positions} pos + {num_orders} órd)")
     
     def _load_trades(self):
         """Cargar historial de trades desde JSON"""
@@ -164,7 +190,10 @@ class PaperTradingAccount:
                     data = json.load(f)
                     self.trade_history = data.get("history", [])
                     self.balance = data.get("balance", self.initial_balance)
+                    self.stats = data.get("stats", self.stats)
                     print(f"📂 Historial cargado: {len(self.trade_history)} trades, Balance: ${self.balance:.2f}")
+                    if self.stats["max_simultaneous_total"] > 0:
+                        print(f"   📊 Max simultáneo: {self.stats['max_simultaneous_total']} operaciones")
             except Exception as e:
                 print(f"⚠️ Error cargando historial: {e}")
     
@@ -194,11 +223,17 @@ class PaperTradingAccount:
     def _save_trades(self):
         """Guardar historial de trades a JSON"""
         try:
+            # Actualizar estadísticas de trades
+            self.stats["total_trades"] = len(self.trade_history)
+            self.stats["winning_trades"] = len([t for t in self.trade_history if t.get("pnl", 0) >= 0])
+            self.stats["losing_trades"] = len([t for t in self.trade_history if t.get("pnl", 0) < 0])
+            
             data = {
                 "balance": self.balance,
                 "initial_balance": self.initial_balance,
                 "leverage": self.leverage,
                 "history": self.trade_history,
+                "stats": self.stats,
                 "open_positions": {k: self._serialize_position(v) for k, v in self.open_positions.items()},
                 "pending_orders": {k: v.to_dict() for k, v in self.pending_orders.items()},
                 "last_updated": datetime.now().isoformat()
@@ -272,6 +307,7 @@ class PaperTradingAccount:
         )
         
         self.pending_orders[order.id] = order
+        self.update_max_simultaneous()  # Track máximo simultáneo
         self._save_trades()
         
         sl_text = f" | SL: ${stop_loss:.4f}" if stop_loss else ""
@@ -484,6 +520,7 @@ class PaperTradingAccount:
             
             self.open_positions[order_id] = position
             
+        self.update_max_simultaneous()  # Track máximo simultáneo
         self._save_trades()
         
         print(f"✅ Orden ejecutada: {order.side.value} {order.symbol} @ ${fill_price:.4f}")

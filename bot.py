@@ -524,18 +524,19 @@ async def main():
         if account.pending_orders:
             active_pairs.update(order.symbol for order in account.pending_orders.values())
         
+    # Guardar pares activos para añadirlos después del fetch (no reemplazar el escaneo completo)
+    scanner.active_pairs_to_include = set(active_pairs) if active_pairs else set()
+    
     if active_pairs:
-        logger.info(f"Agregando {len(active_pairs)} pares activos al escaneo: {', '.join(active_pairs)}")
-        if not target_pairs:
-            target_pairs = list(active_pairs)
-        else:
-            target_pairs = list(set(target_pairs) | active_pairs)
+        logger.info(f"Pares activos a incluir en escaneo: {', '.join(active_pairs)}")
 
     if target_pairs:
-        scanner.pairs_cache = target_pairs
-        logger.info(f"Pares objetivo: {', '.join(target_pairs)}")
+        # Solo si hay pares específicos definidos manualmente, usar cache
+        scanner.pairs_cache = list(set(target_pairs) | active_pairs)
+        logger.info(f"Pares objetivo (manual): {', '.join(scanner.pairs_cache)}")
     else:
-        # Modo: Escanear TODOS los pares
+        # Modo: Escanear TODOS los pares (no setear pairs_cache)
+        scanner.pairs_cache = None  # Forzar fetch de todos los pares
         print(f"\n📊 Escaneando TODOS los pares disponibles (filtro RSI >= {RSI_THRESHOLD})")
     
     print(f"🎯 Casos: 4 > 3 > 2 > 1 | Niveles Fibonacci desde config")

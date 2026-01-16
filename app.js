@@ -1109,110 +1109,167 @@ async function fetchOpenInterest() {
     }
 }
 
-// ===== ZigZag Algorithm =====
+// ===== ZigZag Algorithm - VERSIÓN MEJORADA =====
 function calculateZigZag(data) {
     const config = getZigZagConfig();
     if (data.length < config.depth * 2) return [];
 
-    const pivots = [];
     const deviation = config.deviation / 100;
     const depth = config.depth;
 
-    let lastPivotIndex = 0;
-    let lastPivotPrice = data[0].close;
-    let lastPivotType = null; // 'high' or 'low'
+    // ===== FASE 1: Encontrar todos los extremos locales =====
+    const localHighs = [];
+    const localLows = [];
 
-    // Find initial direction
-    let maxPrice = data[0].high;
-    let minPrice = data[0].low;
-    let maxIndex = 0;
-    let minIndex = 0;
-
-    for (let i = 1; i < Math.min(depth * 2, data.length); i++) {
-        if (data[i].high > maxPrice) {
-            maxPrice = data[i].high;
-            maxIndex = i;
+    for (let i = depth; i < data.length - depth; i++) {
+        // Verificar si es un máximo local
+        let isHigh = true;
+        const currentHigh = data[i].high;
+        for (let j = i - depth; j <= i + depth; j++) {
+            if (j !== i && data[j].high > currentHigh) {
+                isHigh = false;
+                break;
+            }
         }
-        if (data[i].low < minPrice) {
-            minPrice = data[i].low;
-            minIndex = i;
+        if (isHigh) {
+            localHighs.push({ index: i, price: currentHigh });
+        }
+
+        // Verificar si es un mínimo local
+        let isLow = true;
+        const currentLow = data[i].low;
+        for (let j = i - depth; j <= i + depth; j++) {
+            if (j !== i && data[j].low < currentLow) {
+                isLow = false;
+                break;
+            }
+        }
+        if (isLow) {
+            localLows.push({ index: i, price: currentLow });
         }
     }
 
-    // Determine initial pivot
-    if (maxIndex < minIndex) {
-        // Started with a high
-        pivots.push({ time: data[maxIndex].time, price: maxPrice, type: 'high', index: maxIndex });
-        lastPivotIndex = maxIndex;
-        lastPivotPrice = maxPrice;
-        lastPivotType = 'high';
-    } else {
-        // Started with a low
-        pivots.push({ time: data[minIndex].time, price: minPrice, type: 'low', index: minIndex });
-        lastPivotIndex = minIndex;
-        lastPivotPrice = minPrice;
-        lastPivotType = 'low';
-    }
+    // También verificar las últimas velas (pueden ser extremos)
+    if (data.length > depth) {
+        const lastSectionStart = data.length - depth;
+        let maxInLast = lastSectionStart;
+        let minInLast = lastSectionStart;
+        
+        for (let i = lastSectionStart; i < data.length; i++) {
+            if (data[i].high > data[maxInLast].high) maxInLast = i;
+            if (data[i].low < data[minInLast].low) minInLast = i;
+        }
 
-    // Find subsequent pivots
-    for (let i = lastPivotIndex + 1; i < data.length; i++) {
-        const candle = data[i];
-
-        if (lastPivotType === 'high') {
-            // Looking for a low
-            if (candle.low < lastPivotPrice * (1 - deviation)) {
-                // Check if this is a valid low (not too close to last pivot)
-                if (i - lastPivotIndex >= depth) {
-                    // Find the actual lowest point in this swing
-                    let lowestPrice = candle.low;
-                    let lowestIndex = i;
-
-                    for (let j = lastPivotIndex + 1; j <= i; j++) {
-                        if (data[j].low < lowestPrice) {
-                            lowestPrice = data[j].low;
-                            lowestIndex = j;
-                        }
-                    }
-
-                    pivots.push({ time: data[lowestIndex].time, price: lowestPrice, type: 'low', index: lowestIndex });
-                    lastPivotIndex = lowestIndex;
-                    lastPivotPrice = lowestPrice;
-                    lastPivotType = 'low';
+        // Añadir si es significativo
+        if (!localHighs.some(h => h.index === maxInLast)) {
+            let isSignificantHigh = true;
+            for (let j = Math.max(0, maxInLast - depth); j < maxInLast; j++) {
+                if (data[j].high > data[maxInLast].high) {
+                    isSignificantHigh = false;
+                    break;
                 }
-            } else if (candle.high > lastPivotPrice) {
-                // Update the high
-                pivots[pivots.length - 1] = { time: candle.time, price: candle.high, type: 'high', index: i };
-                lastPivotIndex = i;
-                lastPivotPrice = candle.high;
             }
-        } else {
-            // Looking for a high
-            if (candle.high > lastPivotPrice * (1 + deviation)) {
-                // Check if this is a valid high
-                if (i - lastPivotIndex >= depth) {
-                    // Find the actual highest point in this swing
-                    let highestPrice = candle.high;
-                    let highestIndex = i;
-
-                    for (let j = lastPivotIndex + 1; j <= i; j++) {
-                        if (data[j].high > highestPrice) {
-                            highestPrice = data[j].high;
-                            highestIndex = j;
-                        }
-                    }
-
-                    pivots.push({ time: data[highestIndex].time, price: highestPrice, type: 'high', index: highestIndex });
-                    lastPivotIndex = highestIndex;
-                    lastPivotPrice = highestPrice;
-                    lastPivotType = 'high';
-                }
-            } else if (candle.low < lastPivotPrice) {
-                // Update the low
-                pivots[pivots.length - 1] = { time: candle.time, price: candle.low, type: 'low', index: i };
-                lastPivotIndex = i;
-                lastPivotPrice = candle.low;
+            if (isSignificantHigh) {
+                localHighs.push({ index: maxInLast, price: data[maxInLast].high });
             }
         }
+
+        if (!localLows.some(l => l.index === minInLast)) {
+            let isSignificantLow = true;
+            for (let j = Math.max(0, minInLast - depth); j < minInLast; j++) {
+                if (data[j].low < data[minInLast].low) {
+                    isSignificantLow = false;
+                    break;
+                }
+            }
+            if (isSignificantLow) {
+                localLows.push({ index: minInLast, price: data[minInLast].low });
+            }
+        }
+    }
+
+    // ===== FASE 2: Combinar todos los extremos =====
+    const allExtremes = [];
+    for (const h of localHighs) {
+        allExtremes.push({ index: h.index, price: h.price, type: 'high' });
+    }
+    for (const l of localLows) {
+        allExtremes.push({ index: l.index, price: l.price, type: 'low' });
+    }
+
+    // Ordenar por índice
+    allExtremes.sort((a, b) => a.index - b.index);
+
+    if (allExtremes.length === 0) return [];
+
+    // ===== FASE 3: Construir ZigZag alternando High-Low =====
+    const firstHighIdx = allExtremes.findIndex(e => e.type === 'high');
+    const firstLowIdx = allExtremes.findIndex(e => e.type === 'low');
+
+    if (firstHighIdx === -1 || firstLowIdx === -1) return [];
+
+    let currentType = firstHighIdx < firstLowIdx ? 'high' : 'low';
+    const filteredPivots = [];
+
+    let i = 0;
+    while (i < allExtremes.length) {
+        let bestExtreme = null;
+
+        // Agrupar extremos consecutivos del mismo tipo y elegir el mejor
+        while (i < allExtremes.length) {
+            const extreme = allExtremes[i];
+
+            if (extreme.type === currentType) {
+                if (bestExtreme === null) {
+                    bestExtreme = extreme;
+                } else {
+                    if (currentType === 'high' && extreme.price > bestExtreme.price) {
+                        bestExtreme = extreme;
+                    } else if (currentType === 'low' && extreme.price < bestExtreme.price) {
+                        bestExtreme = extreme;
+                    }
+                }
+                i++;
+            } else {
+                if (bestExtreme !== null) break;
+                i++;
+            }
+        }
+
+        if (bestExtreme !== null) {
+            // Verificar desviación mínima respecto al último pivot
+            if (filteredPivots.length > 0) {
+                const lastPivot = filteredPivots[filteredPivots.length - 1];
+                const priceChange = Math.abs(bestExtreme.price - lastPivot.price) / lastPivot.price;
+
+                if (priceChange >= deviation) {
+                    filteredPivots.push(bestExtreme);
+                    currentType = currentType === 'high' ? 'low' : 'high';
+                } else {
+                    // No cumple desviación, pero si es mejor que el último del mismo tipo, reemplazar
+                    if (bestExtreme.type === lastPivot.type) {
+                        if ((currentType === 'high' && bestExtreme.price > lastPivot.price) ||
+                            (currentType === 'low' && bestExtreme.price < lastPivot.price)) {
+                            filteredPivots[filteredPivots.length - 1] = bestExtreme;
+                        }
+                    }
+                }
+            } else {
+                filteredPivots.push(bestExtreme);
+                currentType = currentType === 'high' ? 'low' : 'high';
+            }
+        }
+    }
+
+    // ===== FASE 4: Convertir a formato de pivots =====
+    const pivots = [];
+    for (const extreme of filteredPivots) {
+        pivots.push({
+            time: data[extreme.index].time,
+            price: extreme.price,
+            type: extreme.type,
+            index: extreme.index
+        });
     }
 
     return pivots;
@@ -1229,92 +1286,99 @@ function clearFibonacciLines() {
 }
 
 function drawZigZag() {
-    // Remove existing zigzag line
-    if (zigzagLineSeries) {
-        chart.removeSeries(zigzagLineSeries);
-        zigzagLineSeries = null;
+    try {
+        // Remove existing zigzag line
+        if (zigzagLineSeries) {
+            chart.removeSeries(zigzagLineSeries);
+            zigzagLineSeries = null;
+        }
+
+        // Clear markers
+        candleSeries.setMarkers([]);
+
+        // Clear Fibonacci lines
+        clearFibonacciLines();
+
+        // Get configured timeframe from sharedConfig or default to current
+        const configuredTimeframe = (sharedConfig && sharedConfig.scanner && sharedConfig.scanner.timeframe)
+            ? sharedConfig.scanner.timeframe
+            : '1h';
+
+        // Only draw ZigZag and Fibonacci on the configured timeframe
+        if (currentInterval !== configuredTimeframe) {
+            console.log(`ZigZag/Fibonacci only available on ${configuredTimeframe.toUpperCase()} timeframe`);
+            return;
+        }
+
+        // Calculate ZigZag points
+        zigzagPoints = calculateZigZag(candleData);
+        console.log(`ZigZag calculated: ${zigzagPoints.length} points`);
+
+        if (zigzagPoints.length < 2) return;
+
+        // Create line series for ZigZag
+        zigzagLineSeries = chart.addLineSeries({
+            color: '#00e5ff',
+            lineWidth: 2,
+            lineStyle: 0, // Solid
+            crosshairMarkerVisible: false,
+            priceLineVisible: false,
+            lastValueVisible: false
+        });
+
+        // Set zigzag data
+        const zigzagData = zigzagPoints.map(p => ({
+            time: p.time,
+            value: p.price
+        }));
+
+        zigzagLineSeries.setData(zigzagData);
+
+        // Add markers for pivot points
+        const markers = zigzagPoints.map(p => ({
+            time: p.time,
+            position: p.type === 'high' ? 'aboveBar' : 'belowBar',
+            color: p.type === 'high' ? '#ef5350' : '#26a69a',
+            shape: p.type === 'high' ? 'arrowDown' : 'arrowUp',
+            text: p.type === 'high' ? 'H' : 'L'
+        }));
+
+        candleSeries.setMarkers(markers);
+
+        // Draw Fibonacci levels for SHORT opportunities
+        // This will also draw a line to the REAL low (not just ZigZag points)
+        drawFibonacciForShort();
+    } catch (error) {
+        console.error('Error in drawZigZag:', error);
     }
-
-    // Clear markers
-    candleSeries.setMarkers([]);
-
-    // Clear Fibonacci lines
-    clearFibonacciLines();
-
-    // Get configured timeframe from sharedConfig or default to current
-    const configuredTimeframe = (sharedConfig && sharedConfig.scanner && sharedConfig.scanner.timeframe)
-        ? sharedConfig.scanner.timeframe
-        : '1h';
-
-    // Only draw ZigZag and Fibonacci on the configured timeframe
-    if (currentInterval !== configuredTimeframe) {
-        console.log(`ZigZag/Fibonacci only available on ${configuredTimeframe.toUpperCase()} timeframe`);
-        return;
-    }
-
-    // Calculate ZigZag points
-    zigzagPoints = calculateZigZag(candleData);
-
-    if (zigzagPoints.length < 2) return;
-
-    // Create line series for ZigZag
-    zigzagLineSeries = chart.addLineSeries({
-        color: '#00e5ff',
-        lineWidth: 2,
-        lineStyle: 0, // Solid
-        crosshairMarkerVisible: false,
-        priceLineVisible: false,
-        lastValueVisible: false
-    });
-
-    // Set zigzag data
-    const zigzagData = zigzagPoints.map(p => ({
-        time: p.time,
-        value: p.price
-    }));
-
-    zigzagLineSeries.setData(zigzagData);
-
-    // Add markers for pivot points
-    const markers = zigzagPoints.map(p => ({
-        time: p.time,
-        position: p.type === 'high' ? 'aboveBar' : 'belowBar',
-        color: p.type === 'high' ? '#ef5350' : '#26a69a',
-        shape: p.type === 'high' ? 'arrowDown' : 'arrowUp',
-        text: p.type === 'high' ? 'H' : 'L'
-    }));
-
-    candleSeries.setMarkers(markers);
-
-    // Draw Fibonacci levels for SHORT opportunities
-    drawFibonacciForShort();
 }
 
 function drawFibonacciForShort() {
-    // Fibonacci lines are already cleaned in drawZigZag
-    // This function should only be called from drawZigZag when on 1h
+    try {
+        // Fibonacci lines are already cleaned in drawZigZag
+        // This function should only be called from drawZigZag when on 1h
 
-    // Check visibility flag
-    if (!showAutoFib) return;
+        // Check visibility flag
+        if (!showAutoFib) return;
 
-    if (zigzagPoints.length < 2) return;
+        if (zigzagPoints.length < 2) return;
 
-    // IMPROVED FIBONACCI LOGIC:
-    // 1. Start from the rightmost HIGH
-    // 2. Find ALL lows to the right of that high
-    // 3. Choose the LOW with the MINIMUM value
-    // 4. Check if 61.8% was touched (only candles to the right of the HIGH)
-    // 5. If touched -> move to the next HIGH to the left, accumulate more lows
-    // 6. Choose the LOWEST of ALL accumulated lows
-    // 7. Repeat until finding a valid swing (61.8% not touched)
+        // IMPROVED FIBONACCI LOGIC:
+        // 1. Start from the rightmost HIGH
+        // 2. Find ALL lows to the right of that high
+        // 3. Choose the LOW with the MINIMUM value
+        // 4. Check if 61.8% was touched (only candles to the right of the HIGH)
+        // 5. If touched -> move to the next HIGH to the left, accumulate more lows
+        // 6. Choose the LOWEST of ALL accumulated lows
+        // 7. Repeat until finding a valid swing (61.8% not touched)
 
-    let swingHigh = null;
-    let swingLow = null;
+        let swingHigh = null;
+        let swingLow = null;
 
-    // Get all HIGH points sorted by index (position in time)
-    const highPoints = zigzagPoints
-        .filter(p => p.type === 'high')
-        .sort((a, b) => b.index - a.index); // Most recent first
+        // Get all HIGH points sorted by index (position in time)
+        const highPoints = zigzagPoints
+            .filter(p => p.type === 'high')
+            .sort((a, b) => b.index - a.index); // Most recent first
 
     // Get all LOW points sorted by index
     const lowPoints = zigzagPoints
@@ -1329,19 +1393,38 @@ function drawFibonacciForShort() {
     // Iterate through HIGHs from right to left
     for (let h = 0; h < highPoints.length; h++) {
         const currentHigh = highPoints[h];
+        const lastCandleIndex = candleData.length - 1;
 
-        // Find ALL lows that are to the RIGHT of this high (after it in time)
-        const lowsAfterHigh = lowPoints.filter(low => low.index > currentHigh.index);
-
-        if (lowsAfterHigh.length === 0) {
-            console.log(`No lows after High at ${currentHigh.price.toFixed(4)}`);
+        // Verificar que hay velas después del High
+        if (currentHigh.index >= lastCandleIndex) {
+            console.log(`No candles after High at ${currentHigh.price.toFixed(4)}`);
             continue;
         }
 
-        // Find the LOW with the MINIMUM VALUE among all lows after this high
-        const lowestLow = lowsAfterHigh.reduce((min, low) =>
-            low.price < min.price ? low : min
-            , lowsAfterHigh[0]);
+        // ===== BUSCAR EL LOW REAL (precio mínimo de TODAS las velas después del High) =====
+        // No solo entre puntos ZigZag, sino el precio más bajo real
+        let lowestPrice = Infinity;
+        let lowestIndex = currentHigh.index + 1;
+
+        for (let k = currentHigh.index + 1; k <= lastCandleIndex; k++) {
+            if (candleData[k].low < lowestPrice) {
+                lowestPrice = candleData[k].low;
+                lowestIndex = k;
+            }
+        }
+
+        if (lowestPrice === Infinity) {
+            console.log(`No valid low found after High at ${currentHigh.price.toFixed(4)}`);
+            continue;
+        }
+
+        // Crear objeto Low con el precio mínimo real
+        const lowestLow = {
+            index: lowestIndex,
+            time: candleData[lowestIndex].time,
+            price: lowestPrice,
+            type: 'low'
+        };
 
         // Calculate 61.8% level
         const range = currentHigh.price - lowestLow.price;
@@ -1382,7 +1465,6 @@ function drawFibonacciForShort() {
         // If any INTERMEDIATE candle touches 58% -> invalidate, move to next High
         // NEW: If current candle OR 1 previous candle is at 58%+ -> Fibonacci stays valid
 
-        const lastCandleIndex = candleData.length - 1;
         const currentCandle = candleData[lastCandleIndex];
 
         // Count intermediate candles that touch 58% (from Low to 3 candles before current)
@@ -1522,7 +1604,7 @@ function drawFibonacciForShort() {
             console.log(`   58% Level: ${fib58Level.toFixed(4)}`);
             console.log(`   61.8% Level: ${fib618Level.toFixed(4)}`);
             console.log(`   Recent candles at 58%+: ${recentCandlesAt58 ? 'YES - Entry zone!' : 'No'}`);
-            console.log(`   Lows considered: ${lowsAfterHigh.length}`);
+            console.log(`   Low found at candle index: ${lowestLow.index}`);
             break;
         } else if (invalidatedBy58) {
             console.log(`❌ Swing invalidated (58% touched by intermediate candles):`);
@@ -1533,6 +1615,16 @@ function drawFibonacciForShort() {
 
     if (!swingHigh || !swingLow) {
         console.log('⚠️ No valid swing for SHORT Fibonacci (all levels already touched/invalidated)');
+        return;
+    }
+
+    // Verificar que swingLow tenga time válido
+    if (!swingLow.time && swingLow.index !== undefined && candleData[swingLow.index]) {
+        swingLow.time = candleData[swingLow.index].time;
+    }
+
+    if (!swingLow.time || !swingHigh.time) {
+        console.log('⚠️ Invalid swing times');
         return;
     }
 
@@ -1604,6 +1696,9 @@ function drawFibonacciForShort() {
         const price = swingLow.price + (range * fib.level);
         console.log(`   ${fib.label}: ${price.toFixed(4)}`);
     });
+    } catch (error) {
+        console.error('Error in drawFibonacciForShort:', error);
+    }
 }
 
 function updateZigZagOnNewCandle() {
