@@ -1965,7 +1965,24 @@ async function init() {
     }
 
     // Refresh panel every 2 seconds
-    setInterval(loadTradesPanel, 2000);
+    let tradesPanelInterval = setInterval(loadTradesPanel, 2000);
+    
+    // Exponer función para pausar/reanudar polling desde modo análisis
+    window.pauseTradesPolling = () => {
+        if (tradesPanelInterval) {
+            clearInterval(tradesPanelInterval);
+            tradesPanelInterval = null;
+            console.log('⏸️ Trades polling pausado (modo análisis)');
+        }
+    };
+    
+    window.resumeTradesPolling = () => {
+        if (!tradesPanelInterval) {
+            tradesPanelInterval = setInterval(loadTradesPanel, 2000);
+            loadTradesPanel(); // Cargar inmediatamente
+            console.log('▶️ Trades polling reanudado');
+        }
+    };
 
     // ===== Initialization =====
     initChart();
@@ -2158,12 +2175,15 @@ function setupAnalysisMode() {
         navigation.style.display = analysisMode ? 'flex' : 'none';
         
         if (analysisMode) {
+            // Pausar polling de trades.json normal
+            if (window.pauseTradesPolling) window.pauseTradesPolling();
             await loadAnalysisFile(fileSelect.value);
         } else {
-            // Volver al modo normal
+            // Volver al modo normal - reanudar polling
             clearAnalysisLines();
             analysisData = null;
             filteredTrades = [];
+            if (window.resumeTradesPolling) window.resumeTradesPolling();
         }
     });
     
@@ -2202,7 +2222,10 @@ async function loadAnalysisFile(filename) {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         analysisData = await response.json();
         
-        console.log(`📊 Cargado ${filename}: ${analysisData.history?.length || 0} trades`);
+        console.log(`📊 Cargado ${filename}: ${analysisData.history?.length || 0} trades cerradas`);
+        
+        // Actualizar panel de operaciones con datos del archivo de análisis
+        updateAnalysisTradesPanel(analysisData);
         
         currentCaseFilter = 'all';
         document.querySelectorAll('.case-btn').forEach(b => b.classList.remove('active'));
@@ -2214,6 +2237,93 @@ async function loadAnalysisFile(filename) {
         console.error('Error cargando archivo de análisis:', error);
         showToast('Error cargando archivo', 'error');
     }
+}
+
+// Actualizar panel de operaciones con datos del archivo de análisis (solo lectura)
+function updateAnalysisTradesPanel(data) {
+    const tradesList = document.getElementById('tradesList');
+    const tradesCount = document.getElementById('tradesCount');
+    const accountBalance = document.getElementById('accountBalance');
+    const accountPnl = document.getElementById('accountPnl');
+    const marginBalance = document.getElementById('marginBalance');
+    
+    if (!tradesList) return;
+    
+    // Actualizar balance del archivo
+    if (accountBalance && data.balance !== undefined) {
+        accountBalance.textContent = `$${data.balance.toFixed(2)}`;
+    }
+    
+    // Calcular PnL total del historial
+    const totalPnl = (data.history || []).reduce((sum, t) => sum + (t.pnl || 0), 0);
+    if (accountPnl) {
+        accountPnl.textContent = `$${totalPnl.toFixed(4)}`;
+        accountPnl.className = totalPnl >= 0 ? 'pnl-value positive' : 'pnl-value negative';
+    }
+    
+    if (marginBalance) {
+        marginBalance.textContent = `$${(data.balance || 0).toFixed(2)}`;
+    }
+    
+    // Posiciones abiertas del archivo (si existen - congeladas)
+    const openPositions = Object.entries(data.open_positions || {});
+    const pendingOrders = Object.entries(data.pending_orders || {});
+    const allTrades = [...openPositions, ...pendingOrders];
+    
+    if (tradesCount) {
+        tradesCount.textContent = allTrades.length;
+    }
+    
+    // Siempre limpiar y mostrar estado del archivo de análisis
+    if (allTrades.length === 0) {
+        tradesList.innerHTML = `
+            <div class="no-trades" style="text-align: center; padding: 10px;">
+                <div>🔬 <b>Modo Análisis</b></div>
+                <div style="font-size: 10px; color: #888; margin-top: 4px;">
+                    ${data.history?.length || 0} trades cerradas
+                </div>
+                <div style="font-size: 9px; color: #666; margin-top: 4px;">
+                    Sin posiciones abiertas en este archivo
+                </div>
+            </div>`;
+        return;
+    }
+    
+    let html = '';
+    
+    // Mostrar posiciones (congeladas - snapshot)
+    openPositions.forEach(([id, pos]) => {
+        html += `
+        <div class="trade-item position" style="opacity: 0.7; cursor: default;">
+            <div class="trade-item-header">
+                <span class="trade-symbol">${pos.symbol} <span style="font-size:0.8em; color:#aaa;">(C${pos.strategy_case || '?'})</span></span>
+                <span class="trade-type position">📷 SNAPSHOT</span>
+            </div>
+            <div class="trade-details">
+                <span>Entry: $${(pos.entry_price || 0).toFixed(4)}</span>
+                <span>TP: $${(pos.take_profit || 0).toFixed(4)}</span>
+            </div>
+        </div>
+    `;
+    });
+    
+    // Mostrar órdenes pendientes (congeladas - snapshot)
+    pendingOrders.forEach(([id, order]) => {
+        html += `
+        <div class="trade-item limit" style="opacity: 0.7; cursor: default;">
+            <div class="trade-item-header">
+                <span class="trade-symbol">${order.symbol} <span style="font-size:0.8em; color:#aaa;">(C${order.strategy_case || '?'})</span></span>
+                <span class="trade-type limit">📷 SNAPSHOT</span>
+            </div>
+            <div class="trade-details">
+                <span>Precio: $${(order.price || 0).toFixed(4)}</span>
+                <span>TP: $${(order.take_profit || 0).toFixed(4)}</span>
+            </div>
+        </div>
+    `;
+    });
+    
+    tradesList.innerHTML = html;
 }
 
 function applyAnalysisFilter() {
