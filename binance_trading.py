@@ -286,7 +286,9 @@ class BinanceFuturesTrader:
                     "minNotional": min_notional,
                     "orderTypes": order_types,
                     "supportsStopMarket": "STOP_MARKET" in order_types,
-                    "supportsTpMarket": "TAKE_PROFIT_MARKET" in order_types
+                    "supportsTpMarket": "TAKE_PROFIT_MARKET" in order_types,
+                    "supportsStop": "STOP" in order_types,
+                    "supportsTp": "TAKE_PROFIT" in order_types
                 }
     
     def format_quantity(self, symbol: str, quantity: float) -> str:
@@ -461,13 +463,12 @@ class BinanceFuturesTrader:
             logger.warning(f"⚠️ Cantidad SL muy pequeña para {symbol}: {quantity} → {qty_str}")
             return None
         
-        # Verificar si soporta STOP_MARKET
-        supports_stop_market = True
-        if symbol in self.symbol_info:
-            supports_stop_market = self.symbol_info[symbol].get("supportsStopMarket", True)
+        # Obtener tipos soportados
+        supports_stop_market = self.symbol_info.get(symbol, {}).get("supportsStopMarket", True)
+        supports_stop = self.symbol_info.get(symbol, {}).get("supportsStop", True)
         
+        # Intentar STOP_MARKET primero (si está soportado)
         if supports_stop_market:
-            # Intentar STOP_MARKET primero
             params = {
                 "symbol": symbol,
                 "side": side,
@@ -482,26 +483,43 @@ class BinanceFuturesTrader:
                 logger.info(f"🛑 STOP LOSS: {side} {symbol} @ ${stop_price}")
                 return result
         
-        # Fallback: usar STOP (orden límite condicional)
-        if side == "BUY":
-            exec_price = stop_price * 1.01  # 1% slippage para asegurar fill
-        else:
-            exec_price = stop_price * 0.99
+        # Fallback 1: usar STOP (orden límite condicional)
+        if supports_stop:
+            if side == "BUY":
+                exec_price = stop_price * 1.01  # 1% slippage para asegurar fill
+            else:
+                exec_price = stop_price * 0.99
+            
+            params = {
+                "symbol": symbol,
+                "side": side,
+                "type": "STOP",
+                "stopPrice": self.format_price(symbol, stop_price),
+                "price": self.format_price(symbol, exec_price),
+                "quantity": qty_str,
+                "timeInForce": "GTC",
+                "reduceOnly": "true"
+            }
+            
+            result = await self._request("POST", "/fapi/v1/order", params, signed=True)
+            if result:
+                logger.info(f"🛑 STOP LOSS (LIMIT): {side} {symbol} @ ${stop_price}")
+                return result
         
+        # Fallback 2: Usar STOP_MARKET sin workingType (algunos símbolos no soportan MARK_PRICE)
         params = {
             "symbol": symbol,
             "side": side,
-            "type": "STOP",
+            "type": "STOP_MARKET",
             "stopPrice": self.format_price(symbol, stop_price),
-            "price": self.format_price(symbol, exec_price),
             "quantity": qty_str,
-            "timeInForce": "GTC",
             "reduceOnly": "true"
         }
-        
         result = await self._request("POST", "/fapi/v1/order", params, signed=True)
         if result:
-            logger.info(f"🛑 STOP LOSS (LIMIT): {side} {symbol} @ ${stop_price}")
+            logger.info(f"🛑 STOP LOSS (MARKET sin MARK_PRICE): {side} {symbol} @ ${stop_price}")
+        else:
+            logger.warning(f"⚠️ No se pudo crear SL para {symbol} - ningún tipo de orden soportado")
         
         return result
     
@@ -518,13 +536,12 @@ class BinanceFuturesTrader:
             logger.warning(f"⚠️ Cantidad TP muy pequeña para {symbol}: {quantity} → {qty_str}")
             return None
         
-        # Verificar si soporta TAKE_PROFIT_MARKET
-        supports_tp_market = True
-        if symbol in self.symbol_info:
-            supports_tp_market = self.symbol_info[symbol].get("supportsTpMarket", True)
+        # Obtener tipos soportados
+        supports_tp_market = self.symbol_info.get(symbol, {}).get("supportsTpMarket", True)
+        supports_tp = self.symbol_info.get(symbol, {}).get("supportsTp", True)
         
+        # Intentar TAKE_PROFIT_MARKET primero (si está soportado)
         if supports_tp_market:
-            # Intentar TAKE_PROFIT_MARKET primero
             params = {
                 "symbol": symbol,
                 "side": side,
@@ -539,18 +556,40 @@ class BinanceFuturesTrader:
                 logger.info(f"🎯 TAKE PROFIT: {side} {symbol} @ ${tp_price}")
                 return result
         
-        # Fallback: usar TAKE_PROFIT (orden límite condicional)
+        # Fallback 1: usar TAKE_PROFIT (orden límite condicional)
+        if supports_tp:
+            if side == "BUY":
+                exec_price = tp_price * 1.005  # 0.5% slippage
+            else:
+                exec_price = tp_price * 0.995
+            
+            params = {
+                "symbol": symbol,
+                "side": side,
+                "type": "TAKE_PROFIT",
+                "stopPrice": self.format_price(symbol, tp_price),
+                "price": self.format_price(symbol, exec_price),
+                "quantity": qty_str,
+                "timeInForce": "GTC",
+                "reduceOnly": "true"
+            }
+            
+            result = await self._request("POST", "/fapi/v1/order", params, signed=True)
+            if result:
+                logger.info(f"🎯 TAKE PROFIT (LIMIT): {side} {symbol} @ ${tp_price}")
+                return result
+        
+        # Fallback 2: Orden LIMIT simple con reduceOnly (último recurso)
         if side == "BUY":
-            exec_price = tp_price * 1.005  # 0.5% slippage
+            exec_price = tp_price * 1.002  # Ligeramente por encima del TP
         else:
-            exec_price = tp_price * 0.995
+            exec_price = tp_price * 0.998
         
         params = {
             "symbol": symbol,
             "side": side,
-            "type": "TAKE_PROFIT",
-            "stopPrice": self.format_price(symbol, tp_price),
-            "price": self.format_price(symbol, exec_price),
+            "type": "LIMIT",
+            "price": self.format_price(symbol, tp_price),
             "quantity": qty_str,
             "timeInForce": "GTC",
             "reduceOnly": "true"
@@ -558,7 +597,9 @@ class BinanceFuturesTrader:
         
         result = await self._request("POST", "/fapi/v1/order", params, signed=True)
         if result:
-            logger.info(f"🎯 TAKE PROFIT (LIMIT): {side} {symbol} @ ${tp_price}")
+            logger.info(f"🎯 TAKE PROFIT (LIMIT reduceOnly): {side} {symbol} @ ${tp_price}")
+        else:
+            logger.warning(f"⚠️ No se pudo crear TP para {symbol} - ningún tipo de orden soportado")
         
         return result
     
@@ -1051,6 +1092,74 @@ class BinanceFuturesTrader:
             del self.active_positions_info[symbol]
         if symbol in self.active_tp_orders:
             del self.active_tp_orders[symbol]
+    
+    async def ensure_tp_sl_for_positions(self):
+        """
+        Verificar posiciones abiertas que no tienen TP/SL y añadírselos.
+        Usa la info guardada en active_positions_info para saber los niveles.
+        Llamar periódicamente después de cada escaneo.
+        """
+        # Primero actualizar posiciones desde Binance
+        await self.get_positions()
+        
+        if not self.positions:
+            return
+        
+        # Obtener todas las órdenes abiertas para saber qué posiciones ya tienen TP/SL
+        all_orders = await self._request("GET", "/fapi/v1/openOrders", signed=True)
+        if not all_orders:
+            all_orders = []
+        
+        # Crear set de símbolos que ya tienen TP o SL
+        symbols_with_tp = set()
+        symbols_with_sl = set()
+        
+        for order in all_orders:
+            order_type = order.get("type", "")
+            symbol = order.get("symbol", "")
+            
+            if order_type in ["TAKE_PROFIT", "TAKE_PROFIT_MARKET"]:
+                symbols_with_tp.add(symbol)
+            elif order_type in ["STOP", "STOP_MARKET"]:
+                symbols_with_sl.add(symbol)
+        
+        # Revisar cada posición
+        for symbol, pos in self.positions.items():
+            pos_info = self.active_positions_info.get(symbol)
+            
+            if not pos_info:
+                # No tenemos info de esta posición, no podemos saber TP/SL
+                continue
+            
+            needs_tp = symbol not in symbols_with_tp and pos_info.get("take_profit")
+            needs_sl = symbol not in symbols_with_sl and pos_info.get("stop_loss")
+            
+            if not needs_tp and not needs_sl:
+                continue
+            
+            # Determinar el lado para cerrar
+            close_side = "BUY" if pos.side == "SHORT" else "SELL"
+            
+            if needs_tp:
+                tp_price = pos_info["take_profit"]
+                print(f"🔧 Añadiendo TP faltante para {symbol} @ ${tp_price:.4f}")
+                tp_result = await self.place_take_profit(symbol, close_side, tp_price, pos.quantity)
+                if tp_result:
+                    tp_order_id = tp_result.get("orderId")
+                    self.active_tp_orders[symbol] = tp_order_id
+                    pos_info["tp_order_id"] = tp_order_id
+                    print(f"   ✅ TP creado para {symbol}")
+                else:
+                    print(f"   ❌ No se pudo crear TP para {symbol}")
+            
+            if needs_sl:
+                sl_price = pos_info["stop_loss"]
+                print(f"🔧 Añadiendo SL faltante para {symbol} @ ${sl_price:.4f}")
+                sl_result = await self.place_stop_loss(symbol, close_side, sl_price, pos.quantity)
+                if sl_result:
+                    print(f"   ✅ SL creado para {symbol}")
+                else:
+                    print(f"   ❌ No se pudo crear SL para {symbol}")
 
 
 # Instancia global del trader

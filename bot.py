@@ -892,6 +892,9 @@ async def main():
                 # Ejecutar escaneo según modo
                 if trading_mode == "real" and binance_trader:
                     await run_priority_scan_real(scanner, binance_trader, MARGIN_PER_TRADE, LEVERAGE)
+                    
+                    # Verificar y añadir TP/SL faltantes a posiciones
+                    await binance_trader.ensure_tp_sl_for_positions()
                 else:
                     await run_priority_scan(scanner, account, MARGIN_PER_TRADE)
                 
