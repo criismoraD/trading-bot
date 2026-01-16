@@ -5,6 +5,7 @@ Envía reportes automáticos cada 20 minutos y responde a comandos
 import asyncio
 import aiohttp
 import os
+import subprocess
 from datetime import datetime
 from typing import Optional, Dict, List
 from dataclasses import dataclass
@@ -86,8 +87,27 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error en send_document: {e}")
             return False
-    
-    async def broadcast_message(self, text: str):
+            logger.error(f"Error en send_message: {e}")
+            return False
+            
+    def _get_bot_version(self) -> str:
+        """Obtener versión actual (hash git)"""
+        try:
+            # Intentar obtener hash corto
+            version = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"], 
+                stderr=subprocess.STDOUT
+            ).decode('utf-8').strip()
+            
+            # Intentar obtener fecha del commit
+            date = subprocess.check_output(
+                ["git", "log", "-1", "--format=%cd", "--date=short"],
+                stderr=subprocess.STDOUT
+            ).decode('utf-8').strip()
+            
+            return f"Build: {version} ({date})"
+        except Exception:
+            return "Versión desconocida (no detectado git)"
         """Enviar mensaje a todos los chats autorizados"""
         for chat_id in AUTHORIZED_CHATS:
             await self.send_message(chat_id, text)
@@ -365,6 +385,10 @@ Tu chat ha sido registrado para recibir notificaciones.
             path = os.path.join(os.getcwd(), 'trades.json')
             await self.send_document(chat_id, path, caption="📂 Historial de Trades (trades.json)")
             
+        elif command == "/version":
+            version = self._get_bot_version()
+            await self.send_message(chat_id, f"ℹ️ <b>Versión del Bot</b>\n\n🔹 {version}")
+
         elif command == "/help":
             await self.send_message(chat_id, """
 <b>📚 AYUDA</b>
@@ -377,6 +401,7 @@ Tu chat ha sido registrado para recibir notificaciones.
 /history - Historial de operaciones cerradas
 /history 1 - Filtrar por caso (1, 2, 3 o 4)
 /download - Descargar archivo trades.json
+/version - Ver versión del bot
 
 <b>Notificaciones automáticas:</b>
 • Reportes cada 20 minutos
