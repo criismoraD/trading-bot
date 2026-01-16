@@ -11,7 +11,7 @@ trades.json
 database.sqlite
 
 # Config (Contains sensitive info)
-shared_config.json
+
 
 # Web
 node_modules/
