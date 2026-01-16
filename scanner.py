@@ -172,6 +172,7 @@ class MarketScanner:
                 case=case,
                 current_price=current_price,
                 fib_levels={
+                    '45': swing.levels.get('45', swing.low.price + (swing.high.price - swing.low.price) * 0.45),
                     '50': swing.levels.get('50', 0),
                     '55': swing.levels.get('55', swing.low.price + (swing.high.price - swing.low.price) * 0.55),
                     '60': swing.levels.get('60', swing.low.price + (swing.high.price - swing.low.price) * 0.60),
@@ -302,8 +303,8 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
         
         # Ejecutar según el caso
         if case_num == 4:
-            # Caso 4: MARKET, TP 62%, SL 105%
-            tp_price = result.fib_levels.get('62', result.fib_levels['618'])
+            # Caso 4: MARKET, TP 60%, SL 105%
+            tp_price = result.fib_levels['60']
             # Calcular SL en nivel 105% (5% por encima del High)
             fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
             sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
@@ -322,9 +323,9 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                 print(f"   🔴 CASO 4 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
         
         elif case_num == 3:
-            # Caso 3: LIMIT 78.6%, TP 62%, SL 105%
+            # Caso 3: LIMIT 78.6%, TP 55%, SL 105%
             limit_price = result.fib_levels['786']
-            tp_price = result.fib_levels.get('62', result.fib_levels['618'])
+            tp_price = result.fib_levels['55']
             # Calcular SL en nivel 105%
             fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
             sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
@@ -343,11 +344,11 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                 print(f"   🟠 CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
         
         elif case_num == 2:
-            # Caso 2: MARKET + LIMIT 78.6%, TP 55%, SL 90%
-            tp_price = result.fib_levels['55']
+            # Caso 2: MARKET + LIMIT 78.6%, TP 45%, SL 100%
+            tp_price = result.fib_levels['45']
             fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-            # SL en nivel 90%
-            sl_price = result.fib_levels.get('low', 0) + (fib_range * 0.90) if fib_range > 0 else None
+            # SL en nivel 100% (High)
+            sl_price = result.fib_levels.get('high') if fib_range > 0 else None
             
             position = account.place_market_order(
                 symbol=result.symbol,
@@ -378,14 +379,14 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                     print(f"   🟡 CASO 2 | {result.symbol}: MARKET + LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
         
         elif case_num == 1:
-            # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 50%, SL 90%
+            # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 45%, SL 100%
             if account.get_available_margin() < MIN_AVAILABLE_MARGIN * 2:
                 continue
-            tp_price = result.fib_levels['50']
+            tp_price = result.fib_levels['45']
             limit_price_1 = result.fib_levels['618']
-            # SL en nivel 90%
+            # SL en nivel 100% (High)
             fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-            sl_price = result.fib_levels.get('low', 0) + (fib_range * 0.90) if fib_range > 0 else None
+            sl_price = result.fib_levels.get('high') if fib_range > 0 else None
             
             order1 = account.place_limit_order(
                 symbol=result.symbol,
@@ -492,8 +493,8 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
         try:
             # Ejecutar según el caso
             if case_num == 4:
-                # Caso 4: MARKET, TP 62%, SL 105%
-                tp_price = result.fib_levels.get('62', result.fib_levels['618'])
+                # Caso 4: MARKET, TP 60%, SL 105%
+                tp_price = result.fib_levels['60']
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
                 sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
                 fib_high = result.fib_levels.get('high')
@@ -515,9 +516,9 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                     available_balance -= margin_per_trade
             
             elif case_num == 3:
-                # Caso 3: LIMIT 78.6%, TP 62%, SL 105%
+                # Caso 3: LIMIT 78.6%, TP 55%, SL 105%
                 limit_price = result.fib_levels['786']
-                tp_price = result.fib_levels.get('62', result.fib_levels['618'])
+                tp_price = result.fib_levels['55']
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
                 sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
                 fib_high = result.fib_levels.get('high')
@@ -540,12 +541,12 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                     available_balance -= margin_per_trade
             
             elif case_num == 2:
-                # Caso 2: MARKET + LIMIT 78.6%, TP 55%, SL 90%
-                tp_price = result.fib_levels['55']
+                # Caso 2: MARKET + LIMIT 78.6%, TP 45%, SL 100%
+                tp_price = result.fib_levels['45']
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
                 limit_price_786 = result.fib_levels['786']
-                # SL en nivel 90%
-                sl_price = result.fib_levels.get('low', 0) + (fib_range * 0.90) if fib_range > 0 else None
+                # SL en nivel 100% (High)
+                sl_price = result.fib_levels.get('high') if fib_range > 0 else None
                 fib_high = result.fib_levels.get('high')
                 fib_low = result.fib_levels.get('low')
                 
@@ -588,15 +589,16 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                         print(f"   🟡 [REAL] CASO 2 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
             
             elif case_num == 1:
-                # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 50%, SL 90%
+                # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 45%, SL 100%
                 if available_balance < MIN_AVAILABLE_MARGIN * 2:
                     continue
                 
-                tp_price = result.fib_levels['50']
+                tp_price = result.fib_levels['45']
                 limit_price_1 = result.fib_levels['618']
                 limit_price_2 = result.fib_levels['786']
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-                sl_price = result.fib_levels.get('low', 0) + (fib_range * 0.90) if fib_range > 0 else None
+                # SL en nivel 100% (High)
+                sl_price = result.fib_levels.get('high') if fib_range > 0 else None
                 fib_high = result.fib_levels.get('high')
                 fib_low = result.fib_levels.get('low')
                 

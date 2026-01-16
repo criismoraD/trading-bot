@@ -393,19 +393,19 @@ class PaperTradingAccount:
         order.filled_at = datetime.now().isoformat()
         order.price = fill_price  # Precio real de ejecución
         
-        # ===== TP DINÁMICO: Si esta orden está vinculada, actualizar TP de posición principal a 60% =====
+        # ===== TP DINÁMICO: Si esta orden está vinculada, actualizar TP de posición principal a 50% =====
         if order.linked_order_id:
             # Esta es una orden secundaria vinculada a una posición existente
-            # Actualizar TP de la posición principal al nivel 60%
+            # Actualizar TP de la posición principal al nivel 50%
             if order.linked_order_id in self.open_positions:
                 main_position = self.open_positions[order.linked_order_id]
-                # Calcular nuevo TP (60% del rango)
-                # Asumiendo SHORT: el 60% está más arriba que el 55%
+                # Calcular nuevo TP (50% del rango)
+                # Asumiendo SHORT: el 50% está más arriba que el 45%
                 # Usamos la diferencia para calcular el nuevo nivel
                 old_tp = main_position.take_profit
-                # Mover TP de nivel 55% a nivel 60% (subir un 5% del rango)
+                # Mover TP de nivel 45% a nivel 50% (subir un 5% del rango)
                 range_estimate = abs(main_position.entry_price - old_tp) / 0.05  # Estimación del rango
-                new_tp = old_tp + (range_estimate * 0.05)  # Nuevo TP en 60%
+                new_tp = old_tp + (range_estimate * 0.05)  # Nuevo TP en 50%
                 main_position.take_profit = new_tp
                 print(f"🔄 TP DINÁMICO: {order.symbol} TP actualizado de ${old_tp:.4f} → ${new_tp:.4f}")
         
