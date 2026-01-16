@@ -4,6 +4,7 @@ Envía reportes automáticos cada 20 minutos y responde a comandos
 """
 import asyncio
 import aiohttp
+import os
 from datetime import datetime
 from typing import Optional, Dict, List
 from dataclasses import dataclass
@@ -58,6 +59,32 @@ class TelegramBot:
                         return False
         except Exception as e:
             logger.error(f"Error en send_message: {e}")
+            return False
+
+    async def send_document(self, chat_id: int, file_path: str, caption: str = "") -> bool:
+        """Enviar documento a un chat"""
+        url = f"{self.api_url}/sendDocument"
+        
+        if not os.path.exists(file_path):
+            await self.send_message(chat_id, f"⚠️ Archivo no encontrado: {file_path}")
+            return False
+
+        try:
+            data = aiohttp.FormData()
+            data.add_field('chat_id', str(chat_id))
+            data.add_field('caption', caption)
+            data.add_field('document', open(file_path, 'rb'), filename=os.path.basename(file_path))
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=data) as response:
+                    if response.status == 200:
+                        return True
+                    else:
+                        error = await response.text()
+                        logger.error(f"Error enviando documento: {error}")
+                        return False
+        except Exception as e:
+            logger.error(f"Error en send_document: {e}")
             return False
     
     async def broadcast_message(self, text: str):
@@ -302,6 +329,7 @@ class TelegramBot:
 /positions - Ver posiciones abiertas
 /history - Operaciones cerradas (+ caso)
 /stats - Estadísticas detalladas
+/download - Descargar historial (JSON)
 /help - Mostrar ayuda
 
 Tu chat ha sido registrado para recibir notificaciones.
@@ -332,6 +360,10 @@ Tu chat ha sido registrado para recibir notificaciones.
                 except ValueError:
                     pass
             await self.send_message(chat_id, self.format_history(case_filter))
+
+        elif command == "/download":
+            path = os.path.join(os.getcwd(), 'trades.json')
+            await self.send_document(chat_id, path, caption="📂 Historial de Trades (trades.json)")
             
         elif command == "/help":
             await self.send_message(chat_id, """
@@ -344,6 +376,7 @@ Tu chat ha sido registrado para recibir notificaciones.
 /stats - Estadísticas detalladas
 /history - Historial de operaciones cerradas
 /history 1 - Filtrar por caso (1, 2, 3 o 4)
+/download - Descargar archivo trades.json
 
 <b>Notificaciones automáticas:</b>
 • Reportes cada 20 minutos
