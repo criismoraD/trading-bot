@@ -91,6 +91,13 @@ class BinanceFuturesTrader:
         # Cuando se llenan, añadimos TP/SL automáticamente
         self.pending_orders_tp_sl: Dict[int, dict] = {}
         
+        # Tracking de posiciones activas con info Fibonacci para TP dinámico
+        # key: symbol, value: info de posición incluyendo fib levels
+        self.active_positions_info: Dict[str, dict] = {}
+        
+        # Tracking de TP orders activos por símbolo (para cancelar y actualizar)
+        self.active_tp_orders: Dict[str, int] = {}  # symbol -> tp_order_id
+        
     async def connect(self) -> bool:
         """Conectar y verificar credenciales"""
         global _server_time_offset
@@ -448,6 +455,12 @@ class BinanceFuturesTrader:
         Para cerrar SHORT: side="BUY", stop_price = precio donde queremos salir con pérdida
         Intenta STOP_MARKET primero, luego STOP como fallback
         """
+        # Verificar cantidad formateada no sea 0
+        qty_str = self.format_quantity(symbol, quantity)
+        if float(qty_str) == 0:
+            logger.warning(f"⚠️ Cantidad SL muy pequeña para {symbol}: {quantity} → {qty_str}")
+            return None
+        
         # Verificar si soporta STOP_MARKET
         supports_stop_market = True
         if symbol in self.symbol_info:
@@ -460,7 +473,7 @@ class BinanceFuturesTrader:
                 "side": side,
                 "type": "STOP_MARKET",
                 "stopPrice": self.format_price(symbol, stop_price),
-                "quantity": self.format_quantity(symbol, quantity),
+                "quantity": qty_str,
                 "reduceOnly": "true",
                 "workingType": "MARK_PRICE"
             }
@@ -481,7 +494,7 @@ class BinanceFuturesTrader:
             "type": "STOP",
             "stopPrice": self.format_price(symbol, stop_price),
             "price": self.format_price(symbol, exec_price),
-            "quantity": self.format_quantity(symbol, quantity),
+            "quantity": qty_str,
             "timeInForce": "GTC",
             "reduceOnly": "true"
         }
@@ -499,6 +512,12 @@ class BinanceFuturesTrader:
         Para cerrar SHORT: side="BUY", tp_price = precio donde queremos tomar ganancia
         Intenta TAKE_PROFIT_MARKET primero, luego TAKE_PROFIT como fallback
         """
+        # Verificar cantidad formateada no sea 0
+        qty_str = self.format_quantity(symbol, quantity)
+        if float(qty_str) == 0:
+            logger.warning(f"⚠️ Cantidad TP muy pequeña para {symbol}: {quantity} → {qty_str}")
+            return None
+        
         # Verificar si soporta TAKE_PROFIT_MARKET
         supports_tp_market = True
         if symbol in self.symbol_info:
@@ -511,7 +530,7 @@ class BinanceFuturesTrader:
                 "side": side,
                 "type": "TAKE_PROFIT_MARKET",
                 "stopPrice": self.format_price(symbol, tp_price),
-                "quantity": self.format_quantity(symbol, quantity),
+                "quantity": qty_str,
                 "reduceOnly": "true",
                 "workingType": "MARK_PRICE"
             }
@@ -532,7 +551,7 @@ class BinanceFuturesTrader:
             "type": "TAKE_PROFIT",
             "stopPrice": self.format_price(symbol, tp_price),
             "price": self.format_price(symbol, exec_price),
-            "quantity": self.format_quantity(symbol, quantity),
+            "quantity": qty_str,
             "timeInForce": "GTC",
             "reduceOnly": "true"
         }
@@ -601,9 +620,14 @@ class BinanceFuturesTrader:
             
             # Colocar Take Profit (BUY para cerrar SHORT)
             tp_result = None
+            tp_order_id = None
             if take_profit:
                 tp_result = await self.place_take_profit(symbol, "BUY", take_profit, executed_qty)
-                if not tp_result:
+                if tp_result:
+                    tp_order_id = tp_result.get("orderId")
+                    # Guardar referencia del TP para TP dinámico
+                    self.active_tp_orders[symbol] = tp_order_id
+                else:
                     print(f"   ⚠️ No se pudo crear TP para {symbol}")
             
             # Colocar Stop Loss si se especificó
@@ -612,6 +636,26 @@ class BinanceFuturesTrader:
                 sl_result = await self.place_stop_loss(symbol, "BUY", stop_loss, executed_qty)
                 if not sl_result:
                     print(f"   ⚠️ No se pudo crear SL para {symbol}")
+            
+            # Guardar información de posición para TP dinámico
+            self.active_positions_info[symbol] = {
+                "entry_price": current_price,
+                "quantity": executed_qty,
+                "take_profit": take_profit,
+                "stop_loss": stop_loss,
+                "fib_high": fib_high,
+                "fib_low": fib_low,
+                "strategy_case": strategy_case,
+                "side": "SHORT",
+                "tp_order_id": tp_order_id,
+                "executions": [{
+                    "order_num": 1,
+                    "price": current_price,
+                    "quantity": executed_qty,
+                    "type": "MARKET",
+                    "time": datetime.now().isoformat()
+                }]
+            }
             
             sl_str = f"${stop_loss:.4f}" if stop_loss else "N/A"
             tp_str = f"${take_profit:.4f}" if take_profit else "N/A"
@@ -637,10 +681,15 @@ class BinanceFuturesTrader:
     
     async def execute_limit_short(self, symbol: str, margin: float, leverage: int,
                                    limit_price: float, take_profit: float = None, 
-                                   stop_loss: float = None, strategy_case: int = 0) -> Optional[dict]:
+                                   stop_loss: float = None, strategy_case: int = 0,
+                                   fib_high: float = None, fib_low: float = None,
+                                   is_linked_order: bool = False) -> Optional[dict]:
         """
         Colocar orden límite SHORT con TP/SL adjuntos usando OTOCO
         Cuando la orden LIMIT se ejecuta, automáticamente se activan TP y SL
+        
+        is_linked_order: True si esta orden está vinculada a una posición existente
+                        (para TP dinámico - cuando se llene, actualizamos TP)
         """
         # Configurar leverage y margen cruzado
         await self.set_leverage(symbol, leverage)
@@ -675,11 +724,29 @@ class BinanceFuturesTrader:
                     "order_id": otoco_result.get("orderId", 0)
                 }
         
-        # Fallback: solo orden límite sin TP/SL
+        # Fallback: solo orden límite sin TP/SL (tracking manual)
         order = await self.place_limit_order(symbol, "SELL", limit_price, quantity)
         
         if order:
-            print(f"📝 LIMIT SHORT {symbol} @ ${limit_price:.4f} (sin TP/SL)")
+            order_id = order["orderId"]
+            
+            # Guardar en pending_orders_tp_sl para añadir TP/SL cuando se llene
+            # También incluimos is_linked_order para TP dinámico
+            self.pending_orders_tp_sl[order_id] = {
+                "symbol": symbol,
+                "quantity": quantity,
+                "take_profit": take_profit,
+                "stop_loss": stop_loss,
+                "close_side": "BUY",  # Para cerrar SHORT
+                "is_linked_order": is_linked_order,  # Para TP dinámico
+                "fib_high": fib_high,
+                "fib_low": fib_low,
+                "limit_price": limit_price,
+                "strategy_case": strategy_case
+            }
+            
+            linked_str = " (LINKED - TP dinámico)" if is_linked_order else ""
+            print(f"📝 LIMIT SHORT {symbol} @ ${limit_price:.4f} (sin TP/SL){linked_str}")
             return {
                 "symbol": symbol,
                 "limit_price": limit_price,
@@ -688,7 +755,7 @@ class BinanceFuturesTrader:
                 "take_profit": take_profit,
                 "stop_loss": stop_loss,
                 "strategy_case": strategy_case,
-                "order_id": order["orderId"]
+                "order_id": order_id
             }
         
         return None
@@ -791,7 +858,8 @@ class BinanceFuturesTrader:
     async def check_filled_orders_and_add_tp_sl(self):
         """
         Verificar órdenes LIMIT que se han llenado y añadir TP/SL
-        Llamar periódicamente para procesar órdenes ejecutadas
+        Implementa TP dinámico: cuando se llena una orden vinculada,
+        promedia la posición y mueve el TP de 55% a 60%
         """
         if not self.pending_orders_tp_sl:
             return
@@ -812,30 +880,132 @@ class BinanceFuturesTrader:
                 status = order_status.get("status", "")
                 
                 if status == "FILLED":
-                    # Orden ejecutada - añadir TP y SL
+                    # Orden ejecutada
                     executed_qty = float(order_status.get("executedQty", info["quantity"]))
+                    fill_price = float(order_status.get("avgPrice", info["limit_price"]))
                     
-                    print(f"🔔 Orden LIMIT llenada: {symbol} - Añadiendo TP/SL...")
+                    print(f"🔔 Orden LIMIT llenada: {symbol} @ ${fill_price:.4f}")
                     
-                    # Colocar TP
-                    tp_result = await self.place_take_profit(
-                        symbol, 
-                        info["close_side"], 
-                        info["take_profit"], 
-                        executed_qty
-                    )
-                    
-                    # Colocar SL
-                    sl_result = await self.place_stop_loss(
-                        symbol,
-                        info["close_side"],
-                        info["stop_loss"],
-                        executed_qty
-                    )
-                    
-                    tp_status = "✅" if tp_result else "❌"
-                    sl_status = "✅" if sl_result else "❌"
-                    print(f"   {symbol}: TP{tp_status} @ ${info['take_profit']:.4f} | SL{sl_status} @ ${info['stop_loss']:.4f}")
+                    # ===== TP DINÁMICO =====
+                    if info.get("is_linked_order") and symbol in self.active_positions_info:
+                        # Esta orden está vinculada a una posición existente
+                        pos_info = self.active_positions_info[symbol]
+                        
+                        # 1. Calcular precio promedio (averaging)
+                        old_qty = pos_info["quantity"]
+                        old_entry = pos_info["entry_price"]
+                        total_qty = old_qty + executed_qty
+                        new_avg_price = ((old_entry * old_qty) + (fill_price * executed_qty)) / total_qty
+                        
+                        print(f"   🔄 PROMEDIANDO: Entrada ${old_entry:.4f} → ${new_avg_price:.4f} | Qty {total_qty:.4f}")
+                        
+                        # 2. Actualizar TP al nivel 60% (mover de 55%)
+                        old_tp = pos_info["take_profit"]
+                        if old_tp:
+                            # Para SHORT: TP está debajo del entry
+                            # Mover TP de nivel 55% a nivel 60% (subir un 5% del rango en dirección de profit)
+                            # El 55% del rango es la distancia actual, movemos a 60%
+                            fib_high = pos_info.get("fib_high")
+                            fib_low = pos_info.get("fib_low")
+                            
+                            if fib_high and fib_low:
+                                fib_range = fib_high - fib_low
+                                # Nuevo TP en nivel 60% del rango (desde low)
+                                new_tp = fib_low + (fib_range * 0.60)
+                            else:
+                                # Fallback: estimar rango desde la diferencia actual
+                                range_estimate = abs(old_entry - old_tp) / 0.45  # 45% = 100% - 55%
+                                new_tp = old_tp - (range_estimate * 0.05)  # Mover 5% hacia abajo para SHORT
+                            
+                            print(f"   🎯 TP DINÁMICO: ${old_tp:.4f} → ${new_tp:.4f}")
+                            
+                            # 3. Cancelar TP anterior
+                            old_tp_order_id = pos_info.get("tp_order_id") or self.active_tp_orders.get(symbol)
+                            if old_tp_order_id:
+                                cancel_success = await self.cancel_order(symbol, old_tp_order_id)
+                                if cancel_success:
+                                    print(f"   ❌ TP anterior cancelado")
+                            
+                            # 4. Obtener posición real de Binance para cantidad correcta
+                            await self.get_positions()
+                            real_position = self.positions.get(symbol)
+                            tp_qty = real_position.quantity if real_position else total_qty
+                            
+                            # 5. Crear nuevo TP con cantidad total
+                            tp_result = await self.place_take_profit(symbol, "BUY", new_tp, tp_qty)
+                            if tp_result:
+                                new_tp_order_id = tp_result.get("orderId")
+                                self.active_tp_orders[symbol] = new_tp_order_id
+                                pos_info["tp_order_id"] = new_tp_order_id
+                                print(f"   ✅ Nuevo TP creado @ ${new_tp:.4f}")
+                            
+                            # Actualizar info de posición
+                            pos_info["take_profit"] = new_tp
+                        
+                        # Actualizar posición info
+                        pos_info["entry_price"] = new_avg_price
+                        pos_info["quantity"] = total_qty
+                        pos_info["executions"].append({
+                            "order_num": len(pos_info["executions"]) + 1,
+                            "price": fill_price,
+                            "quantity": executed_qty,
+                            "type": "LIMIT",
+                            "time": datetime.now().isoformat()
+                        })
+                        
+                    else:
+                        # Orden no vinculada - crear nueva posición o es la primera
+                        # Si ya existe posición, igual promediamos
+                        if symbol in self.active_positions_info:
+                            pos_info = self.active_positions_info[symbol]
+                            old_qty = pos_info["quantity"]
+                            old_entry = pos_info["entry_price"]
+                            total_qty = old_qty + executed_qty
+                            new_avg_price = ((old_entry * old_qty) + (fill_price * executed_qty)) / total_qty
+                            
+                            pos_info["entry_price"] = new_avg_price
+                            pos_info["quantity"] = total_qty
+                            
+                            print(f"   🔄 PROMEDIANDO: Entrada → ${new_avg_price:.4f} | Qty {total_qty:.4f}")
+                        else:
+                            # Nueva posición
+                            self.active_positions_info[symbol] = {
+                                "entry_price": fill_price,
+                                "quantity": executed_qty,
+                                "take_profit": info.get("take_profit"),
+                                "stop_loss": info.get("stop_loss"),
+                                "fib_high": info.get("fib_high"),
+                                "fib_low": info.get("fib_low"),
+                                "strategy_case": info.get("strategy_case"),
+                                "side": "SHORT",
+                                "tp_order_id": None,
+                                "executions": [{
+                                    "order_num": 1,
+                                    "price": fill_price,
+                                    "quantity": executed_qty,
+                                    "type": "LIMIT",
+                                    "time": datetime.now().isoformat()
+                                }]
+                            }
+                        
+                        # Colocar TP y SL para esta posición
+                        await self.get_positions()
+                        real_position = self.positions.get(symbol)
+                        tp_qty = real_position.quantity if real_position else executed_qty
+                        
+                        if info.get("take_profit"):
+                            tp_result = await self.place_take_profit(symbol, "BUY", info["take_profit"], tp_qty)
+                            if tp_result:
+                                tp_order_id = tp_result.get("orderId")
+                                self.active_tp_orders[symbol] = tp_order_id
+                                if symbol in self.active_positions_info:
+                                    self.active_positions_info[symbol]["tp_order_id"] = tp_order_id
+                                print(f"   ✅ TP creado @ ${info['take_profit']:.4f}")
+                        
+                        if info.get("stop_loss"):
+                            sl_result = await self.place_stop_loss(symbol, "BUY", info["stop_loss"], tp_qty)
+                            if sl_result:
+                                print(f"   ✅ SL creado @ ${info['stop_loss']:.4f}")
                     
                     orders_to_remove.append(order_id)
                     
@@ -846,6 +1016,41 @@ class BinanceFuturesTrader:
         # Limpiar órdenes procesadas
         for order_id in orders_to_remove:
             del self.pending_orders_tp_sl[order_id]
+    
+    async def sync_positions_on_startup(self):
+        """
+        Sincronizar posiciones existentes al iniciar el bot
+        Útil para recuperar estado después de reinicio
+        """
+        await self.get_positions()
+        
+        for symbol, pos in self.positions.items():
+            if symbol not in self.active_positions_info:
+                self.active_positions_info[symbol] = {
+                    "entry_price": pos.entry_price,
+                    "quantity": pos.quantity,
+                    "take_profit": None,  # Desconocido
+                    "stop_loss": None,
+                    "fib_high": None,
+                    "fib_low": None,
+                    "side": pos.side,
+                    "tp_order_id": None,
+                    "executions": [{
+                        "order_num": 1,
+                        "price": pos.entry_price,
+                        "quantity": pos.quantity,
+                        "type": "UNKNOWN",
+                        "time": datetime.now().isoformat()
+                    }]
+                }
+                print(f"📥 Posición existente sincronizada: {symbol} {pos.side} @ ${pos.entry_price:.4f}")
+    
+    def clear_position_info(self, symbol: str):
+        """Limpiar info de posición cuando se cierra"""
+        if symbol in self.active_positions_info:
+            del self.active_positions_info[symbol]
+        if symbol in self.active_tp_orders:
+            del self.active_tp_orders[symbol]
 
 
 # Instancia global del trader

@@ -513,6 +513,8 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                 tp_price = result.fib_levels.get('62', result.fib_levels['618'])
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
                 sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
+                fib_high = result.fib_levels.get('high')
+                fib_low = result.fib_levels.get('low')
                 
                 success = await binance_trader.execute_short_entry(
                     symbol=result.symbol,
@@ -521,7 +523,9 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                     entry_price=result.current_price,
                     take_profit=tp_price,
                     stop_loss=sl_price,
-                    strategy_case=case_num
+                    strategy_case=case_num,
+                    fib_high=fib_high,
+                    fib_low=fib_low
                 )
                 if success:
                     print(f"   🔴 [REAL] CASO 4 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
@@ -533,6 +537,8 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                 tp_price = result.fib_levels.get('62', result.fib_levels['618'])
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
                 sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
+                fib_high = result.fib_levels.get('high')
+                fib_low = result.fib_levels.get('low')
                 
                 success = await binance_trader.execute_limit_short(
                     symbol=result.symbol,
@@ -541,7 +547,10 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                     limit_price=limit_price,
                     take_profit=tp_price,
                     stop_loss=sl_price,
-                    strategy_case=case_num
+                    strategy_case=case_num,
+                    fib_high=fib_high,
+                    fib_low=fib_low,
+                    is_linked_order=False
                 )
                 if success:
                     print(f"   🟠 [REAL] CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
@@ -554,6 +563,8 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                 limit_price_786 = result.fib_levels['786']
                 limit_price_120 = result.fib_levels.get('low', 0) + (fib_range * 1.20) if fib_range > 0 else None
                 sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.30) if fib_range > 0 else None
+                fib_high = result.fib_levels.get('high')
+                fib_low = result.fib_levels.get('low')
                 
                 # Primero orden MARKET
                 success1 = await binance_trader.execute_short_entry(
@@ -563,14 +574,16 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                     entry_price=result.current_price,
                     take_profit=tp_price,
                     stop_loss=sl_price,
-                    strategy_case=case_num
+                    strategy_case=case_num,
+                    fib_high=fib_high,
+                    fib_low=fib_low
                 )
                 
                 if success1:
                     available_balance -= margin_per_trade
                     orders_placed = ["MARKET"]
                     
-                    # Segunda orden LIMIT en 78.6%
+                    # Segunda orden LIMIT en 78.6% (LINKED - TP dinámico)
                     if available_balance >= MIN_AVAILABLE_MARGIN:
                         success2 = await binance_trader.execute_limit_short(
                             symbol=result.symbol,
@@ -579,13 +592,16 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                             limit_price=limit_price_786,
                             take_profit=tp_price,
                             stop_loss=sl_price,
-                            strategy_case=case_num
+                            strategy_case=case_num,
+                            fib_high=fib_high,
+                            fib_low=fib_low,
+                            is_linked_order=True  # TP dinámico
                         )
                         if success2:
                             available_balance -= margin_per_trade
                             orders_placed.append(f"LIMIT@${limit_price_786:.4f}")
                     
-                    # Tercera orden LIMIT en 120%
+                    # Tercera orden LIMIT en 120% (LINKED - TP dinámico)
                     if limit_price_120 and available_balance >= MIN_AVAILABLE_MARGIN:
                         success3 = await binance_trader.execute_limit_short(
                             symbol=result.symbol,
@@ -594,7 +610,10 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                             limit_price=limit_price_120,
                             take_profit=tp_price,
                             stop_loss=sl_price,
-                            strategy_case=case_num
+                            strategy_case=case_num,
+                            fib_high=fib_high,
+                            fib_low=fib_low,
+                            is_linked_order=True  # TP dinámico
                         )
                         if success3:
                             available_balance -= margin_per_trade
@@ -612,7 +631,10 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                 limit_price_2 = result.fib_levels['786']
                 fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
                 sl_price = result.fib_levels.get('low', 0) + (fib_range * 0.90) if fib_range > 0 else None
+                fib_high = result.fib_levels.get('high')
+                fib_low = result.fib_levels.get('low')
                 
+                # Primera orden LIMIT (no linked - es la primera)
                 success1 = await binance_trader.execute_limit_short(
                     symbol=result.symbol,
                     margin=margin_per_trade,
@@ -620,13 +642,17 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                     limit_price=limit_price_1,
                     take_profit=tp_price,
                     stop_loss=sl_price,
-                    strategy_case=case_num
+                    strategy_case=case_num,
+                    fib_high=fib_high,
+                    fib_low=fib_low,
+                    is_linked_order=False
                 )
                 
                 if success1:
                     available_balance -= margin_per_trade
                     
                     if available_balance >= MIN_AVAILABLE_MARGIN:
+                        # Segunda orden LIMIT (LINKED - TP dinámico)
                         success2 = await binance_trader.execute_limit_short(
                             symbol=result.symbol,
                             margin=margin_per_trade,
@@ -634,11 +660,14 @@ async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_
                             limit_price=limit_price_2,
                             take_profit=tp_price,
                             stop_loss=sl_price,
-                            strategy_case=case_num
+                            strategy_case=case_num,
+                            fib_high=fib_high,
+                            fib_low=fib_low,
+                            is_linked_order=True  # TP dinámico
                         )
                         if success2:
                             available_balance -= margin_per_trade
-                            print(f"   🟢 [REAL] CASO 1 | {result.symbol}: LIMIT @ ${limit_price_1:.4f} + LIMIT @ ${limit_price_2:.4f} | SL ${sl_price:.4f}")
+                            print(f"   🟢 [REAL] CASO 1 | {result.symbol}: LIMIT @ ${limit_price_1:.4f} + LIMIT @ ${limit_price_2:.4f} (TP dinámico) | SL ${sl_price:.4f}")
         
         except Exception as e:
             print(f"   ❌ Error en {result.symbol} (Caso {case_num}): {e}")

@@ -458,6 +458,9 @@ async def main():
                         binance_positions[symbol] = pos
                         pnl_color = "🟢" if pos.unrealized_pnl >= 0 else "🔴"
                         print(f"      • {symbol}: {pos.side} @ ${pos.entry_price:.4f} | PnL: {pnl_color} ${pos.unrealized_pnl:.2f}")
+                    
+                    # Sincronizar info de posiciones para TP dinámico
+                    await binance_trader.sync_positions_on_startup()
                 else:
                     print("   ✅ Sin posiciones abiertas")
             except Exception as e:
@@ -705,14 +708,14 @@ async def main():
             # Modo real: Mostrar balance de Binance
             balance = binance_trader.account_balance
             available = binance_trader.available_balance
-            pnl = 0  # PnL se calcula en Binance
+            pnl = sum(p.unrealized_pnl for p in binance_trader.positions.values()) if binance_trader.positions else 0
             status = {
                 'balance': balance,
                 'available_margin': available,
                 'margin_balance': balance,
                 'total_unrealized_pnl': pnl,
                 'open_positions': len(binance_trader.positions),
-                'pending_orders': len(binance_trader.open_orders)
+                'pending_orders': len(binance_trader.pending_orders_tp_sl)  # Órdenes LIMIT pendientes
             }
         else:
             # Modo paper
@@ -736,7 +739,26 @@ async def main():
         print(f"{C_CYAN}│ 📊 OPERACIONES ABIERTAS ({status['open_positions']} pos, {status['pending_orders']} ord){C_RESET}{' '*(40 - len(str(status['open_positions'])) - len(str(status['pending_orders'])))}{C_CYAN}│{C_RESET}")
         print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
         
-        if account.open_positions:
+        # Posiciones según modo
+        if trading_mode == "real" and binance_trader and binance_trader.positions:
+            for symbol, pos in binance_trader.positions.items():
+                pnl_color_pos = C_GREEN if pos.unrealized_pnl >= 0 else C_RED
+                side_color = C_RED if pos.side == 'SHORT' else C_GREEN
+                # Buscar info de estrategia
+                pos_info = binance_trader.active_positions_info.get(symbol, {})
+                case_num = pos_info.get('strategy_case') if pos_info else None
+                case_str = f"C{case_num}" if case_num else "??"
+                
+                # Línea 1: Symbol, Case, Side, Qty
+                print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}{pos.side:<5}{C_RESET} │ Qty: {C_WHITE}{pos.quantity:.4f}{C_RESET}{' '*23}{C_CYAN}│{C_RESET}")
+                # Línea 2: Entry, TP info, PnL
+                tp_info = pos_info.get('take_profit')
+                tp_str = f"TP: ${tp_info:.4f}" if tp_info else "TP: ?"
+                print(f"{C_CYAN}│{C_RESET}      Entry: {C_WHITE}${pos.entry_price:.4f}{C_RESET} │ {C_WHITE}{tp_str}{C_RESET} │ {pnl_color_pos}PnL: ${pos.unrealized_pnl:>.2f}{C_RESET}{' '*10}{C_CYAN}│{C_RESET}")
+                
+                if symbol != list(binance_trader.positions.keys())[-1]:
+                    print(f"{C_CYAN}│{C_RESET}  {'-'*68}  {C_CYAN}│{C_RESET}")
+        elif account.open_positions:
             for order_id, pos in account.open_positions.items():
                 pnl_color_pos = C_GREEN if pos.unrealized_pnl >= 0 else C_RED
                 current = price_cache.get(pos.symbol, pos.current_price)
@@ -753,8 +775,24 @@ async def main():
         else:
             print(f"{C_CYAN}│{C_RESET}  {C_WHITE}Sin posiciones abiertas{C_RESET}{' '*45}{C_CYAN}│{C_RESET}")
             
-        # Órdenes Pendientes
-        if account.pending_orders:
+        # Órdenes Pendientes (en modo real, son las de pending_orders_tp_sl)
+        pending_orders_to_show = None
+        if trading_mode == "real" and binance_trader and binance_trader.pending_orders_tp_sl:
+            print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
+            print(f"{C_CYAN}│ 📋 ÓRDENES LÍMITE (Binance){C_RESET}{' '*43}{C_CYAN}│{C_RESET}")
+            print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
+            for order_id, info in binance_trader.pending_orders_tp_sl.items():
+                linked_str = "(L)" if info.get('is_linked_order') else ""
+                # Línea 1
+                print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{info['symbol']:<10}{C_RESET} {C_YELLOW}{linked_str:>3}{C_RESET} │ {C_RED}LIMIT SELL{C_RESET} │ Qty: {C_WHITE}{info['quantity']:.4f}{C_RESET}{' '*20}{C_CYAN}│{C_RESET}")
+                # Línea 2
+                tp_str = f"${info['take_profit']:.4f}" if info.get('take_profit') else "?"
+                limit_price = info.get('limit_price', 0)
+                print(f"{C_CYAN}│{C_RESET}      Price: {C_WHITE}${limit_price:.4f}{C_RESET} │ TP: {C_WHITE}{tp_str}{C_RESET}{' '*28}{C_CYAN}│{C_RESET}")
+                
+                if order_id != list(binance_trader.pending_orders_tp_sl.keys())[-1]:
+                    print(f"{C_CYAN}│{' '*72}│{C_RESET}")
+        elif account.pending_orders:
             print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
             print(f"{C_CYAN}│ 📋 ÓRDENES LÍMITE{C_RESET}{' '*53}{C_CYAN}│{C_RESET}")
             print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
@@ -832,8 +870,19 @@ async def main():
                 # En modo real, verificar órdenes llenadas cada 3 segundos
                 if scan_countdown % 3 == 0 and binance_trader:
                     await binance_trader.refresh_balance()
-                    # Verificar si alguna orden LIMIT se llenó y añadir TP/SL
+                    # Verificar si alguna orden LIMIT se llenó y añadir TP/SL (con TP dinámico)
                     await binance_trader.check_filled_orders_and_add_tp_sl()
+                    
+                    # Verificar posiciones cerradas (TP/SL ejecutados)
+                    old_positions = set(binance_trader.active_positions_info.keys())
+                    await binance_trader.get_positions()
+                    current_positions = set(binance_trader.positions.keys())
+                    
+                    # Detectar posiciones que se cerraron
+                    closed_positions = old_positions - current_positions
+                    for symbol in closed_positions:
+                        print(f"🔔 Posición cerrada detectada: {symbol}")
+                        binance_trader.clear_position_info(symbol)
 
             # 2. Verificar si es hora de escanear
             if scan_countdown <= 0:
