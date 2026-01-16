@@ -890,11 +890,10 @@ async def main():
                         print(f"🔔 Posición cerrada detectada: {symbol}")
                         binance_trader.clear_position_info(symbol)
                 
-                # Cada 10 segundos, verificar TP/SL faltantes y actualizar órdenes
-                if scan_countdown % 10 == 0 and binance_trader:
-                    await binance_trader.ensure_tp_sl_for_positions()
-                    # Actualizar lista de órdenes LIMIT para mostrar en monitor
-                    await binance_trader.get_limit_orders()
+                # Cada segundo, verificar TP/SL faltantes y actualizar órdenes
+                await binance_trader.ensure_tp_sl_for_positions()
+                # Actualizar lista de órdenes LIMIT para mostrar en monitor
+                await binance_trader.get_limit_orders()
 
             # 2. Verificar si es hora de escanear
             if scan_countdown <= 0:

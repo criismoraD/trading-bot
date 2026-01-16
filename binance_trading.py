@@ -370,15 +370,17 @@ class BinanceFuturesTrader:
         return orders
     
     async def get_limit_orders(self) -> List[dict]:
-        """Obtener órdenes LIMIT abiertas (no TP/SL)"""
+        """Obtener órdenes LIMIT de venta abiertas (SELL only - las de BUY son TP/SL)"""
         data = await self._request("GET", "/fapi/v1/openOrders", signed=True)
         self.limit_orders = []
         
         if data:
             for order in data:
                 order_type = order.get("type", "")
-                # Solo órdenes LIMIT (no TP/SL)
-                if order_type == "LIMIT":
+                order_side = order.get("side", "")
+                # Solo órdenes LIMIT de venta (SELL)
+                # Las órdenes de compra (BUY) LIMIT con reduceOnly son TP
+                if order_type == "LIMIT" and order_side == "SELL":
                     self.limit_orders.append({
                         "order_id": order["orderId"],
                         "symbol": order["symbol"],
