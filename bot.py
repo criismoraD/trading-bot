@@ -25,7 +25,6 @@ from fibonacci import (
 from logger import bot_logger as logger, trading_logger, log_trade, log_scan_result
 from telegram_bot import telegram_bot, notify_trade_open, notify_trade_close, notify_limit_filled
 from metrics import PerformanceCalculator, performance_calculator
-import database as db
 
 
 # ===== CLASE LEGACY - ACTUALMENTE NO SE USA =====
@@ -355,17 +354,19 @@ def show_startup_menu(account):
     
     open_count = len(account.open_positions) + len(account.pending_orders)
     
-    print(f"\n📊 Estado actual:")
+    print(f"\n📊 Estado actual (Paper Trading):")
     print(f"   Posiciones abiertas: {len(account.open_positions)}")
     print(f"   Órdenes pendientes: {len(account.pending_orders)}")
     print(f"   Balance: ${account.balance:.2f}")
     print(f"   Margen disponible: ${account.get_available_margin():.2f}")
     
     print(f"\n¿Qué deseas hacer?")
-    print(f"   [1] Eliminar todos los trades y empezar de cero")
-    print(f"   [2] Continuar con los trades existentes (por defecto)")
+    print(f"   [1] Paper Trading - Empezar de cero (eliminar historial)")
+    print(f"   [2] Paper Trading - Continuar con trades existentes")
+    print(f"   [3] 💰 TRADING REAL - Conectar a Binance Futures")
     
     choice = input("\nOpción: ").strip()
+    
     if choice == "1":
         # Eliminar el archivo trades.json físicamente
         import os
@@ -380,13 +381,34 @@ def show_startup_menu(account):
         account.trade_history = []
         account._save_trades()  # Crear archivo nuevo vacío
         print(f"\n✅ Trades eliminados. Balance reseteado a ${INITIAL_BALANCE}")
+        return "paper"
+    
+    elif choice == "3":
+        print(f"\n{'='*60}")
+        print(f"⚠️  MODO TRADING REAL - DINERO REAL EN RIESGO")
+        print(f"{'='*60}")
+        print(f"\n🔴 ADVERTENCIA:")
+        print(f"   - Este modo usa tu cuenta REAL de Binance Futures")
+        print(f"   - Las pérdidas serán REALES")
+        print(f"   - Asegúrate de tener configurado el .env correctamente")
+        
+        confirm = input("\n¿Estás seguro? Escribe 'SI' para confirmar: ").strip().upper()
+        
+        if confirm == "SI":
+            print(f"\n✅ Modo TRADING REAL activado")
+            return "real"
+        else:
+            print(f"\n❌ Cancelado. Volviendo a Paper Trading...")
+            return "paper"
+    
     else:
-        print(f"\n✅ Continuando con trades existentes")
+        print(f"\n✅ Continuando con Paper Trading")
+        return "paper"
 
 
 async def main():
     """Función principal del Bot de Trading Fibonacci"""
-    from scanner import MarketScanner, run_priority_scan
+    from scanner import MarketScanner, run_priority_scan, run_priority_scan_real
     from config import SCAN_INTERVAL, MARGIN_PER_TRADE
     
     logger.info("=" * 60)
@@ -404,7 +426,65 @@ async def main():
     performance_calculator.initial_balance = INITIAL_BALANCE
     
     # Mostrar menú de inicio (antes del loop async)
-    show_startup_menu(account)
+    trading_mode = show_startup_menu(account)
+    
+    # Si es modo real, conectar a Binance
+    binance_trader = None
+    binance_positions = {}  # Posiciones abiertas en Binance
+    binance_orders = []     # Órdenes abiertas en Binance
+    
+    if trading_mode == "real":
+        from binance_trading import binance_trader as bt
+        binance_trader = bt
+        
+        connected = await binance_trader.connect()
+        if not connected:
+            print("❌ No se pudo conectar a Binance. Volviendo a Paper Trading...")
+            trading_mode = "paper"
+            binance_trader = None
+        else:
+            # Actualizar balance inicial para métricas
+            performance_calculator.initial_balance = binance_trader.available_balance
+            
+            # === SINCRONIZAR POSICIONES Y ÓRDENES ABIERTAS ===
+            print("\n📊 Sincronizando posiciones abiertas en Binance...")
+            
+            # Obtener posiciones abiertas
+            try:
+                positions = await binance_trader.get_positions()
+                if positions:
+                    print(f"   📈 {len(positions)} posicion(es) abierta(s):")
+                    for symbol, pos in positions.items():
+                        binance_positions[symbol] = pos
+                        pnl_color = "🟢" if pos.unrealized_pnl >= 0 else "🔴"
+                        print(f"      • {symbol}: {pos.side} @ ${pos.entry_price:.4f} | PnL: {pnl_color} ${pos.unrealized_pnl:.2f}")
+                else:
+                    print("   ✅ Sin posiciones abiertas")
+            except Exception as e:
+                print(f"   ⚠️ Error obteniendo posiciones: {e}")
+            
+            # Obtener órdenes pendientes
+            try:
+                orders = await binance_trader.get_open_orders()
+                if orders:
+                    # Filtrar solo órdenes LIMIT (no TP/SL)
+                    limit_orders = [o for o in orders if o.order_type == "LIMIT"]
+                    tp_sl_orders = [o for o in orders if o.order_type in ["TAKE_PROFIT_MARKET", "STOP_MARKET"]]
+                    
+                    if limit_orders:
+                        print(f"   📋 {len(limit_orders)} orden(es) límite pendiente(s):")
+                        for order in limit_orders:
+                            binance_orders.append(order)
+                            print(f"      • {order.symbol}: {order.side} @ ${order.price:.4f} (qty: {order.quantity:.4f})")
+                    
+                    if tp_sl_orders:
+                        print(f"   🎯 {len(tp_sl_orders)} orden(es) TP/SL activa(s)")
+                else:
+                    print("   ✅ Sin órdenes pendientes")
+            except Exception as e:
+                print(f"   ⚠️ Error obteniendo órdenes: {e}")
+            
+            print("")  # Línea en blanco
     
     # Iniciar servidor HTTP en hilo separado
     http_thread = threading.Thread(target=start_http_server, daemon=True)
@@ -427,10 +507,17 @@ async def main():
     
     # Identificar pares activos (Posiciones + Pendientes) para asegurarnos de escanearlos
     active_pairs = set()
-    if account.open_positions:
-        active_pairs.update(pos.symbol for pos in account.open_positions.values())
-    if account.pending_orders:
-        active_pairs.update(order.symbol for order in account.pending_orders.values())
+    
+    if trading_mode == "real" and binance_trader:
+        # Modo REAL: Usar posiciones y órdenes de Binance
+        active_pairs.update(binance_positions.keys())
+        active_pairs.update(o.symbol for o in binance_orders)
+    else:
+        # Modo PAPER: Usar posiciones y órdenes del paper trading
+        if account.open_positions:
+            active_pairs.update(pos.symbol for pos in account.open_positions.values())
+        if account.pending_orders:
+            active_pairs.update(order.symbol for order in account.pending_orders.values())
         
     if active_pairs:
         logger.info(f"Agregando {len(active_pairs)} pares activos al escaneo: {', '.join(active_pairs)}")
@@ -447,7 +534,10 @@ async def main():
         print(f"\n📊 Escaneando TODOS los pares disponibles (filtro RSI >= {RSI_THRESHOLD})")
     
     print(f"🎯 Casos: 4 > 3 > 2 > 1 | Niveles Fibonacci desde config")
-    print(f"💰 Balance: ${account.balance:.2f} | Margen/orden: ${MARGIN_PER_TRADE}")
+    if trading_mode == "real" and binance_trader:
+        print(f"💰 Balance REAL: ${binance_trader.available_balance:.2f} | Margen/orden: ${MARGIN_PER_TRADE}")
+    else:
+        print(f"💰 Balance Paper: ${account.balance:.2f} | Margen/orden: ${MARGIN_PER_TRADE}")
     print(f"⏱️  Primer escaneo: {FIRST_SCAN_DELAY}s | Siguientes: {SCAN_INTERVAL}s")
     print(f"\n🌐 Servidor Web: http://localhost:8000")
     
@@ -518,9 +608,10 @@ async def main():
                 await asyncio.sleep(5)
     
     def clear_screen():
-        """Limpiar pantalla"""
-        import os
-        os.system('cls' if os.name == 'nt' else 'clear')
+        """Limpiar pantalla - DESACTIVADO para debug"""
+        # import os
+        # os.system('cls' if os.name == 'nt' else 'clear')
+        pass  # Desactivado para ver logs
     
     def print_monitor():
         """Imprimir modo monitor con secciones separadas"""
@@ -598,13 +689,35 @@ async def main():
         clear_screen()
         now = datetime.now().strftime('%H:%M:%S')
         
+        # Indicador de modo
+        if trading_mode == "real":
+            mode_indicator = f"{C_RED}🔴 REAL TRADING{C_RESET}"
+        else:
+            mode_indicator = f"{C_GREEN}📝 PAPER TRADING{C_RESET}"
+        
         # ===== HEADER =====
         print(f"{C_BLUE}{'═'*74}{C_RESET}")
-        print(f"  {C_CYAN}🤖 FIBONACCI TRADING BOT - MODO MONITOR{C_RESET}  │  {C_WHITE}{now}{C_RESET}")
+        print(f"  {C_CYAN}🤖 FIBONACCI TRADING BOT{C_RESET}  │  {mode_indicator}  │  {C_WHITE}{now}{C_RESET}")
         print(f"{C_BLUE}{'═'*74}{C_RESET}")
         
         # ===== SECCIÓN 1: ESTADO DE CUENTA =====
-        status = account.get_status()
+        if trading_mode == "real" and binance_trader:
+            # Modo real: Mostrar balance de Binance
+            balance = binance_trader.account_balance
+            available = binance_trader.available_balance
+            pnl = 0  # PnL se calcula en Binance
+            status = {
+                'balance': balance,
+                'available_margin': available,
+                'margin_balance': balance,
+                'total_unrealized_pnl': pnl,
+                'open_positions': len(binance_trader.positions),
+                'pending_orders': len(binance_trader.open_orders)
+            }
+        else:
+            # Modo paper
+            status = account.get_status()
+        
         pnl = status['total_unrealized_pnl']
         pnl_color = C_GREEN if pnl >= 0 else C_RED
         pnl_sign = "+" if pnl >= 0 else ""
@@ -689,38 +802,49 @@ async def main():
         
         while True:
             # 1. Verificar TP/SL y Pending Orders en tiempo real (WebSocket Cache)
+            # Nota: En modo real, Binance maneja TP/SL automáticamente
             
-            # Obtener todos los símbolos activos (Posiciones + Órdenes Pendientes)
-            active_symbols = set()
-            if account.open_positions:
-                active_symbols.update(pos.symbol for pos in account.open_positions.values())
-            if account.pending_orders:
-                active_symbols.update(order.symbol for order in account.pending_orders.values())
-            
-            if active_symbols:
-                for symbol in list(active_symbols):
-                    price = price_cache.get(symbol)
-                    
-                    if price and price > 0:
-                        # 1. Verificar Cierre de Posiciones (TP/SL)
-                        if account.open_positions:
-                            account.check_positions(symbol, price)
+            if trading_mode == "paper":
+                # Obtener todos los símbolos activos (Posiciones + Órdenes Pendientes)
+                active_symbols = set()
+                if account.open_positions:
+                    active_symbols.update(pos.symbol for pos in account.open_positions.values())
+                if account.pending_orders:
+                    active_symbols.update(order.symbol for order in account.pending_orders.values())
+                
+                if active_symbols:
+                    for symbol in list(active_symbols):
+                        price = price_cache.get(symbol)
                         
-                        # 2. Verificar Activación de Órdenes Pendientes (Limit)
-                        if account.pending_orders:
-                            account.check_pending_orders(symbol, price)
-            
-            # --- WATCHDOG PERIÓDICO (Cada 10s) ---
-            if scan_countdown % 10 == 0 and (account.open_positions or account.pending_orders):
-                 await scanner.update_prices_for_positions(account, price_cache)
+                        if price and price > 0:
+                            # 1. Verificar Cierre de Posiciones (TP/SL)
+                            if account.open_positions:
+                                account.check_positions(symbol, price)
+                            
+                            # 2. Verificar Activación de Órdenes Pendientes (Limit)
+                            if account.pending_orders:
+                                account.check_pending_orders(symbol, price)
+                
+                # --- WATCHDOG PERIÓDICO (Cada 10s) ---
+                if scan_countdown % 10 == 0 and (account.open_positions or account.pending_orders):
+                    await scanner.update_prices_for_positions(account, price_cache)
+            else:
+                # En modo real, verificar órdenes llenadas cada 3 segundos
+                if scan_countdown % 3 == 0 and binance_trader:
+                    await binance_trader.refresh_balance()
+                    # Verificar si alguna orden LIMIT se llenó y añadir TP/SL
+                    await binance_trader.check_filled_orders_and_add_tp_sl()
 
             # 2. Verificar si es hora de escanear
             if scan_countdown <= 0:
                 last_scan_result = "🔄 Escaneando..."
                 print_monitor_realtime(0)
                 
-                # Ejecutar escaneo
-                await run_priority_scan(scanner, account, MARGIN_PER_TRADE)
+                # Ejecutar escaneo según modo
+                if trading_mode == "real" and binance_trader:
+                    await run_priority_scan_real(scanner, binance_trader, MARGIN_PER_TRADE, LEVERAGE)
+                else:
+                    await run_priority_scan(scanner, account, MARGIN_PER_TRADE)
                 
                 last_scan_result = f"✅ Completado {datetime.now().strftime('%H:%M:%S')}"
                 scan_countdown = SCAN_INTERVAL

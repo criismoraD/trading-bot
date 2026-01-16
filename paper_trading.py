@@ -48,6 +48,8 @@ class Order:
     pnl: float = 0.0
     linked_order_id: Optional[str] = None  # Para cancelar orden complementaria
     strategy_case: int = 0  # Caso de trading (1-4)
+    fib_high: Optional[float] = None  # Precio del High (100%) del swing
+    fib_low: Optional[float] = None   # Precio del Low (0%) del swing
     
     def to_dict(self) -> dict:
         return {
@@ -67,7 +69,9 @@ class Order:
             "closed_at": self.closed_at,
             "pnl": self.pnl,
             "linked_order_id": self.linked_order_id,
-            "strategy_case": self.strategy_case
+            "strategy_case": self.strategy_case,
+            "fib_high": self.fib_high,
+            "fib_low": self.fib_low
         }
 
 @dataclass
@@ -87,6 +91,10 @@ class Position:
     min_pnl: float = 0.0  # Máximo drawdown registrado (valor negativo mas bajo)
     max_pnl: float = -9999.0  # Mínimo inicial bajo. Máximo beneficio alcanzado.
     strategy_case: int = 0  # Caso de trading (1-4)
+    fib_high: Optional[float] = None  # Precio del High (100%) del swing
+    fib_low: Optional[float] = None   # Precio del Low (0%) del swing
+    # Historial de ejecuciones (para tracking de órdenes promediadas)
+    executions: List[dict] = field(default_factory=list)  # [{price, qty, time, order_num}]
     
     def calculate_pnl(self, current_price: float) -> float:
         """Calcular PnL no realizado y actualizar min_pnl/max_pnl"""
@@ -177,7 +185,10 @@ class PaperTradingAccount:
             "linked_order_id": pos.linked_order_id,
             "min_pnl": pos.min_pnl,
             "max_pnl": pos.max_pnl,
-            "strategy_case": pos.strategy_case
+            "strategy_case": pos.strategy_case,
+            "fib_high": pos.fib_high,
+            "fib_low": pos.fib_low,
+            "executions": pos.executions  # Historial de ejecuciones
         }
     
     def _save_trades(self):
@@ -229,8 +240,11 @@ class PaperTradingAccount:
     
     def place_limit_order(self, symbol: str, side: OrderSide, price: float, 
                           margin: float, take_profit: float, 
+                          stop_loss: Optional[float] = None,
                           linked_order_id: Optional[str] = None,
-                          strategy_case: int = 0) -> Optional[Order]:
+                          strategy_case: int = 0,
+                          fib_high: Optional[float] = None,
+                          fib_low: Optional[float] = None) -> Optional[Order]:
         """Colocar orden límite"""
         if margin > self.get_available_margin():
             print(f"❌ Margen insuficiente. Disponible: ${self.get_available_margin():.2f}")
@@ -250,18 +264,25 @@ class PaperTradingAccount:
             margin=margin,
             leverage=self.leverage,
             take_profit=take_profit,
+            stop_loss=stop_loss,
             linked_order_id=linked_order_id,
-            strategy_case=strategy_case
+            strategy_case=strategy_case,
+            fib_high=fib_high,
+            fib_low=fib_low
         )
         
         self.pending_orders[order.id] = order
         self._save_trades()
         
-        print(f"📝 Orden Límite: {side.value} {symbol} @ ${price:.4f} | Margen: ${margin} | TP: ${take_profit:.4f}")
+        sl_text = f" | SL: ${stop_loss:.4f}" if stop_loss else ""
+        print(f"📝 Orden Límite: {side.value} {symbol} @ ${price:.4f} | Margen: ${margin} | TP: ${take_profit:.4f}{sl_text}")
         return order
     
     def place_market_order(self, symbol: str, side: OrderSide, current_price: float,
-                           margin: float, take_profit: float, strategy_case: int = 0) -> Optional[Position]:
+                           margin: float, take_profit: float, stop_loss: Optional[float] = None,
+                           strategy_case: int = 0,
+                           fib_high: Optional[float] = None,
+                           fib_low: Optional[float] = None) -> Optional[Position]:
         """Colocar orden de mercado (ejecución inmediata) con promedio de posición"""
         if margin > self.get_available_margin():
             print(f"❌ Margen insuficiente. Disponible: ${self.get_available_margin():.2f}")
@@ -294,6 +315,17 @@ class PaperTradingAccount:
             pos.margin += margin
             pos.current_price = current_price # Actualizar precio actual
             # Mantener el strategy_case original o actualizar? Mantener original.
+            # Mantener fib_high/fib_low originales
+            
+            # Registrar ejecución en historial
+            exec_num = len(pos.executions) + 1
+            pos.executions.append({
+                "order_num": exec_num,
+                "price": current_price,
+                "quantity": quantity,
+                "type": "MARKET",
+                "time": datetime.now().isoformat()
+            })
             
             print(f"🔄 Posición promediada: {symbol} Entrada ${avg_price:.4f} Qty {total_qty:.4f}")
             position = pos
@@ -307,8 +339,18 @@ class PaperTradingAccount:
                 margin=margin,
                 leverage=self.leverage,
                 take_profit=take_profit,
+                stop_loss=stop_loss,
                 order_id=order_id,
-                strategy_case=strategy_case
+                strategy_case=strategy_case,
+                fib_high=fib_high,
+                fib_low=fib_low,
+                executions=[{
+                    "order_num": 1,
+                    "price": current_price,
+                    "quantity": quantity,
+                    "type": "MARKET",
+                    "time": datetime.now().isoformat()
+                }]
             )
             self.open_positions[order_id] = position
             
@@ -397,6 +439,16 @@ class PaperTradingAccount:
             pos.margin += order.margin
             pos.current_price = fill_price
             
+            # Registrar ejecución en historial
+            exec_num = len(pos.executions) + 1
+            pos.executions.append({
+                "order_num": exec_num,
+                "price": fill_price,
+                "quantity": order.quantity,
+                "type": "LIMIT",
+                "time": datetime.now().isoformat()
+            })
+            
             # El TP ya se actualizó dinámicamente arriba si estaba vinculado
             
         else:
@@ -414,7 +466,16 @@ class PaperTradingAccount:
                 take_profit=order.take_profit,
                 stop_loss=order.stop_loss,
                 order_id=order_id,
-                strategy_case=order.strategy_case
+                strategy_case=order.strategy_case,
+                fib_high=order.fib_high,
+                fib_low=order.fib_low,
+                executions=[{
+                    "order_num": 1,
+                    "price": fill_price,
+                    "quantity": order.quantity,
+                    "type": "LIMIT",
+                    "time": datetime.now().isoformat()
+                }]
             )
             
             # Guardar linked_order_id para referencias futuras
@@ -496,6 +557,11 @@ class PaperTradingAccount:
             "min_pnl": position.min_pnl,  # Max Drawdown
             "strategy_case": position.strategy_case,
             "reason": reason,
+            "fib_high": position.fib_high,  # Nivel 100% (precio del High)
+            "fib_low": position.fib_low,    # Nivel 0% (precio del Low)
+            "stop_loss": position.stop_loss,
+            "take_profit": position.take_profit,
+            "executions": position.executions,  # Historial de ejecuciones (precio de cada orden)
             "closed_at": datetime.now().isoformat()
         }
         self.trade_history.append(trade_record)
