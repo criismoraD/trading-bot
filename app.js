@@ -922,7 +922,7 @@ function loadTradesPanel() {
 // Start polling for trade updates every 5 seconds
 function startTradesPolling() {
     if (tradesPollingInterval) clearInterval(tradesPollingInterval);
-    tradesPollingInterval = setInterval(loadTradesPanel, 5000);
+    tradesPollingInterval = setInterval(loadTradesPanel, 1000);
     loadTradesPanel(); // Load immediately
 }
 
@@ -1053,6 +1053,20 @@ function drawTradeLines(trades) {
                 title: 'TP',
             });
             tradeLinesSeries.push(tpLine);
+        }
+
+        // Stop Loss line (only for positions)
+        const slPrice = trade.stop_loss;
+        if (isPosition && slPrice) {
+            const slLine = candleSeries.createPriceLine({
+                price: parseFloat(slPrice),
+                color: '#ef5350', // Red
+                lineWidth: 1,
+                lineStyle: 2, // Dashed
+                axisLabelVisible: true,
+                title: 'SL',
+            });
+            tradeLinesSeries.push(slLine);
         }
     });
 
@@ -2140,7 +2154,7 @@ async function init() {
     }
 
     // Refresh panel every 2 seconds
-    let tradesPanelInterval = setInterval(loadTradesPanel, 2000);
+    let tradesPanelInterval = setInterval(loadTradesPanel, 1000);
 
     // Exponer función para pausar/reanudar polling desde modo análisis
     window.pauseTradesPolling = () => {
@@ -2153,7 +2167,7 @@ async function init() {
 
     window.resumeTradesPolling = () => {
         if (!tradesPanelInterval) {
-            tradesPanelInterval = setInterval(loadTradesPanel, 2000);
+            tradesPanelInterval = setInterval(loadTradesPanel, 1000);
             loadTradesPanel(); // Cargar inmediatamente
             console.log('▶️ Trades polling reanudado');
         }
