@@ -772,10 +772,15 @@ class BinanceFuturesTrader:
             # Obtener la cantidad ejecutada real (puede diferir ligeramente)
             executed_qty = float(order.get("executedQty", quantity))
             
-            # Colocar Take Profit (BUY para cerrar SHORT)
+            # Verificar órdenes existentes antes de crear TP/SL
+            existing_orders = await self._request("GET", "/fapi/v1/openOrders", {"symbol": symbol}, signed=True)
+            has_tp = any(o.get("type") in ["TAKE_PROFIT", "TAKE_PROFIT_MARKET", "TAKE_PROFIT_LIMIT"] for o in (existing_orders or []))
+            has_sl = any(o.get("type") in ["STOP", "STOP_MARKET", "STOP_LIMIT"] for o in (existing_orders or []))
+            
+            # Colocar Take Profit (BUY para cerrar SHORT) si no existe
             tp_result = None
             tp_order_id = None
-            if take_profit:
+            if take_profit and not has_tp:
                 tp_result = await self.place_take_profit(symbol, "BUY", take_profit, executed_qty)
                 if tp_result:
                     tp_order_id = tp_result.get("orderId")
@@ -783,13 +788,17 @@ class BinanceFuturesTrader:
                     self.active_tp_orders[symbol] = tp_order_id
                 else:
                     print(f"   ⚠️ No se pudo crear TP para {symbol}")
+            elif has_tp:
+                print(f"   ℹ️ {symbol} ya tiene TP, omitiendo")
             
-            # Colocar Stop Loss si se especificó
+            # Colocar Stop Loss si se especificó y no existe
             sl_result = None
-            if stop_loss:
+            if stop_loss and not has_sl:
                 sl_result = await self.place_stop_loss(symbol, "BUY", stop_loss, executed_qty)
                 if not sl_result:
                     print(f"   ⚠️ No se pudo crear SL para {symbol}")
+            elif has_sl:
+                print(f"   ℹ️ {symbol} ya tiene SL, omitiendo")
             
             # Guardar información de posición para TP dinámico
             self.active_positions_info[symbol] = {
@@ -1142,12 +1151,17 @@ class BinanceFuturesTrader:
                                 }]
                             }
                         
-                        # Colocar TP y SL para esta posición
+                        # Colocar TP y SL para esta posición (verificar si ya existen)
                         await self.get_positions()
                         real_position = self.positions.get(symbol)
                         tp_qty = real_position.quantity if real_position else executed_qty
                         
-                        if info.get("take_profit"):
+                        # Verificar órdenes existentes antes de crear
+                        existing_orders = await self._request("GET", "/fapi/v1/openOrders", {"symbol": symbol}, signed=True)
+                        has_tp = any(o.get("type") in ["TAKE_PROFIT", "TAKE_PROFIT_MARKET", "TAKE_PROFIT_LIMIT"] for o in (existing_orders or []))
+                        has_sl = any(o.get("type") in ["STOP", "STOP_MARKET", "STOP_LIMIT"] for o in (existing_orders or []))
+                        
+                        if info.get("take_profit") and not has_tp:
                             tp_result = await self.place_take_profit(symbol, "BUY", info["take_profit"], tp_qty)
                             if tp_result:
                                 tp_order_id = tp_result.get("orderId")
@@ -1155,11 +1169,15 @@ class BinanceFuturesTrader:
                                 if symbol in self.active_positions_info:
                                     self.active_positions_info[symbol]["tp_order_id"] = tp_order_id
                                 print(f"   ✅ TP creado @ ${info['take_profit']:.4f}")
+                        elif has_tp:
+                            print(f"   ℹ️ {symbol} ya tiene TP, omitiendo")
                         
-                        if info.get("stop_loss"):
+                        if info.get("stop_loss") and not has_sl:
                             sl_result = await self.place_stop_loss(symbol, "BUY", info["stop_loss"], tp_qty)
                             if sl_result:
                                 print(f"   ✅ SL creado @ ${info['stop_loss']:.4f}")
+                        elif has_sl:
+                            print(f"   ℹ️ {symbol} ya tiene SL, omitiendo")
                     
                     orders_to_remove.append(order_id)
                     
@@ -1257,9 +1275,11 @@ class BinanceFuturesTrader:
             order_type = order.get("type", "")
             symbol = order.get("symbol", "")
             
-            if order_type in ["TAKE_PROFIT", "TAKE_PROFIT_MARKET"]:
+            # Incluir todos los tipos de órdenes TP (limit y market)
+            if order_type in ["TAKE_PROFIT", "TAKE_PROFIT_MARKET", "TAKE_PROFIT_LIMIT"]:
                 symbols_with_tp.add(symbol)
-            elif order_type in ["STOP", "STOP_MARKET"]:
+            # Incluir todos los tipos de órdenes SL (limit y market)
+            elif order_type in ["STOP", "STOP_MARKET", "STOP_LIMIT"]:
                 symbols_with_sl.add(symbol)
         
         # Revisar cada posición
