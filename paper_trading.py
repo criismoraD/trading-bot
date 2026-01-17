@@ -396,15 +396,8 @@ class PaperTradingAccount:
         log_trade("OPEN", symbol, side.value, current_price, case=strategy_case)
         logger.info(f"Orden Mercado: {side.value} {symbol} @ ${current_price:.4f} | Margen: ${margin} | TP: ${take_profit:.4f}")
         
-        # Notificación Telegram
-        try:
-            from telegram_bot import telegram_bot, AUTHORIZED_CHATS
-            if AUTHORIZED_CHATS:
-                asyncio.create_task(telegram_bot.send_trade_alert(
-                    "OPEN", symbol, side.value, current_price, case=strategy_case
-                ))
-        except Exception:
-            pass
+        # Notificación Telegram DESACTIVADA para aperturas
+        # Solo se notifica al cerrar
         
         return position
     

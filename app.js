@@ -1979,6 +1979,19 @@ async function init() {
                 title: 'TP'
             });
             positionPriceLines.push(tpLine);
+
+            // SL line (red) - only if exists
+            if (pos.stop_loss) {
+                const slLine = candleSeries.createPriceLine({
+                    price: pos.stop_loss,
+                    color: '#ef5350',
+                    lineWidth: 2,
+                    lineStyle: 2, // Dashed
+                    axisLabelVisible: true,
+                    title: 'SL'
+                });
+                positionPriceLines.push(slLine);
+            }
         });
 
         // Draw lines for pending orders matching current symbol
