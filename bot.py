@@ -840,9 +840,12 @@ async def main():
         telegram_bot.account = account
         telegram_bot.scanner = scanner
         telegram_bot.price_cache = price_cache
+        telegram_bot.running = True
         asyncio.create_task(telegram_bot.run_polling_loop())
         asyncio.create_task(telegram_bot.run_report_loop())
         logger.info("Bot de Telegram iniciado - Envía /start a @criismorabot")
+        # Notificación inmediata si hay chats autorizados
+        await telegram_bot.broadcast_message("🚀 <b>BOT INICIADO</b>\nEl sistema está en línea y operando.")
         
         while True:
             # 1. Verificar TP/SL y Pending Orders en tiempo real (WebSocket Cache)

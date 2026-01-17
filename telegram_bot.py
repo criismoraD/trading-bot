@@ -5,6 +5,7 @@ Envía reportes automáticos cada 20 minutos y responde a comandos
 import asyncio
 import aiohttp
 import os
+import json
 from datetime import datetime
 from typing import Optional, Dict, List
 from dataclasses import dataclass
@@ -38,11 +39,17 @@ def save_authorized_chats():
 # Inicializar chats autorizados
 AUTHORIZED_CHATS: set = load_authorized_chats()
 
+# Permitir chat por defecto desde .env (para notificaciones sin /start)
+_default_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+if _default_chat_id and _default_chat_id.lstrip("-").isdigit():
+    AUTHORIZED_CHATS.add(int(_default_chat_id))
+    save_authorized_chats()
+
 
 @dataclass
 class TelegramConfig:
     token: str = TELEGRAM_TOKEN
-    report_interval: int = 30 * 60  # 30 minutos
+    report_interval: int = 40 * 60  # 40 minutos
     enabled: bool = True
 
 
@@ -116,7 +123,7 @@ class TelegramBot:
             await self.send_message(chat_id, text)
     
     def format_report(self) -> str:
-        """Generar reporte formateado para Telegram (Resumen + Stats)"""
+        """Generar reporte COMPLETO para Telegram (Cuenta + Stats + Posiciones + Historial)"""
         if not self.account:
             return "⚠️ Bot no inicializado"
         
@@ -132,15 +139,20 @@ class TelegramBot:
         
         # PnL
         total_pnl = sum(t.get('pnl', 0) for t in history)
-        avg_win = sum(t.get('pnl', 0) for t in winners_list) if (winners_list := [t for t in history if t.get('pnl', 0) > 0]) else 0
-        avg_win = avg_win / len(winners_list) if winners_list else 0
         
         # Emoji según PnL
         pnl_emoji = "🟢" if status['total_unrealized_pnl'] >= 0 else "🔴"
         balance_emoji = "📈" if self.account.balance >= self.account.initial_balance else "📉"
         
+        # Por caso (stats)
+        cases = {1: [], 2: [], 3: [], 4: []}
+        for t in history:
+            case = t.get('strategy_case', 0)
+            if case in cases:
+                cases[case].append(t.get('pnl', 0))
+        
         report = f"""
-<b>📊 REPORTE PERIÓDICO (30 min)</b>
+<b>📊 REPORTE COMPLETO</b>
 <code>━━━━━━━━━━━━━━━━━━━━━━━━</code>
 🕐 <b>{now}</b>
 
@@ -155,26 +167,53 @@ class TelegramBot:
 ├ PnL Acumulado: <code>${total_pnl:.4f}</code>
 └ Profit Factor: <code>{self._calculate_profit_factor():.2f}</code>
 
+<b>🎯 POR CASO</b>
+├ C1: {len(cases[1])} trades | ${sum(cases[1]):.2f}
+├ C2: {len(cases[2])} trades | ${sum(cases[2]):.2f}
+├ C3: {len(cases[3])} trades | ${sum(cases[3]):.2f}
+└ C4: {len(cases[4])} trades | ${sum(cases[4]):.2f}
+
 <b>📂 ESTADO ACTUAL</b>
 ├ Posiciones: <code>{status['open_positions']}</code>
 └ Órdenes: <code>{status['pending_orders']}</code>
 """
         
-        # Agregar detalle de posiciones si hay pocas (max 3) para no saturar
+        # Agregar detalle de posiciones (todas) con CASO
         if self.account.open_positions:
             report += "\n<b>👁️ POSICIONES ACTIVAS:</b>\n"
-            count = 0
             for order_id, pos in self.account.open_positions.items():
-                if count >= 3:
-                    report += f"└ <i>... y {len(self.account.open_positions) - 3} más</i>"
-                    break
                 current = self.price_cache.get(pos.symbol, pos.current_price)
                 pnl_pos = pos.unrealized_pnl
                 emoji = "🟢" if pnl_pos >= 0 else "🔴"
-                report += f"├ {pos.symbol} {emoji} <code>${pnl_pos:.2f}</code>\n"
-                count += 1
+                case_str = f"C{pos.strategy_case}" if hasattr(pos, 'strategy_case') else "?"
+                report += (
+                    f"├ {pos.symbol} ({case_str}) {emoji} <code>${pnl_pos:.2f}</code>\n"
+                    f"   Entry: <code>${pos.entry_price:.4f}</code> → Actual: <code>${current:.4f}</code>\n"
+                )
+
+        # Agregar detalle de órdenes pendientes (todas) con CASO
+        if self.account.pending_orders:
+            report += "\n<b>📋 ÓRDENES PENDIENTES:</b>\n"
+            for order_id, order in self.account.pending_orders.items():
+                case_str = f"C{order.strategy_case}" if hasattr(order, 'strategy_case') else "?"
+                report += (
+                    f"├ {order.symbol} ({case_str}) {order.side.value}\n"
+                    f"   Precio: <code>${order.price:.4f}</code> → TP: <code>${order.take_profit:.4f}</code>\n"
+                )
+        
+        # Agregar últimas operaciones cerradas (máx 5)
+        if history:
+            report += "\n<b>📜 ÚLTIMAS OPERACIONES:</b>\n"
+            recent = list(reversed(history[-5:]))  # Últimas 5, más reciente primero
+            for t in recent:
+                pnl = t.get('pnl', 0)
+                emoji = "🟢" if pnl >= 0 else "🔴"
+                reason = t.get('reason', '?')
+                reason_emoji = "✅" if reason == 'TP' else "❌"
+                case_str = f"C{t.get('strategy_case', '?')}"
+                report += f"├ {t.get('symbol', '?')} ({case_str}) {reason_emoji} {emoji} <code>${pnl:.4f}</code>\n"
                 
-        report += "\n💡 /download para bajar el historial"
+        report += "\n💡 /download para bajar el historial completo"
         return report
     
     def _calculate_profit_factor(self) -> float:
@@ -360,44 +399,24 @@ class TelegramBot:
             await self.send_message(chat_id, """
 <b>🤖 Bot de Trading Fibonacci</b>
 
-¡Bienvenido! Este bot te enviará reportes automáticos cada 30 minutos.
+¡Bienvenido! Este bot te enviará reportes automáticos cada 40 minutos.
 
 <b>Comandos disponibles:</b>
-/report - Reporte completo
-/balance - Ver balance actual
-/positions - Ver posiciones abiertas
-/history - Operaciones cerradas (+ caso)
-/stats - Estadísticas detalladas
+/report - Reporte completo (cuenta, stats, posiciones, historial)
 /download - Descargar historial (JSON)
-/help - Mostrar ayuda
 
 Tu chat ha sido registrado para recibir notificaciones.
 """)
+
+            # Confirmación inmediata de inicio
+            await self.send_message(chat_id, "🚀 <b>BOT INICIADO</b>\nNotificaciones activas para este chat.")
             
         elif command == "/report":
             await self.send_message(chat_id, self.format_report())
             
         elif command == "/balance":
-            await self.send_message(chat_id, self.format_balance())
-            
-        elif command == "/positions":
-            await self.send_message(chat_id, self.format_positions())
-            
-        elif command == "/stats":
-            await self.send_message(chat_id, self.format_stats())
-        
-        elif command == "/history":
-            # /history o /history 1 (filtrar por caso)
-            case_filter = None
-            if args:
-                try:
-                    case_filter = int(args[0])
-                    if case_filter not in [1, 2, 3, 4]:
-                        await self.send_message(chat_id, "⚠️ Caso debe ser 1, 2, 3 o 4")
-                        return
-                except ValueError:
-                    pass
-            await self.send_message(chat_id, self.format_history(case_filter))
+            # Redirigir a report
+            await self.send_message(chat_id, self.format_report())
 
         elif command == "/download":
             path = os.path.join(os.getcwd(), 'trades.json')
@@ -408,21 +427,16 @@ Tu chat ha sido registrado para recibir notificaciones.
 <b>📚 AYUDA</b>
 
 <b>Comandos:</b>
-/report - Reporte completo del bot
-/balance - Ver balance y márgenes
-/positions - Ver posiciones abiertas
-/stats - Estadísticas detalladas
-/history - Historial de operaciones cerradas
-/history 1 - Filtrar por caso (1, 2, 3 o 4)
+/report - Reporte completo (cuenta, posiciones, historial, stats)
 /download - Descargar archivo trades.json
 
 <b>Notificaciones automáticas:</b>
-• Reportes cada 30 minutos
+• Reportes cada 40 minutos
 • Alertas cuando se abre/cierra una posición
 • Alertas cuando se ejecuta una orden límite
 """)
         else:
-            await self.send_message(chat_id, "❓ Comando no reconocido. Usa /help")
+            await self.send_message(chat_id, "❓ Comando no reconocido. Usa /report o /download")
     
     async def poll_updates(self):
         """Obtener actualizaciones de Telegram (polling)"""
@@ -452,6 +466,12 @@ Tu chat ha sido registrado para recibir notificaciones.
             message = update["message"]
             chat_id = message["chat"]["id"]
             text = message.get("text", "")
+
+            # Auto-autorizar cualquier chat que envíe comandos
+            if text.startswith("/") and chat_id not in AUTHORIZED_CHATS:
+                AUTHORIZED_CHATS.add(chat_id)
+                save_authorized_chats()
+                logger.info(f"Chat auto-autorizado: {chat_id}")
             
             if text.startswith("/"):
                 parts = text.split()
@@ -513,6 +533,8 @@ Tu chat ha sido registrado para recibir notificaciones.
     
     async def run_report_loop(self):
         """Loop de reportes automáticos cada N minutos"""
+        if not self.running:
+            self.running = True
         minutes = self.config.report_interval // 60
         logger.info(f"Iniciando reportes automáticos cada {minutes} minutos")
         

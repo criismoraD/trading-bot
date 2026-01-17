@@ -1364,7 +1364,7 @@ function drawFibonacciForShort() {
         if (zigzagPoints.length < 2) return;
 
         // IMPROVED FIBONACCI LOGIC:
-        // 1. Start from the rightmost HIGH
+        // 1. Start from the rightmost HIGH (but skip if last ZigZag point is HIGH)
         // 2. Find ALL lows to the right of that high
         // 3. Choose the LOW with the MINIMUM value
         // 4. Check if 61.8% was touched (only candles to the right of the HIGH)
@@ -1376,7 +1376,7 @@ function drawFibonacciForShort() {
         let swingLow = null;
 
         // Get all HIGH points sorted by index (position in time)
-        const highPoints = zigzagPoints
+        let highPoints = zigzagPoints
             .filter(p => p.type === 'high')
             .sort((a, b) => b.index - a.index); // Most recent first
 
@@ -1388,6 +1388,16 @@ function drawFibonacciForShort() {
     if (highPoints.length === 0 || lowPoints.length === 0) {
         console.log('No highs or lows found');
         return;
+    }
+
+    // ===== REGLA: Si el último punto ZigZag es un HIGH, ignorarlo =====
+    // Esto evita medir swings muy pequeños desde picos recientes
+    const lastZigZag = zigzagPoints.reduce((max, p) => p.index > max.index ? p : max);
+    const skipFirstHigh = lastZigZag.type === 'high';
+    
+    if (skipFirstHigh && highPoints.length > 1) {
+        console.log(`⚠️ Último punto ZigZag es HIGH (${lastZigZag.price.toFixed(4)}) - Ignorando, usando siguiente High`);
+        highPoints = highPoints.slice(1); // Saltar el primer High (más reciente)
     }
 
     // Iterate through HIGHs from right to left

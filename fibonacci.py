@@ -256,6 +256,15 @@ def find_valid_fibonacci_swing(
     
     last_candle_index = len(candle_data) - 1
     
+    # ===== REGLA: Si el último punto ZigZag es un HIGH, ignorarlo =====
+    # Esto evita medir swings muy pequeños desde picos recientes
+    last_zigzag = max(zigzag_points, key=lambda p: p.index)
+    skip_first_high = last_zigzag.type == "high"
+    
+    if skip_first_high and len(high_points) > 1:
+        print(f"   ⚠️ Último punto ZigZag es HIGH ({last_zigzag.price:.4f}) - Ignorando, usando siguiente High")
+        high_points = high_points[1:]  # Saltar el primer High (más reciente)
+    
     # Iterar por los Highs de derecha a izquierda (más reciente primero)
     for current_high in high_points:
         # Verificar que hay velas después del High
