@@ -500,6 +500,117 @@ class BinanceFuturesTrader:
         await self._request_silent("POST", "/fapi/v1/marginType", params, signed=True, ignore_codes=[-4046])
         return True
     
+    async def place_batch_orders(self, orders: list) -> Optional[list]:
+        """
+        Colocar múltiples órdenes en una sola llamada API (máximo 5)
+        Útil para crear orden principal + TP + SL juntos
+        
+        Args:
+            orders: Lista de diccionarios con parámetros de cada orden
+        
+        Returns:
+            Lista de resultados de cada orden
+        """
+        import json
+        
+        if not orders or len(orders) > 5:
+            logger.warning(f"Batch orders debe tener 1-5 órdenes, recibido: {len(orders) if orders else 0}")
+            return None
+        
+        params = {
+            "batchOrders": json.dumps(orders)
+        }
+        
+        result = await self._request("POST", "/fapi/v1/batchOrders", params, signed=True)
+        
+        if result:
+            logger.info(f"📦 BATCH ORDERS: {len(orders)} órdenes enviadas")
+            return result
+        
+        return None
+    
+    async def place_market_order_with_tp_sl(self, symbol: str, side: str, quantity: float,
+                                             take_profit: float = None, stop_loss: float = None) -> Optional[dict]:
+        """
+        Colocar orden de mercado con TP y SL en una sola llamada API usando batch orders
+        Esto crea las 3 órdenes atómicamente como en la UI de Binance
+        
+        Args:
+            symbol: Par de trading
+            side: "BUY" o "SELL"
+            quantity: Cantidad a operar
+            take_profit: Precio del TP (opcional)
+            stop_loss: Precio del SL (opcional)
+        """
+        qty_str = self.format_quantity(symbol, quantity)
+        close_side = "BUY" if side == "SELL" else "SELL"
+        
+        # Orden principal (MARKET)
+        orders = [{
+            "symbol": symbol,
+            "side": side,
+            "type": "MARKET",
+            "quantity": qty_str
+        }]
+        
+        # Take Profit
+        if take_profit:
+            orders.append({
+                "symbol": symbol,
+                "side": close_side,
+                "type": "TAKE_PROFIT_MARKET",
+                "stopPrice": self.format_price(symbol, take_profit),
+                "quantity": qty_str,
+                "reduceOnly": "true",
+                "workingType": "MARK_PRICE"
+            })
+        
+        # Stop Loss
+        if stop_loss:
+            orders.append({
+                "symbol": symbol,
+                "side": close_side,
+                "type": "STOP_MARKET",
+                "stopPrice": self.format_price(symbol, stop_loss),
+                "quantity": qty_str,
+                "reduceOnly": "true",
+                "workingType": "MARK_PRICE"
+            })
+        
+        # Ejecutar batch
+        results = await self.place_batch_orders(orders)
+        
+        if results:
+            # Parsear resultados
+            main_order = None
+            tp_order_id = None
+            sl_order_id = None
+            
+            for i, res in enumerate(results):
+                if "orderId" in res:
+                    if i == 0:
+                        main_order = res
+                    elif i == 1 and take_profit:
+                        tp_order_id = res.get("orderId")
+                    elif (i == 2 and take_profit) or (i == 1 and not take_profit and stop_loss):
+                        sl_order_id = res.get("orderId")
+                elif "code" in res:
+                    # Error en esta orden específica
+                    logger.warning(f"Error en orden batch {i}: {res.get('msg', res)}")
+            
+            if main_order:
+                main_order["tp_order_id"] = tp_order_id
+                main_order["sl_order_id"] = sl_order_id
+                
+                # Guardar referencia del TP
+                if tp_order_id:
+                    self.active_tp_orders[symbol] = tp_order_id
+                
+                logger.info(f"✅ BATCH: {side} {symbol} + TP={tp_order_id is not None} + SL={sl_order_id is not None}")
+                return main_order
+        
+        return None
+
     async def place_market_order(self, symbol: str, side: str, quantity: float,
                                   reduce_only: bool = False) -> Optional[dict]:
         """
@@ -739,8 +850,8 @@ class BinanceFuturesTrader:
                                    stop_loss: float = None, strategy_case: int = 0,
                                    fib_high: float = None, fib_low: float = None) -> Optional[dict]:
         """
-        Ejecutar entrada SHORT con TP y SL
-        Compatible con la lógica del scanner
+        Ejecutar entrada SHORT con TP y SL usando BATCH ORDERS
+        Crea las 3 órdenes en una sola llamada API (como la UI de Binance)
         """
         # Configurar leverage y margen cruzado
         await self.set_leverage(symbol, leverage)
@@ -765,40 +876,20 @@ class BinanceFuturesTrader:
                 logger.warning(f"Cantidad o nocional muy bajo para {symbol}")
                 return None
         
-        # Abrir posición SHORT (SELL)
-        order = await self.place_market_order(symbol, "SELL", quantity)
+        # Usar BATCH ORDERS para crear MARKET + TP + SL en una sola llamada
+        order = await self.place_market_order_with_tp_sl(
+            symbol=symbol,
+            side="SELL",
+            quantity=quantity,
+            take_profit=take_profit,
+            stop_loss=stop_loss
+        )
         
         if order:
-            # Obtener la cantidad ejecutada real (puede diferir ligeramente)
+            # Obtener la cantidad ejecutada real
             executed_qty = float(order.get("executedQty", quantity))
-            
-            # Verificar órdenes existentes antes de crear TP/SL
-            existing_orders = await self._request("GET", "/fapi/v1/openOrders", {"symbol": symbol}, signed=True)
-            has_tp = any(o.get("type") in ["TAKE_PROFIT", "TAKE_PROFIT_MARKET", "TAKE_PROFIT_LIMIT"] for o in (existing_orders or []))
-            has_sl = any(o.get("type") in ["STOP", "STOP_MARKET", "STOP_LIMIT"] for o in (existing_orders or []))
-            
-            # Colocar Take Profit (BUY para cerrar SHORT) si no existe
-            tp_result = None
-            tp_order_id = None
-            if take_profit and not has_tp:
-                tp_result = await self.place_take_profit(symbol, "BUY", take_profit, executed_qty)
-                if tp_result:
-                    tp_order_id = tp_result.get("orderId")
-                    # Guardar referencia del TP para TP dinámico
-                    self.active_tp_orders[symbol] = tp_order_id
-                else:
-                    print(f"   ⚠️ No se pudo crear TP para {symbol}")
-            elif has_tp:
-                print(f"   ℹ️ {symbol} ya tiene TP, omitiendo")
-            
-            # Colocar Stop Loss si se especificó y no existe
-            sl_result = None
-            if stop_loss and not has_sl:
-                sl_result = await self.place_stop_loss(symbol, "BUY", stop_loss, executed_qty)
-                if not sl_result:
-                    print(f"   ⚠️ No se pudo crear SL para {symbol}")
-            elif has_sl:
-                print(f"   ℹ️ {symbol} ya tiene SL, omitiendo")
+            tp_order_id = order.get("tp_order_id")
+            sl_order_id = order.get("sl_order_id")
             
             # Guardar información de posición para TP dinámico
             self.active_positions_info[symbol] = {
@@ -811,6 +902,7 @@ class BinanceFuturesTrader:
                 "strategy_case": strategy_case,
                 "side": "SHORT",
                 "tp_order_id": tp_order_id,
+                "sl_order_id": sl_order_id,
                 "executions": [{
                     "order_num": 1,
                     "price": current_price,
@@ -822,8 +914,8 @@ class BinanceFuturesTrader:
             
             sl_str = f"${stop_loss:.4f}" if stop_loss else "N/A"
             tp_str = f"${take_profit:.4f}" if take_profit else "N/A"
-            tp_status = "✅" if tp_result else "❌"
-            sl_status = "✅" if sl_result else "❌"
+            tp_status = "✅" if tp_order_id else "❌"
+            sl_status = "✅" if sl_order_id else "❌"
             print(f"✅ SHORT {symbol} @ ${current_price:.4f} | TP{tp_status}: {tp_str} | SL{sl_status}: {sl_str}")
             
             return {
