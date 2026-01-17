@@ -2012,21 +2012,55 @@ async function init() {
         // Open positions
         positions.forEach(([id, pos]) => {
             const pnlClass = (pos.unrealized_pnl || 0) >= 0 ? 'positive' : 'negative';
+            const strategyCase = pos.strategy_case || 0;
+            const executions = pos.executions || [];
+            const hasMultipleExecutions = executions.length > 1;
+            
+            // Calcular ganancia/pérdida potencial en USD
+            const entryPrice = pos.entry_price || 0;
+            const tpPrice = pos.take_profit || 0;
+            const slPrice = pos.stop_loss || 0;
+            const qty = pos.quantity || 0;
+            const margin = pos.margin || 0;
+            const leverage = pos.leverage || 10;
+            
+            // Para SHORT: ganancia = (entry - tp) * qty, pérdida = (sl - entry) * qty
+            const potentialProfit = (entryPrice - tpPrice) * qty;
+            const potentialLoss = slPrice > 0 ? (slPrice - entryPrice) * qty : 0;
+            
+            // Estrella si tiene múltiples ejecuciones (fusionada)
+            const starIcon = hasMultipleExecutions ? ' ⭐' : '';
+            const marginInfo = hasMultipleExecutions ? ` (x${executions.length})` : '';
+            
+            // Determinar qué mostrar según el caso
+            let slText = '';
+            if (strategyCase === 1 || strategyCase === 2) {
+                // Caso 1/2: SL solo si tiene múltiples ejecuciones
+                slText = hasMultipleExecutions 
+                    ? `<span style="color: #ef5350;">SL: -$${Math.abs(potentialLoss).toFixed(4)}</span>`
+                    : `<span style="color: #888;">SL: --</span>`;
+            } else {
+                // Caso 3/4: Mostrar SL directamente
+                slText = `<span style="color: #ef5350;">SL: -$${Math.abs(potentialLoss).toFixed(4)}</span>`;
+            }
+            
+            const pnlValue = pos.unrealized_pnl || 0;
+            const pnlSign = pnlValue >= 0 ? '+' : '';
+            
             html += `
             <div class="trade-item position clickable" data-symbol="${pos.symbol}" onclick="navigateToSymbol('${pos.symbol}')" style="cursor: pointer;">
                 <div class="trade-item-header">
-                    <span class="trade-symbol">${pos.symbol} <span style="font-size:0.8em; color:#aaa; margin-left:4px;">(C${pos.strategy_case || '?'})</span></span>
+                    <span class="trade-symbol">${pos.symbol}${starIcon} <span style="font-size:0.8em; color:#aaa; margin-left:4px;">(C${strategyCase})</span></span>
                     <span class="trade-type position">POSICIÓN ${pos.side}</span>
                 </div>
                 <div class="trade-details">
-                    <span>Precio: $${(pos.entry_price || 0).toFixed(4)}</span>
-                    <span>TP: $${(pos.take_profit || 0).toFixed(4)}</span>
+                    <span>Precio: $${entryPrice.toFixed(4)}</span>
+                    <span style="color: #4caf50;">TP: +$${potentialProfit.toFixed(4)}</span>
+                    ${slText}
                 </div>
                 <div class="trade-details">
-                    <span>Qty: ${(pos.quantity || 0).toFixed(4)}</span>
-                </div>
-                <div class="trade-details">
-                    <span class="trade-pnl ${pnlClass}">PnL: $${(pos.unrealized_pnl || 0).toFixed(4)}</span>
+                    <span>Qty: ${qty.toFixed(4)}${marginInfo}</span>
+                    <span class="trade-pnl ${pnlClass}">PnL: ${pnlSign}$${pnlValue.toFixed(4)}</span>
                 </div>
             </div>
         `;
@@ -2034,18 +2068,26 @@ async function init() {
 
         // Pending orders
         orders.forEach(([id, order]) => {
+            const strategyCase = order.strategy_case || 0;
+            const entryPrice = order.price || 0;
+            const tpPrice = order.take_profit || 0;
+            const qty = order.quantity || 0;
+            
+            // Para SHORT: ganancia potencial = (entry - tp) * qty
+            const potentialProfit = (entryPrice - tpPrice) * qty;
+            
             html += `
             <div class="trade-item limit clickable" data-symbol="${order.symbol}" onclick="navigateToSymbol('${order.symbol}')" style="cursor: pointer;">
                 <div class="trade-item-header">
-                    <span class="trade-symbol">${order.symbol} <span style="font-size:0.8em; color:#aaa; margin-left:4px;">(C${order.strategy_case || '?'})</span></span>
+                    <span class="trade-symbol">${order.symbol} <span style="font-size:0.8em; color:#aaa; margin-left:4px;">(C${strategyCase})</span></span>
                     <span class="trade-type limit">LÍMITE ${order.side}</span>
                 </div>
                 <div class="trade-details">
-                    <span>Precio: $${(order.price || 0).toFixed(4)}</span>
-                    <span>TP: $${(order.take_profit || 0).toFixed(4)}</span>
+                    <span>Precio: $${entryPrice.toFixed(4)}</span>
+                    <span style="color: #4caf50;">TP: +$${potentialProfit.toFixed(4)}</span>
                 </div>
                 <div class="trade-details">
-                    <span style="font-size: 0.9em; color: #888;">Qty: ${(order.quantity || 0).toFixed(2)}</span>
+                    <span style="font-size: 0.9em; color: #888;">Qty: ${qty.toFixed(2)}</span>
                 </div>
             </div>
         `;
