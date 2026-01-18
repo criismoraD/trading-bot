@@ -437,11 +437,10 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                     case_num = result.case
                     strategy_case_value = 11 if result.path == 2 else case_num
                     
-                    # Verificar duplicados
-                    existing = any(p.symbol == result.symbol and p.strategy_case == strategy_case_value 
-                                   for p in account.open_positions.values())
-                    existing = existing or any(o.symbol == result.symbol and o.strategy_case == strategy_case_value 
-                                               for o in account.pending_orders.values())
+                    # Verificar duplicados - Solo 1 operación por símbolo (excepto C1++ que es complementaria)
+                    # Si ya hay posición/orden del mismo símbolo (cualquier case), saltar
+                    existing = any(p.symbol == result.symbol for p in account.open_positions.values())
+                    existing = existing or any(o.symbol == result.symbol for o in account.pending_orders.values())
                     if existing:
                         continue
                     
