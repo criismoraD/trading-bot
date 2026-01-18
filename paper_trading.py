@@ -50,6 +50,7 @@ class Order:
     strategy_case: int = 0  # Caso de trading (1-4)
     fib_high: Optional[float] = None  # Precio del High (100%) del swing
     fib_low: Optional[float] = None   # Precio del Low (0%) del swing
+    entry_fib_level: Optional[float] = None  # Nivel Fibonacci de entrada (ej: 0.618 para 61.8%)
     
     def to_dict(self) -> dict:
         return {
@@ -71,7 +72,8 @@ class Order:
             "linked_order_id": self.linked_order_id,
             "strategy_case": self.strategy_case,
             "fib_high": self.fib_high,
-            "fib_low": self.fib_low
+            "fib_low": self.fib_low,
+            "entry_fib_level": self.entry_fib_level
         }
 
 @dataclass
@@ -89,10 +91,11 @@ class Position:
     current_price: float = 0.0  # Precio actual para calcular PnL
     linked_order_id: Optional[str] = None  # ID de orden vinculada para cerrar juntas
     min_pnl: float = 0.0  # Máximo drawdown registrado (valor negativo mas bajo)
-    max_pnl: float = -9999.0  # Mínimo inicial bajo. Máximo beneficio alcanzado.
+    max_pnl: float = 0.0  # Máximo beneficio alcanzado
     strategy_case: int = 0  # Caso de trading (1-4)
     fib_high: Optional[float] = None  # Precio del High (100%) del swing
     fib_low: Optional[float] = None   # Precio del Low (0%) del swing
+    entry_fib_level: Optional[float] = None  # Nivel Fibonacci de entrada (ej: 0.618 para 61.8%)
     # Historial de ejecuciones (para tracking de órdenes promediadas)
     executions: List[dict] = field(default_factory=list)  # [{price, qty, time, order_num}]
     
@@ -112,10 +115,7 @@ class Position:
             self.min_pnl = pnl
 
         # Actualizar Max Profit (mayor PnL registrado)
-        # Inicializar max_pnl si es la primera vez (para no quedarse en -9999)
-        if self.max_pnl == -9999.0:
-            self.max_pnl = pnl
-        elif pnl > self.max_pnl:
+        if pnl > self.max_pnl:
             self.max_pnl = pnl
             
         return pnl
@@ -148,6 +148,9 @@ class PaperTradingAccount:
         self.open_positions: Dict[str, Position] = {}
         self.trade_history: List[dict] = []
         self.order_counter = 0
+        
+        # === Monitoreo de posiciones cerradas (seguimiento de precio post-cierre) ===
+        self.closed_positions_monitoring: Dict[str, dict] = {}  # {order_id: {symbol, close_price, price_history: [{price, time}]}}
         
         # === NUEVO: Estadísticas de operaciones simultáneas ===
         self.stats = {
@@ -279,7 +282,8 @@ class PaperTradingAccount:
                           linked_order_id: Optional[str] = None,
                           strategy_case: int = 0,
                           fib_high: Optional[float] = None,
-                          fib_low: Optional[float] = None) -> Optional[Order]:
+                          fib_low: Optional[float] = None,
+                          entry_fib_level: Optional[float] = None) -> Optional[Order]:
         """Colocar orden límite"""
         if margin > self.get_available_margin():
             print(f"❌ Margen insuficiente. Disponible: ${self.get_available_margin():.2f}")
@@ -288,6 +292,12 @@ class PaperTradingAccount:
         # Calcular cantidad basada en margen y apalancamiento
         notional_value = margin * self.leverage
         quantity = notional_value / price
+        
+        # Calcular entry_fib_level si no se proporciona
+        if entry_fib_level is None and fib_high is not None and fib_low is not None:
+            fib_range = fib_high - fib_low
+            if fib_range > 0:
+                entry_fib_level = (price - fib_low) / fib_range
         
         order = Order(
             id=self._generate_order_id(),
@@ -303,7 +313,8 @@ class PaperTradingAccount:
             linked_order_id=linked_order_id,
             strategy_case=strategy_case,
             fib_high=fib_high,
-            fib_low=fib_low
+            fib_low=fib_low,
+            entry_fib_level=entry_fib_level
         )
         
         self.pending_orders[order.id] = order
@@ -311,14 +322,16 @@ class PaperTradingAccount:
         self._save_trades()
         
         sl_text = f" | SL: ${stop_loss:.4f}" if stop_loss else ""
-        print(f"📝 Orden Límite: {side.value} {symbol} @ ${price:.4f} | Margen: ${margin} | TP: ${take_profit:.4f}{sl_text}")
+        fib_text = f" | Fib: {entry_fib_level*100:.1f}%" if entry_fib_level else ""
+        print(f"📝 Orden Límite: {side.value} {symbol} @ ${price:.4f} | Margen: ${margin} | TP: ${take_profit:.4f}{sl_text}{fib_text}")
         return order
     
     def place_market_order(self, symbol: str, side: OrderSide, current_price: float,
                            margin: float, take_profit: float, stop_loss: Optional[float] = None,
                            strategy_case: int = 0,
                            fib_high: Optional[float] = None,
-                           fib_low: Optional[float] = None) -> Optional[Position]:
+                           fib_low: Optional[float] = None,
+                           entry_fib_level: Optional[float] = None) -> Optional[Position]:
         """Colocar orden de mercado (ejecución inmediata) con promedio de posición"""
         if margin > self.get_available_margin():
             print(f"❌ Margen insuficiente. Disponible: ${self.get_available_margin():.2f}")
@@ -327,6 +340,12 @@ class PaperTradingAccount:
         # Calcular cantidad
         notional_value = margin * self.leverage
         quantity = notional_value / current_price
+        
+        # Calcular entry_fib_level si no se proporciona
+        if entry_fib_level is None and fib_high is not None and fib_low is not None:
+            fib_range = fib_high - fib_low
+            if fib_range > 0:
+                entry_fib_level = (current_price - fib_low) / fib_range
         
         order_id = self._generate_order_id()
         position_side = PositionSide.SHORT if side == OrderSide.SELL else PositionSide.LONG
@@ -366,6 +385,9 @@ class PaperTradingAccount:
             print(f"🔄 Posición promediada: {symbol} Entrada ${avg_price:.4f} Qty {total_qty:.4f}")
             position = pos
         else:
+            # Detener monitoreo de posiciones cerradas del mismo par
+            self._stop_monitoring_symbol(symbol)
+            
             # Crear nueva posición
             position = Position(
                 symbol=symbol,
@@ -380,6 +402,7 @@ class PaperTradingAccount:
                 strategy_case=strategy_case,
                 fib_high=fib_high,
                 fib_low=fib_low,
+                entry_fib_level=entry_fib_level,
                 executions=[{
                     "order_num": 1,
                     "price": current_price,
@@ -498,6 +521,7 @@ class PaperTradingAccount:
                 strategy_case=order.strategy_case,
                 fib_high=order.fib_high,
                 fib_low=order.fib_low,
+                entry_fib_level=order.entry_fib_level,
                 executions=[{
                     "order_num": 1,
                     "price": fill_price,
@@ -535,6 +559,51 @@ class PaperTradingAccount:
         
         for order_id, reason, price in positions_to_close:
             self._close_position(order_id, price, reason)
+        
+        # Actualizar seguimiento de precios post-cierre
+        self._update_closed_positions_price(symbol, current_price)
+
+    def _update_closed_positions_price(self, symbol: str, current_price: float):
+        """Actualizar precios de posiciones cerradas que siguen en monitoreo"""
+        save_needed = False
+        
+        for order_id, monitor_data in list(self.closed_positions_monitoring.items()):
+            if monitor_data["symbol"] != symbol:
+                continue
+            
+            # Añadir precio al historial del trade
+            history_index = monitor_data["history_index"]
+            if history_index < len(self.trade_history):
+                trade_record = self.trade_history[history_index]
+                
+                # Actualizar min/max price post-close
+                current_min = trade_record.get("min_price_post_close", current_price)
+                current_max = trade_record.get("max_price_post_close", current_price)
+                
+                if current_price < current_min:
+                    trade_record["min_price_post_close"] = current_price
+                    save_needed = True
+                if current_price > current_max:
+                    trade_record["max_price_post_close"] = current_price
+                    save_needed = True
+                
+                # Guardar último precio tomado
+                trade_record["last_price_post_close"] = current_price
+                trade_record["last_price_time"] = datetime.now().isoformat()
+                save_needed = True
+        
+        # Guardar si hubo cambios
+        if save_needed:
+            self._save_trades()
+    
+    def _stop_monitoring_symbol(self, symbol: str):
+        """Detener monitoreo de precios post-cierre para un par cuando se abre nueva operación"""
+        orders_to_remove = [
+            order_id for order_id, data in self.closed_positions_monitoring.items()
+            if data["symbol"] == symbol
+        ]
+        for order_id in orders_to_remove:
+            del self.closed_positions_monitoring[order_id]
 
     def check_pending_orders(self, symbol: str, current_price: float):
         """Verificar si se activan órdenes pendientes (Limit Orders)"""
@@ -574,6 +643,24 @@ class PaperTradingAccount:
         # Actualizar balance
         self.balance += pnl
         
+        # Calcular ganancia/pérdida potencial en USDT
+        # Para SHORT: ganancia si precio baja al TP, pérdida si sube al SL
+        # Para LONG: ganancia si precio sube al TP, pérdida si baja al SL
+        potential_profit_usdt = 0.0
+        potential_loss_usdt = 0.0
+        
+        if position.take_profit:
+            if position.side == PositionSide.SHORT:
+                potential_profit_usdt = (position.entry_price - position.take_profit) * position.quantity
+            else:  # LONG
+                potential_profit_usdt = (position.take_profit - position.entry_price) * position.quantity
+        
+        if position.stop_loss:
+            if position.side == PositionSide.SHORT:
+                potential_loss_usdt = (position.stop_loss - position.entry_price) * position.quantity
+            else:  # LONG
+                potential_loss_usdt = (position.entry_price - position.stop_loss) * position.quantity
+        
         # Guardar en historial
         trade_record = {
             "order_id": order_id,
@@ -585,16 +672,30 @@ class PaperTradingAccount:
             "margin": position.margin,
             "pnl": pnl,
             "min_pnl": position.min_pnl,  # Max Drawdown
+            "max_pnl": position.max_pnl,  # Max Profit alcanzado
+            "potential_profit_usdt": round(potential_profit_usdt, 4),  # Ganancia potencial al TP
+            "potential_loss_usdt": round(potential_loss_usdt, 4),      # Pérdida potencial al SL
             "strategy_case": position.strategy_case,
             "reason": reason,
             "fib_high": position.fib_high,  # Nivel 100% (precio del High)
             "fib_low": position.fib_low,    # Nivel 0% (precio del Low)
-            "stop_loss": position.stop_loss,
+            "stop_loss": round(position.stop_loss, 8) if position.stop_loss else None,  # Redondear SL
             "take_profit": position.take_profit,
             "executions": position.executions,  # Historial de ejecuciones (precio de cada orden)
-            "closed_at": datetime.now().isoformat()
+            "closed_at": datetime.now().isoformat(),
+            "min_price_post_close": close_price,  # Precio mínimo alcanzado después del cierre
+            "max_price_post_close": close_price,  # Precio máximo alcanzado después del cierre
+            "last_price_post_close": close_price, # Último precio tomado después del cierre
+            "last_price_time": datetime.now().isoformat()  # Tiempo del último precio
         }
         self.trade_history.append(trade_record)
+        
+        # Iniciar monitoreo post-cierre
+        self.closed_positions_monitoring[order_id] = {
+            "symbol": position.symbol,
+            "close_price": close_price,
+            "history_index": len(self.trade_history) - 1  # Índice en trade_history para actualizar
+        }
         
         # Cancelar órdenes vinculadas si el TP se ejecutó
         if reason == "TP":

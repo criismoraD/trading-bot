@@ -74,6 +74,11 @@
                     <button class="tf-btn" data-tf="1d">1D</button>
                 </div>
                 <div class="chart-controls">
+                    <button class="control-btn active" id="toggleZigZagBtn" title="Ocultar/Ver ZigZag">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M2 20L8 8L14 16L22 4" />
+                        </svg>
+                    </button>
                     <button class="control-btn active" id="toggleAutoFibBtn" title="Ocultar/Ver Fibonacci Auto">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M4 20L20 4" />
@@ -141,38 +146,54 @@
 
                 <!-- Panel de Operaciones Abiertas -->
                 <div class="trades-panel" id="tradesPanel">
-                    <div class="trades-panel-header">
-                        <h3>📊 Operaciones</h3>
-                        <span class="trades-count" id="tradesCount">0</span>
+                    <!-- Modo Análisis Toggle - ARRIBA -->
+                    <div class="analysis-mode-toggle-bar" id="analysisModeToggleBar">
+                        <span class="analysis-toggle-label">🔬 Análisis</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="analysisModeToggle">
+                            <span class="slider"></span>
+                        </label>
                     </div>
-                    <div class="trades-list" id="tradesList">
-                        <div class="no-trades">Sin operaciones abiertas</div>
-                    </div>
-                    <div class="account-info" id="accountInfo">
-                        <div class="account-row">
-                            <span>Balance:</span>
-                            <span id="accountBalance">$30.00</span>
+
+                    <!-- Contenido Normal (oculto en modo análisis) -->
+                    <div class="normal-mode-content" id="normalModeContent">
+                        <div class="trades-panel-header">
+                            <h3>📊 Operaciones</h3>
+                            <span class="trades-count" id="tradesCount">0</span>
                         </div>
-                        <div class="account-row">
-                            <span>PnL no realizado:</span>
-                            <span id="accountPnl" class="pnl-value">$0.00</span>
+                        <div class="trades-list" id="tradesList">
+                            <div class="no-trades">Sin operaciones abiertas</div>
                         </div>
-                        <div class="account-row margin-balance">
-                            <span>Balance de Margen:</span>
-                            <span id="marginBalance">$30.00</span>
+                        <div class="account-info" id="accountInfo">
+                            <div class="account-row">
+                                <span>Balance:</span>
+                                <span id="accountBalance">$30.00</span>
+                            </div>
+                            <div class="account-row">
+                                <span>PnL no realizado:</span>
+                                <span id="accountPnl" class="pnl-value">$0.00</span>
+                            </div>
+                            <div class="account-row margin-balance">
+                                <span>Balance de Margen:</span>
+                                <span id="marginBalance">$30.00</span>
+                            </div>
+                        </div>
+
+                        <!-- Historial de Trades Cerradas (modo normal) -->
+                        <div class="history-section" id="historySection">
+                            <div class="history-header">
+                                <h4>📜 Historial</h4>
+                                <span class="history-count" id="historyCount">0</span>
+                            </div>
+                            <div class="history-list" id="historyList">
+                                <div class="no-history">Sin trades cerradas</div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Modo Análisis de Historial -->
-                    <div class="analysis-mode-section" id="analysisModeSection">
-                        <div class="analysis-header">
-                            <h4>🔬 Modo Análisis</h4>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="analysisModeToggle">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                        <div class="analysis-controls" id="analysisControls" style="display: none;">
+                    <!-- Contenido Modo Análisis (ocupa todo el panel) -->
+                    <div class="analysis-mode-content" id="analysisModeContent" style="display: none;">
+                        <div class="analysis-controls" id="analysisControls">
                             <input type="file" id="analysisFileInput" accept=".json" class="analysis-file-input">
                             <label for="analysisFileInput" class="file-input-label">📂 Cargar JSON</label>
                             <div class="case-filter">
@@ -189,19 +210,14 @@
                                 <span>PnL: <b id="analysisTotalPnl">$0.00</b></span>
                             </div>
                         </div>
-                    </div>
-
-                    <!-- Historial de Trades Cerradas -->
-                    <div class="history-section" id="historySection">
-                        <div class="history-header">
-                            <h4>📜 Historial</h4>
-                            <span class="history-count" id="historyCount">0</span>
+                        
+                        <!-- Lista Unificada de Operaciones (abiertas + cerradas) -->
+                        <div class="analysis-unified-list" id="analysisUnifiedList">
+                            <div class="no-history">Carga un archivo JSON para analizar</div>
                         </div>
-                        <div class="history-list" id="historyList">
-                            <div class="no-history">Sin trades cerradas</div>
-                        </div>
+                        
                         <!-- Navegación para análisis -->
-                        <div class="analysis-navigation" id="analysisNavigation" style="display: none;">
+                        <div class="analysis-navigation" id="analysisNavigation">
                             <button class="nav-btn" id="prevTradeBtn">◀ Anterior</button>
                             <span id="tradeNavInfo">0/0</span>
                             <button class="nav-btn" id="nextTradeBtn">Siguiente ▶</button>

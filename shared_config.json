@@ -35,11 +35,11 @@
         "invalidation_level_secondary": 1.0
     },
     "scanner": {
-        "rsi_threshold": 70,
+        "rsi_threshold": 75,
         "first_scan_delay": 2,
         "scan_interval": 66,
         "target_pairs": [],
-        "timeframe": "1h",
+        "timeframe": "4h",
         "top_pairs_limit": 600,
         "candle_limit": 1500
     }

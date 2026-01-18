@@ -33,9 +33,9 @@ CANDLE_LIMIT = _scanner.get("candle_limit", 1000)
 _target_pairs = _scanner.get("target_pairs", [])
 DEFAULT_SYMBOL = _target_pairs[0] if _target_pairs else None
 
-# Binance Futures API
-WS_BASE_URL = "wss://fstream.binance.com/ws"
-REST_BASE_URL = "https://fapi.binance.com"
+# Bybit Futures API
+WS_BASE_URL = "wss://stream.bybit.com/v5/public/linear"
+REST_BASE_URL = "https://api.bybit.com"
 
 # Telegram Config (desde .env)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")

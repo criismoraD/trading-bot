@@ -1,7 +1,14 @@
 /**
- * Binance Futures WLD/USDT Real-time Candlestick Visualizer
+ * Bybit Futures Real-time Candlestick Visualizer
  * Uses WebSocket for live updates and Lightweight Charts for rendering
  */
+
+// ===== Helper Functions =====
+function getCaseLabel(strategyCase) {
+    // Convertir strategy_case numérico a etiqueta legible
+    if (strategyCase === 11) return 'C1++';
+    return `C${strategyCase || '?'}`;
+}
 
 // ===== Configuration =====
 let currentSymbol = null; // Will be set from shared_config.json target_pairs
@@ -10,20 +17,20 @@ const CONFIG = {
     get symbol() { return currentSymbol; },
     defaultInterval: '1h', // Will be overridden by shared_config.json timeframe
     candleLimit: 1500,
-    wsBaseUrl: 'wss://fstream.binance.com/ws',
-    restBaseUrl: 'https://fapi.binance.com',
+    wsBaseUrl: 'wss://stream.bybit.com/v5/public/linear',
+    restBaseUrl: 'https://api.bybit.com',
     reconnectDelay: 3000,
     updateInterval: 1000 // Update display every second
 };
 
-// Timeframe mapping for API
+// Timeframe mapping for Bybit API (different format than Binance)
 const TIMEFRAME_MAP = {
-    '1m': '1m',
-    '5m': '5m',
-    '15m': '15m',
-    '1h': '1h',
-    '4h': '4h',
-    '1d': '1d'
+    '1m': '1',
+    '5m': '5',
+    '15m': '15',
+    '1h': '60',
+    '4h': '240',
+    '1d': 'D'
 };
 
 // ===== Global State =====
@@ -48,6 +55,7 @@ let selectedManualFib = null; // For deletion
 
 // ===== Visibility State =====
 let showAutoFib = true;
+let showZigZag = true; // Toggle for ZigZag visibility
 
 // ===== All Trading Pairs Cache =====
 let allTradingPairs = [];
@@ -56,10 +64,9 @@ let showTradeLines = true;
 let tradeLinesSeries = []; // Store references to trade lines for clearing
 let lastTradesData = null; // Store last trades data for redrawing
 
-// ===== RSI Indicator =====
+// ===== RSI Indicator (Etiqueta) =====
 let showRSI = true;
 let rsiValue = 0;
-let rsiLine = null;
 
 // ZigZag configuration per timeframe (less bars for smaller timeframes)
 function getZigZagConfig() {
@@ -174,7 +181,7 @@ const elements = {
 
 // ===== Chart Setup =====
 function initChart() {
-    // Create chart
+    // Create main chart
     chart = LightweightCharts.createChart(elements.chartContainer, {
         layout: {
             background: { type: 'solid', color: '#0a0e17' },
@@ -234,7 +241,7 @@ function initChart() {
 }
 
 function handleResize() {
-    if (chart) {
+    if (chart && elements.chartContainer) {
         chart.applyOptions({
             width: elements.chartContainer.clientWidth,
             height: elements.chartContainer.clientHeight
@@ -287,7 +294,9 @@ async function fetchHistoricalData() {
     try {
         showLoading(true);
 
-        const url = `${CONFIG.restBaseUrl}/fapi/v1/klines?symbol=${CONFIG.symbol}&interval=${currentInterval}&limit=${CONFIG.candleLimit}`;
+        // Bybit API endpoint for klines
+        const bybitInterval = TIMEFRAME_MAP[currentInterval] || '60';
+        const url = `${CONFIG.restBaseUrl}/v5/market/kline?category=linear&symbol=${CONFIG.symbol}&interval=${bybitInterval}&limit=${CONFIG.candleLimit}`;
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -295,9 +304,16 @@ async function fetchHistoricalData() {
         }
 
         const data = await response.json();
+        
+        if (data.retCode !== 0) {
+            throw new Error(`Bybit API error: ${data.retMsg}`);
+        }
 
-        candleData = data.map(k => ({
-            time: Math.floor(k[0] / 1000),
+        // Bybit returns data in descending order (newest first), need to reverse
+        const klines = data.result.list.reverse();
+        
+        candleData = klines.map(k => ({
+            time: Math.floor(parseInt(k[0]) / 1000),
             open: parseFloat(k[1]),
             high: parseFloat(k[2]),
             low: parseFloat(k[3]),
@@ -330,13 +346,17 @@ async function fetchHistoricalData() {
 // ===== RSI Functions =====
 async function fetchAndUpdateRSI() {
     try {
-        // Fetch 5m candles for RSI calculation
-        const url = `${CONFIG.restBaseUrl}/fapi/v1/klines?symbol=${CONFIG.symbol}&interval=5m&limit=100`;
+        // Fetch 5m candles for RSI calculation (Bybit API)
+        const url = `${CONFIG.restBaseUrl}/v5/market/kline?category=linear&symbol=${CONFIG.symbol}&interval=5&limit=100`;
         const response = await fetch(url);
         if (!response.ok) return;
 
         const data = await response.json();
-        const closes = data.map(k => parseFloat(k[4]));
+        if (data.retCode !== 0) return;
+        
+        // Bybit returns descending order
+        const klines = data.result.list.reverse();
+        const closes = klines.map(k => parseFloat(k[4]));
 
         rsiValue = calculateRSI(closes, 14);
         updateRSIDisplay();
@@ -377,14 +397,14 @@ function updateRSIDisplay() {
 
     if (!showRSI) return;
 
-    // Create RSI display element
+    // Create RSI display element (etiqueta flotante)
     const rsiDisplay = document.createElement('div');
     rsiDisplay.id = 'rsiDisplay';
     rsiDisplay.style.cssText = `
         position: absolute;
         top: 60px;
         right: 300px;
-        background: ${rsiValue >= 75 ? 'rgba(239, 83, 80, 0.9)' : rsiValue <= 25 ? 'rgba(38, 166, 154, 0.9)' : 'rgba(33, 150, 243, 0.9)'};
+        background: ${rsiValue >= 70 ? 'rgba(239, 83, 80, 0.9)' : rsiValue <= 30 ? 'rgba(38, 166, 154, 0.9)' : 'rgba(33, 150, 243, 0.9)'};
         color: white;
         padding: 8px 16px;
         border-radius: 8px;
@@ -393,7 +413,7 @@ function updateRSIDisplay() {
         z-index: 1000;
         box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     `;
-    rsiDisplay.innerHTML = `RSI(5m): ${rsiValue.toFixed(1)} ${rsiValue >= 75 ? '🔴' : rsiValue <= 25 ? '🟢' : '⚪'}`;
+    rsiDisplay.innerHTML = `RSI(5m): ${rsiValue.toFixed(1)} ${rsiValue >= 70 ? '🔴' : rsiValue <= 30 ? '🟢' : '⚪'}`;
 
     const chartWrapper = document.querySelector('.chart-wrapper');
     if (chartWrapper) {
@@ -403,11 +423,21 @@ function updateRSIDisplay() {
 
 async function fetch24hStats() {
     try {
-        const url = `${CONFIG.restBaseUrl}/fapi/v1/ticker/24hr?symbol=${CONFIG.symbol}`;
+        // Bybit API for 24h ticker
+        const url = `${CONFIG.restBaseUrl}/v5/market/tickers?category=linear&symbol=${CONFIG.symbol}`;
         const response = await fetch(url);
         const data = await response.json();
-
-        update24hStats(data);
+        
+        if (data.retCode !== 0 || !data.result.list.length) return;
+        
+        // Bybit format
+        const ticker = data.result.list[0];
+        update24hStats({
+            volume: ticker.volume24h,
+            highPrice: ticker.highPrice24h,
+            lowPrice: ticker.lowPrice24h,
+            priceChangePercent: ticker.price24hPcnt ? (parseFloat(ticker.price24hPcnt) * 100).toFixed(2) : '0'
+        });
     } catch (error) {
         console.error('Error fetching 24h stats:', error);
     }
@@ -450,105 +480,190 @@ function update24hStats(data) {
 
 // ===== WebSocket Connections =====
 function connectWebSockets() {
-    connectKlineWS();
-    connectTickerWS();
-    connectMarkPriceWS();
-}
-
-function connectKlineWS() {
+    // Bybit usa un solo WebSocket con múltiples suscripciones
     if (ws) {
         ws.close();
     }
 
-    const streamName = `${CONFIG.symbol.toLowerCase()}@kline_${currentInterval}`;
-    ws = new WebSocket(`${CONFIG.wsBaseUrl}/${streamName}`);
+    ws = new WebSocket(CONFIG.wsBaseUrl);
 
     ws.onopen = () => {
-        console.log('Kline WebSocket connected');
+        console.log('Bybit WebSocket connected');
+        
+        // Suscribirse a kline, ticker y tickers (mark price)
+        const interval = TIMEFRAME_MAP[currentInterval] || '240';
+        const symbol = CONFIG.symbol;
+        
+        const subscribeMsg = {
+            op: "subscribe",
+            args: [
+                `kline.${interval}.${symbol}`,
+                `tickers.${symbol}`
+            ]
+        };
+        
+        ws.send(JSON.stringify(subscribeMsg));
+        console.log('Subscribed to:', subscribeMsg.args);
+        
         wsConnections.kline = true;
+        wsConnections.ticker = true;
+        wsConnections.markPrice = true;
         updateConnectionStatus();
     };
 
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        if (data.k) {
-            handleKlineUpdate(data.k);
+        
+        // Kline update
+        if (data.topic && data.topic.startsWith('kline.')) {
+            if (data.data && data.data.length > 0) {
+                const kline = data.data[0];
+                handleBybitKlineUpdate(kline);
+            }
+        }
+        
+        // Ticker update (incluye mark price, funding, etc.)
+        if (data.topic && data.topic.startsWith('tickers.')) {
+            if (data.data) {
+                handleBybitTickerUpdate(data.data);
+            }
+        }
+        
+        // Pong response
+        if (data.op === 'pong') {
+            console.log('Pong received');
         }
     };
 
     ws.onerror = (error) => {
-        console.error('Kline WebSocket error:', error);
+        console.error('Bybit WebSocket error:', error);
     };
 
     ws.onclose = () => {
-        console.log('Kline WebSocket closed');
+        console.log('Bybit WebSocket closed');
         wsConnections.kline = false;
+        wsConnections.ticker = false;
+        wsConnections.markPrice = false;
         updateConnectionStatus();
         scheduleReconnect();
     };
+    
+    // Ping cada 20 segundos para mantener la conexión viva
+    if (window.bybitPingInterval) {
+        clearInterval(window.bybitPingInterval);
+    }
+    window.bybitPingInterval = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ op: "ping" }));
+        }
+    }, 20000);
+}
+
+// Ya no necesitamos funciones separadas para cada WebSocket
+function connectKlineWS() {
+    // Manejado por connectWebSockets()
 }
 
 function connectTickerWS() {
-    if (tickerWs) {
-        tickerWs.close();
-    }
-
-    const streamName = `${CONFIG.symbol.toLowerCase()}@ticker`;
-    tickerWs = new WebSocket(`${CONFIG.wsBaseUrl}/${streamName}`);
-
-    tickerWs.onopen = () => {
-        console.log('Ticker WebSocket connected');
-        wsConnections.ticker = true;
-        updateConnectionStatus();
-    };
-
-    tickerWs.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        handleTickerUpdate(data);
-    };
-
-    tickerWs.onerror = (error) => {
-        console.error('Ticker WebSocket error:', error);
-    };
-
-    tickerWs.onclose = () => {
-        console.log('Ticker WebSocket closed');
-        wsConnections.ticker = false;
-        updateConnectionStatus();
-    };
+    // Manejado por connectWebSockets()
 }
 
 function connectMarkPriceWS() {
-    if (markPriceWs) {
-        markPriceWs.close();
-    }
-
-    const streamName = `${CONFIG.symbol.toLowerCase()}@markPrice@1s`;
-    markPriceWs = new WebSocket(`${CONFIG.wsBaseUrl}/${streamName}`);
-
-    markPriceWs.onopen = () => {
-        console.log('Mark Price WebSocket connected');
-        wsConnections.markPrice = true;
-        updateConnectionStatus();
-    };
-
-    markPriceWs.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        handleMarkPriceUpdate(data);
-    };
-
-    markPriceWs.onerror = (error) => {
-        console.error('Mark Price WebSocket error:', error);
-    };
-
-    markPriceWs.onclose = () => {
-        console.log('Mark Price WebSocket closed');
-        wsConnections.markPrice = false;
-        updateConnectionStatus();
-    };
+    // Manejado por connectWebSockets()
 }
 
+function handleBybitKlineUpdate(kline) {
+    const candle = {
+        time: Math.floor(parseInt(kline.start) / 1000),
+        open: parseFloat(kline.open),
+        high: parseFloat(kline.high),
+        low: parseFloat(kline.low),
+        close: parseFloat(kline.close),
+        volume: parseFloat(kline.volume)
+    };
+
+    // Update or add candle
+    const lastIndex = candleData.length - 1;
+    const isNewCandle = lastIndex < 0 || candleData[lastIndex].time !== candle.time;
+
+    if (isNewCandle) {
+        candleData.push(candle);
+    } else {
+        candleData[lastIndex] = candle;
+    }
+
+    // Always update ZigZag to reflect real-time price changes (avoids "ghost" points)
+    if (showZigZag) {
+        drawZigZag();
+    }
+
+    // Update chart
+    candleSeries.update(candle);
+
+    // Update OHLC display
+    updateOHLCDisplay(candle);
+
+    // Update last update time
+    elements.lastUpdate.textContent = new Date().toLocaleTimeString();
+}
+
+function handleBybitTickerUpdate(data) {
+    // Update current price with animation
+    const newPrice = parseFloat(data.lastPrice);
+    const priceElement = elements.currentPrice;
+
+    if (lastPrice !== null && priceElement) {
+        const isUp = newPrice > lastPrice;
+        priceElement.classList.remove('bullish', 'bearish');
+        priceElement.classList.add(isUp ? 'bullish' : 'bearish');
+    }
+
+    if (priceElement) {
+        priceElement.textContent = newPrice.toFixed(4);
+    }
+    lastPrice = newPrice;
+
+    // Update 24h stats from ticker
+    if (data.price24hPcnt !== undefined) {
+        const change = parseFloat(data.price24hPcnt) * 100;
+        if (elements.priceChange) {
+            elements.priceChange.textContent = change.toFixed(2) + '%';
+            elements.priceChange.style.color = change >= 0 ? '#26a69a' : '#ef5350';
+        }
+    }
+    
+    if (data.highPrice24h && elements.high24h) {
+        elements.high24h.textContent = parseFloat(data.highPrice24h).toFixed(4);
+    }
+    
+    if (data.lowPrice24h && elements.low24h) {
+        elements.low24h.textContent = parseFloat(data.lowPrice24h).toFixed(4);
+    }
+    
+    if (data.volume24h && elements.volume24h) {
+        const vol = parseFloat(data.volume24h);
+        elements.volume24h.textContent = vol > 1000000 ? (vol / 1000000).toFixed(2) + 'M' : vol.toFixed(0);
+    }
+    
+    // Mark price y funding rate
+    if (data.markPrice && elements.markPrice) {
+        elements.markPrice.textContent = parseFloat(data.markPrice).toFixed(4);
+    }
+    
+    if (data.indexPrice && elements.indexPrice) {
+        elements.indexPrice.textContent = parseFloat(data.indexPrice).toFixed(4);
+    }
+    
+    if (data.fundingRate && elements.fundingRate) {
+        const fundingRate = parseFloat(data.fundingRate) * 100;
+        elements.fundingRate.textContent = fundingRate.toFixed(4) + '%';
+        elements.fundingRate.style.color = fundingRate >= 0 ? '#26a69a' : '#ef5350';
+    }
+}
+
+// Mantener las funciones originales para compatibilidad pero redirigir
 function handleKlineUpdate(kline) {
+    // Para compatibilidad con formato Binance
     const candle = {
         time: Math.floor(kline.t / 1000),
         open: parseFloat(kline.o),
@@ -583,36 +698,7 @@ function handleKlineUpdate(kline) {
     elements.lastUpdate.textContent = new Date().toLocaleTimeString();
 }
 
-function handleTickerUpdate(data) {
-    // Update current price with animation
-    const newPrice = parseFloat(data.c);
-    const priceElement = elements.currentPrice;
-
-    if (lastPrice !== null) {
-        const isUp = newPrice > lastPrice;
-        priceElement.classList.remove('bullish', 'bearish');
-        priceElement.classList.add(isUp ? 'bullish' : 'bearish');
-    }
-
-    priceElement.textContent = newPrice.toFixed(4);
-    lastPrice = newPrice;
-
-    // Update 24h stats
-    update24hStats(data);
-}
-
-function handleMarkPriceUpdate(data) {
-    const formatPrice = (price) => parseFloat(price).toFixed(4);
-    const formatFunding = (rate) => (parseFloat(rate) * 100).toFixed(4) + '%';
-
-    elements.markPrice.textContent = formatPrice(data.p);
-    elements.indexPrice.textContent = formatPrice(data.i);
-    elements.fundingRate.textContent = formatFunding(data.r);
-
-    // Color funding rate
-    const fundingRate = parseFloat(data.r);
-    elements.fundingRate.style.color = fundingRate >= 0 ? '#26a69a' : '#ef5350';
-}
+// handleTickerUpdate y handleMarkPriceUpdate eliminadas - ahora se usa handleBybitTickerUpdate
 
 function scheduleReconnect() {
     if (reconnectTimer) {
@@ -708,6 +794,16 @@ function setupEventListeners() {
             } else {
                 clearFibonacciLines();
             }
+        });
+    }
+
+    // Toggle ZigZag visibility
+    const toggleZigZagBtn = document.getElementById('toggleZigZagBtn');
+    if (toggleZigZagBtn) {
+        toggleZigZagBtn.addEventListener('click', () => {
+            showZigZag = !showZigZag;
+            toggleZigZagBtn.classList.toggle('active', showZigZag);
+            drawZigZag();
         });
     }
 
@@ -1085,10 +1181,14 @@ async function changeSymbol(newSymbol) {
     currentSymbol = newSymbol;
     lastPrice = null;
 
-    // Close all WebSocket connections
+    // Clear ping interval
+    if (window.bybitPingInterval) {
+        clearInterval(window.bybitPingInterval);
+        window.bybitPingInterval = null;
+    }
+
+    // Close WebSocket connection
     if (ws) { ws.close(); ws = null; }
-    if (tickerWs) { tickerWs.close(); tickerWs = null; }
-    if (markPriceWs) { markPriceWs.close(); markPriceWs = null; }
 
     // Reset connection status
     wsConnections = { kline: false, ticker: false, markPrice: false };
@@ -1108,11 +1208,14 @@ async function changeSymbol(newSymbol) {
 // ===== Fetch Open Interest =====
 async function fetchOpenInterest() {
     try {
-        const url = `${CONFIG.restBaseUrl}/fapi/v1/openInterest?symbol=${CONFIG.symbol}`;
+        // Bybit API for open interest
+        const url = `${CONFIG.restBaseUrl}/v5/market/open-interest?category=linear&symbol=${CONFIG.symbol}&intervalTime=5min&limit=1`;
         const response = await fetch(url);
         const data = await response.json();
+        
+        if (data.retCode !== 0 || !data.result.list.length) return;
 
-        const oi = parseFloat(data.openInterest);
+        const oi = parseFloat(data.result.list[0].openInterest);
         elements.openInterest.textContent = oi >= 1e6
             ? (oi / 1e6).toFixed(2) + 'M'
             : oi >= 1e3
@@ -1123,7 +1226,7 @@ async function fetchOpenInterest() {
     }
 }
 
-// ===== ZigZag Algorithm - VERSIÓN MEJORADA =====
+// ===== ZigZag Algorithm - VERSIÓN ROBUSTA =====
 function calculateZigZag(data) {
     const config = getZigZagConfig();
     if (data.length < config.depth * 2) return [];
@@ -1131,162 +1234,123 @@ function calculateZigZag(data) {
     const deviation = config.deviation / 100;
     const depth = config.depth;
 
-    // ===== FASE 1: Encontrar todos los extremos locales =====
-    const localHighs = [];
-    const localLows = [];
+    // ===== FASE 1: Encontrar TODOS los pivotes potenciales =====
+    const potentialPivots = [];
 
-    for (let i = depth; i < data.length - depth; i++) {
-        // Verificar si es un máximo local
+    for (let i = depth; i < data.length - 1; i++) {
         let isHigh = true;
-        const currentHigh = data[i].high;
-        for (let j = i - depth; j <= i + depth; j++) {
-            if (j !== i && data[j].high > currentHigh) {
-                isHigh = false;
-                break;
-            }
-        }
-        if (isHigh) {
-            localHighs.push({ index: i, price: currentHigh });
+        let isLow = true;
+
+        // Comparar con las velas en la ventana
+        const start = Math.max(0, i - depth);
+        const end = Math.min(data.length, i + depth + 1);
+        
+        for (let j = start; j < end; j++) {
+            if (j === i) continue;
+            if (data[j].high >= data[i].high) isHigh = false;
+            if (data[j].low <= data[i].low) isLow = false;
         }
 
-        // Verificar si es un mínimo local
-        let isLow = true;
-        const currentLow = data[i].low;
-        for (let j = i - depth; j <= i + depth; j++) {
-            if (j !== i && data[j].low < currentLow) {
-                isLow = false;
-                break;
-            }
+        if (isHigh) {
+            potentialPivots.push({ index: i, price: data[i].high, type: 'high' });
         }
         if (isLow) {
-            localLows.push({ index: i, price: currentLow });
+            potentialPivots.push({ index: i, price: data[i].low, type: 'low' });
         }
     }
 
-    // También verificar las últimas velas (pueden ser extremos)
-    if (data.length > depth) {
-        const lastSectionStart = data.length - depth;
-        let maxInLast = lastSectionStart;
-        let minInLast = lastSectionStart;
+    // También agregar extremos de las últimas velas
+    const lastN = Math.min(depth, data.length - 1);
+    if (lastN > 0) {
+        const lastSectionStart = data.length - lastN;
+        let maxIdx = lastSectionStart;
+        let minIdx = lastSectionStart;
         
         for (let i = lastSectionStart; i < data.length; i++) {
-            if (data[i].high > data[maxInLast].high) maxInLast = i;
-            if (data[i].low < data[minInLast].low) minInLast = i;
+            if (data[i].high > data[maxIdx].high) maxIdx = i;
+            if (data[i].low < data[minIdx].low) minIdx = i;
         }
 
-        // Añadir si es significativo
-        if (!localHighs.some(h => h.index === maxInLast)) {
-            let isSignificantHigh = true;
-            for (let j = Math.max(0, maxInLast - depth); j < maxInLast; j++) {
-                if (data[j].high > data[maxInLast].high) {
-                    isSignificantHigh = false;
-                    break;
-                }
-            }
-            if (isSignificantHigh) {
-                localHighs.push({ index: maxInLast, price: data[maxInLast].high });
-            }
+        // Solo añadir si no existen ya
+        if (!potentialPivots.some(p => p.index === maxIdx && p.type === 'high')) {
+            potentialPivots.push({ index: maxIdx, price: data[maxIdx].high, type: 'high' });
         }
-
-        if (!localLows.some(l => l.index === minInLast)) {
-            let isSignificantLow = true;
-            for (let j = Math.max(0, minInLast - depth); j < minInLast; j++) {
-                if (data[j].low < data[minInLast].low) {
-                    isSignificantLow = false;
-                    break;
-                }
-            }
-            if (isSignificantLow) {
-                localLows.push({ index: minInLast, price: data[minInLast].low });
-            }
+        if (!potentialPivots.some(p => p.index === minIdx && p.type === 'low')) {
+            potentialPivots.push({ index: minIdx, price: data[minIdx].low, type: 'low' });
         }
     }
 
-    // ===== FASE 2: Combinar todos los extremos =====
-    const allExtremes = [];
-    for (const h of localHighs) {
-        allExtremes.push({ index: h.index, price: h.price, type: 'high' });
-    }
-    for (const l of localLows) {
-        allExtremes.push({ index: l.index, price: l.price, type: 'low' });
-    }
+    if (potentialPivots.length === 0) return [];
 
     // Ordenar por índice
-    allExtremes.sort((a, b) => a.index - b.index);
+    potentialPivots.sort((a, b) => a.index - b.index);
 
-    if (allExtremes.length === 0) return [];
+    // ===== FASE 2: Construir ZigZag alternando y respetando desviación =====
+    const zigzag = [];
+    let lastType = null;
+    let lastPrice = null;
 
-    // ===== FASE 3: Construir ZigZag alternando High-Low =====
-    const firstHighIdx = allExtremes.findIndex(e => e.type === 'high');
-    const firstLowIdx = allExtremes.findIndex(e => e.type === 'low');
-
-    if (firstHighIdx === -1 || firstLowIdx === -1) return [];
-
-    let currentType = firstHighIdx < firstLowIdx ? 'high' : 'low';
-    const filteredPivots = [];
-
-    let i = 0;
-    while (i < allExtremes.length) {
-        let bestExtreme = null;
-
-        // Agrupar extremos consecutivos del mismo tipo y elegir el mejor
-        while (i < allExtremes.length) {
-            const extreme = allExtremes[i];
-
-            if (extreme.type === currentType) {
-                if (bestExtreme === null) {
-                    bestExtreme = extreme;
-                } else {
-                    if (currentType === 'high' && extreme.price > bestExtreme.price) {
-                        bestExtreme = extreme;
-                    } else if (currentType === 'low' && extreme.price < bestExtreme.price) {
-                        bestExtreme = extreme;
-                    }
-                }
-                i++;
-            } else {
-                if (bestExtreme !== null) break;
-                i++;
-            }
+    for (const pivot of potentialPivots) {
+        if (zigzag.length === 0) {
+            zigzag.push(pivot);
+            lastType = pivot.type;
+            lastPrice = pivot.price;
+            continue;
         }
 
-        if (bestExtreme !== null) {
-            // Verificar desviación mínima respecto al último pivot
-            if (filteredPivots.length > 0) {
-                const lastPivot = filteredPivots[filteredPivots.length - 1];
-                const priceChange = Math.abs(bestExtreme.price - lastPivot.price) / lastPivot.price;
+        if (pivot.type === lastType) {
+            // Reemplazar si es más extremo
+            if (lastType === 'high' && pivot.price > zigzag[zigzag.length - 1].price) {
+                zigzag[zigzag.length - 1] = pivot;
+                lastPrice = pivot.price;
+            } else if (lastType === 'low' && pivot.price < zigzag[zigzag.length - 1].price) {
+                zigzag[zigzag.length - 1] = pivot;
+                lastPrice = pivot.price;
+            }
+        } else {
+            // Tipo diferente - verificar desviación
+            const priceChange = Math.abs(pivot.price - lastPrice) / lastPrice;
 
-                if (priceChange >= deviation) {
-                    filteredPivots.push(bestExtreme);
-                    currentType = currentType === 'high' ? 'low' : 'high';
-                } else {
-                    // No cumple desviación, pero si es mejor que el último del mismo tipo, reemplazar
-                    if (bestExtreme.type === lastPivot.type) {
-                        if ((currentType === 'high' && bestExtreme.price > lastPivot.price) ||
-                            (currentType === 'low' && bestExtreme.price < lastPivot.price)) {
-                            filteredPivots[filteredPivots.length - 1] = bestExtreme;
-                        }
+            if (priceChange >= deviation) {
+                zigzag.push(pivot);
+                lastType = pivot.type;
+                lastPrice = pivot.price;
+            } else {
+                // Verificar si es mejor que el anterior del mismo tipo
+                if (zigzag.length >= 2 && zigzag[zigzag.length - 2].type === pivot.type) {
+                    if (pivot.type === 'high' && pivot.price > zigzag[zigzag.length - 2].price) {
+                        zigzag[zigzag.length - 2] = pivot;
+                    } else if (pivot.type === 'low' && pivot.price < zigzag[zigzag.length - 2].price) {
+                        zigzag[zigzag.length - 2] = pivot;
                     }
                 }
-            } else {
-                filteredPivots.push(bestExtreme);
-                currentType = currentType === 'high' ? 'low' : 'high';
+            }
+        }
+    }
+
+    // ===== FASE 3: Validar alternancia =====
+    const finalZigzag = [];
+    for (const pivot of zigzag) {
+        if (finalZigzag.length === 0) {
+            finalZigzag.push(pivot);
+        } else if (pivot.type !== finalZigzag[finalZigzag.length - 1].type) {
+            finalZigzag.push(pivot);
+        } else {
+            if (pivot.type === 'high' && pivot.price > finalZigzag[finalZigzag.length - 1].price) {
+                finalZigzag[finalZigzag.length - 1] = pivot;
+            } else if (pivot.type === 'low' && pivot.price < finalZigzag[finalZigzag.length - 1].price) {
+                finalZigzag[finalZigzag.length - 1] = pivot;
             }
         }
     }
 
     // ===== FASE 4: Convertir a formato de pivots =====
-    const pivots = [];
-    for (const extreme of filteredPivots) {
-        pivots.push({
-            time: data[extreme.index].time,
-            price: extreme.price,
-            type: extreme.type,
-            index: extreme.index
-        });
-    }
-
-    return pivots;
+    return finalZigzag.map(pivot => ({
+        time: data[pivot.index].time,
+        price: pivot.price,
+        type: pivot.type,
+        index: pivot.index
+    }));
 }
 
 function clearFibonacciLines() {
@@ -1312,6 +1376,12 @@ function drawZigZag() {
 
         // Clear Fibonacci lines
         clearFibonacciLines();
+
+        // If ZigZag is hidden, just clear and return
+        if (!showZigZag) {
+            console.log('ZigZag hidden by user');
+            return;
+        }
 
         // Get configured timeframe from sharedConfig or default to current
         const configuredTimeframe = (sharedConfig && sharedConfig.scanner && sharedConfig.scanner.timeframe)
@@ -1757,7 +1827,7 @@ async function init() {
         }
     }
 
-    // Populate pair selector from config or Binance API
+    // Populate pair selector from config or Bybit API
     await populatePairSelect();
 
     async function populatePairSelect() {
@@ -1783,18 +1853,20 @@ async function init() {
         if (sharedConfig && sharedConfig.scanner && sharedConfig.scanner.target_pairs && sharedConfig.scanner.target_pairs.length > 0) {
             pairs = sharedConfig.scanner.target_pairs;
         } else {
-            // Si target_pairs está vacío, obtener TODOS los pares de Binance Futures
-            console.log('📡 Obteniendo lista de pares desde Binance API...');
+            // Si target_pairs está vacío, obtener TODOS los pares de Bybit Futures
+            console.log('📡 Obteniendo lista de pares desde Bybit API...');
             try {
-                const response = await fetch('https://fapi.binance.com/fapi/v1/exchangeInfo');
+                const response = await fetch('https://api.bybit.com/v5/market/tickers?category=linear');
                 if (response.ok) {
                     const data = await response.json();
-                    pairs = data.symbols
-                        .filter(s => s.status === 'TRADING' && s.quoteAsset === 'USDT')
-                        .map(s => s.symbol)
-                        .filter(s => !EXCLUDED_PAIRS.includes(s)) // Excluir stablecoins
-                        .sort();
-                    console.log(`✅ Encontrados ${pairs.length} pares USDT (sin stablecoins)`);
+                    if (data.retCode === 0) {
+                        pairs = data.result.list
+                            .filter(s => s.symbol.endsWith('USDT'))
+                            .map(s => s.symbol)
+                            .filter(s => !EXCLUDED_PAIRS.includes(s)) // Excluir stablecoins
+                            .sort();
+                        console.log(`✅ Encontrados ${pairs.length} pares USDT (sin stablecoins)`);
+                    }
                 }
             } catch (e) {
                 console.error('❌ Error obteniendo pares:', e);
@@ -2077,7 +2149,7 @@ async function init() {
             html += `
             <div class="trade-item position clickable" data-symbol="${pos.symbol}" onclick="navigateToSymbol('${pos.symbol}')" style="cursor: pointer;">
                 <div class="trade-item-header">
-                    <span class="trade-symbol">${pos.symbol}${starIcon} <span style="font-size:0.8em; color:#aaa; margin-left:4px;">(C${strategyCase})</span></span>
+                    <span class="trade-symbol">${pos.symbol}${starIcon} <span style="font-size:0.8em; color:#aaa; margin-left:4px;">(${getCaseLabel(strategyCase)})</span></span>
                     <span class="trade-type position">POSICIÓN ${pos.side}</span>
                 </div>
                 <div class="trade-details">
@@ -2106,7 +2178,7 @@ async function init() {
             html += `
             <div class="trade-item limit clickable" data-symbol="${order.symbol}" onclick="navigateToSymbol('${order.symbol}')" style="cursor: pointer;">
                 <div class="trade-item-header">
-                    <span class="trade-symbol">${order.symbol} <span style="font-size:0.8em; color:#aaa; margin-left:4px;">(C${strategyCase})</span></span>
+                    <span class="trade-symbol">${order.symbol} <span style="font-size:0.8em; color:#aaa; margin-left:4px;">(${getCaseLabel(strategyCase)})</span></span>
                     <span class="trade-type limit">LÍMITE ${order.side}</span>
                 </div>
                 <div class="trade-details">
@@ -2148,7 +2220,7 @@ async function init() {
             html += `
             <div class="history-item">
                 <div class="trade-row">
-                    <span>${trade.symbol} <small>(C${trade.strategy_case || '?'})</small></span>
+                    <span>${trade.symbol} <small>(${getCaseLabel(trade.strategy_case)})</small></span>
                     <span class="trade-reason ${reasonClass}">${trade.reason}</span>
                 </div>
                 <div class="trade-row">
@@ -2355,15 +2427,15 @@ function setupPairAutocomplete() {
 // ===== Modo Análisis de Historial =====
 let analysisMode = false;
 let analysisData = null;
-let filteredTrades = [];
+let filteredTrades = [];  // Ahora incluye abiertas + cerradas
 let currentTradeIndex = 0;
 let currentCaseFilter = 'all';
 
 function setupAnalysisMode() {
     const toggle = document.getElementById('analysisModeToggle');
-    const controls = document.getElementById('analysisControls');
+    const normalContent = document.getElementById('normalModeContent');
+    const analysisContent = document.getElementById('analysisModeContent');
     const fileInput = document.getElementById('analysisFileInput');
-    const navigation = document.getElementById('analysisNavigation');
     const caseButtons = document.querySelectorAll('.case-btn');
     const prevBtn = document.getElementById('prevTradeBtn');
     const nextBtn = document.getElementById('nextTradeBtn');
@@ -2373,14 +2445,18 @@ function setupAnalysisMode() {
     // Toggle modo análisis
     toggle.addEventListener('change', async () => {
         analysisMode = toggle.checked;
-        controls.style.display = analysisMode ? 'flex' : 'none';
-        navigation.style.display = analysisMode ? 'flex' : 'none';
+        
+        // Cambiar visibilidad de contenidos
+        if (normalContent) normalContent.style.display = analysisMode ? 'none' : 'block';
+        if (analysisContent) analysisContent.style.display = analysisMode ? 'flex' : 'none';
 
         if (analysisMode) {
             // Pausar polling de trades.json normal
             if (window.pauseTradesPolling) window.pauseTradesPolling();
-            // Si ya hay archivo
-            if (fileInput.files.length > 0) await processAnalysisFile(fileInput.files[0]);
+            // Si ya hay archivo cargado
+            if (fileInput && fileInput.files.length > 0) {
+                await processAnalysisFile(fileInput.files[0]);
+            }
         } else {
             // Volver al modo normal - reanudar polling
             clearAnalysisLines();
@@ -2391,11 +2467,13 @@ function setupAnalysisMode() {
     });
 
     // Cambiar archivo
-    fileInput.addEventListener('change', async (e) => {
-        if (analysisMode && e.target.files.length > 0) {
-            await processAnalysisFile(e.target.files[0]);
-        }
-    });
+    if (fileInput) {
+        fileInput.addEventListener('change', async (e) => {
+            if (analysisMode && e.target.files.length > 0) {
+                await processAnalysisFile(e.target.files[0]);
+            }
+        });
+    }
 
     // Filtros por caso
     caseButtons.forEach(btn => {
@@ -2408,8 +2486,8 @@ function setupAnalysisMode() {
     });
 
     // Navegación
-    prevBtn.addEventListener('click', () => navigateTrade(-1));
-    nextBtn.addEventListener('click', () => navigateTrade(1));
+    if (prevBtn) prevBtn.addEventListener('click', () => navigateTrade(-1));
+    if (nextBtn) nextBtn.addEventListener('click', () => navigateTrade(1));
 
     // Atajos de teclado
     document.addEventListener('keydown', (e) => {
@@ -2424,10 +2502,9 @@ async function processAnalysisFile(file) {
         const text = await file.text();
         analysisData = JSON.parse(text);
 
-        console.log(`📊 Cargado local: ${file.name}: ${analysisData.history?.length || 0} trades cerradas`);
-
-        // Actualizar panel de operaciones con datos del archivo de análisis
-        updateAnalysisTradesPanel(analysisData);
+        const openCount = Object.keys(analysisData.open_positions || {}).length;
+        const closedCount = analysisData.history?.length || 0;
+        console.log(`📊 Cargado local: ${file.name}: ${openCount} abiertas, ${closedCount} cerradas`);
 
         // Reset filtros
         currentCaseFilter = 'all';
@@ -2443,118 +2520,46 @@ async function processAnalysisFile(file) {
             label.textContent = `📂 ${truncate(file.name, 20)}`;
         }
 
-        showToast(`Cargado: ${analysisData.history?.length || 0} trades`);
+        showToast(`Cargado: ${openCount} abiertas + ${closedCount} cerradas`);
     } catch (error) {
         console.error('Error procesando archivo JSON:', error);
         showToast('Error al leer el archivo JSON', 'error');
     }
 }
 
-// Actualizar panel de operaciones con datos del archivo de análisis (solo lectura)
-function updateAnalysisTradesPanel(data) {
-    const tradesList = document.getElementById('tradesList');
-    const tradesCount = document.getElementById('tradesCount');
-    const accountBalance = document.getElementById('accountBalance');
-    const accountPnl = document.getElementById('accountPnl');
-    const marginBalance = document.getElementById('marginBalance');
-
-    if (!tradesList) return;
-
-    // Actualizar balance del archivo
-    if (accountBalance && data.balance !== undefined) {
-        accountBalance.textContent = `$${data.balance.toFixed(2)}`;
-    }
-
-    // Calcular PnL total del historial
-    const totalPnl = (data.history || []).reduce((sum, t) => sum + (t.pnl || 0), 0);
-    if (accountPnl) {
-        accountPnl.textContent = `$${totalPnl.toFixed(4)}`;
-        accountPnl.className = totalPnl >= 0 ? 'pnl-value positive' : 'pnl-value negative';
-    }
-
-    if (marginBalance) {
-        marginBalance.textContent = `$${(data.balance || 0).toFixed(2)}`;
-    }
-
-    // Posiciones abiertas del archivo (si existen - congeladas)
-    const openPositions = Object.entries(data.open_positions || {});
-    const pendingOrders = Object.entries(data.pending_orders || {});
-    const allTrades = [...openPositions, ...pendingOrders];
-
-    if (tradesCount) {
-        tradesCount.textContent = allTrades.length;
-    }
-
-    // Siempre limpiar y mostrar estado del archivo de análisis
-    if (allTrades.length === 0) {
-        tradesList.innerHTML = `
-            <div class="no-trades" style="text-align: center; padding: 10px;">
-                <div>🔬 <b>Modo Análisis</b></div>
-                <div style="font-size: 10px; color: #888; margin-top: 4px;">
-                    ${data.history?.length || 0} trades cerradas
-                </div>
-                <div style="font-size: 9px; color: #666; margin-top: 4px;">
-                    Sin posiciones abiertas en este archivo
-                </div>
-            </div>`;
-        return;
-    }
-
-    let html = '';
-
-    // Mostrar posiciones (congeladas - snapshot)
-    openPositions.forEach(([id, pos]) => {
-        html += `
-        <div class="trade-item position" style="opacity: 0.7; cursor: default;">
-            <div class="trade-item-header">
-                <span class="trade-symbol">${pos.symbol} <span style="font-size:0.8em; color:#aaa;">(C${pos.strategy_case || '?'})</span></span>
-                <span class="trade-type position">📷 SNAPSHOT</span>
-            </div>
-            <div class="trade-details">
-                <span>Entry: $${(pos.entry_price || 0).toFixed(4)}</span>
-                <span>TP: $${(pos.take_profit || 0).toFixed(4)}</span>
-            </div>
-        </div>
-    `;
-    });
-
-    // Mostrar órdenes pendientes (congeladas - snapshot)
-    pendingOrders.forEach(([id, order]) => {
-        html += `
-        <div class="trade-item limit" style="opacity: 0.7; cursor: default;">
-            <div class="trade-item-header">
-                <span class="trade-symbol">${order.symbol} <span style="font-size:0.8em; color:#aaa;">(C${order.strategy_case || '?'})</span></span>
-                <span class="trade-type limit">📷 SNAPSHOT</span>
-            </div>
-            <div class="trade-details">
-                <span>Precio: $${(order.price || 0).toFixed(4)}</span>
-                <span>TP: $${(order.take_profit || 0).toFixed(4)}</span>
-            </div>
-        </div>
-    `;
-    });
-
-    tradesList.innerHTML = html;
-}
-
 function applyAnalysisFilter() {
-    if (!analysisData || !analysisData.history) {
+    if (!analysisData) {
         filteredTrades = [];
         updateAnalysisStats();
-        updateAnalysisHistoryList();
+        updateAnalysisUnifiedList();
         return;
     }
 
-    if (currentCaseFilter === 'all') {
-        filteredTrades = [...analysisData.history];
-    } else {
+    // Combinar posiciones abiertas + historial cerrado (sin pending_orders)
+    const openPositions = Object.entries(analysisData.open_positions || {}).map(([id, pos]) => ({
+        ...pos,
+        _type: 'open',
+        _id: id
+    }));
+    
+    const closedTrades = (analysisData.history || []).map((trade, idx) => ({
+        ...trade,
+        _type: 'closed',
+        _id: `closed_${idx}`
+    }));
+
+    let allTrades = [...openPositions, ...closedTrades];
+
+    // Aplicar filtro por caso
+    if (currentCaseFilter !== 'all') {
         const caseNum = parseInt(currentCaseFilter);
-        filteredTrades = analysisData.history.filter(t => t.strategy_case === caseNum);
+        allTrades = allTrades.filter(t => t.strategy_case === caseNum);
     }
 
+    filteredTrades = allTrades;
     currentTradeIndex = 0;
     updateAnalysisStats();
-    updateAnalysisHistoryList();
+    updateAnalysisUnifiedList();
 
     if (filteredTrades.length > 0) {
         showTradeOnChart(filteredTrades[0]);
@@ -2569,55 +2574,82 @@ function updateAnalysisStats() {
     if (!totalEl) return;
 
     const total = filteredTrades.length;
-    const winners = filteredTrades.filter(t => (t.pnl || 0) > 0).length;
-    const totalPnl = filteredTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
-    const winRate = total > 0 ? (winners / total * 100).toFixed(1) : 0;
+    const closedTrades = filteredTrades.filter(t => t._type === 'closed');
+    const openTrades = filteredTrades.filter(t => t._type === 'open');
+    
+    const winners = closedTrades.filter(t => (t.pnl || 0) > 0).length;
+    const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+    const winRate = closedTrades.length > 0 ? (winners / closedTrades.length * 100).toFixed(1) : 0;
 
-    totalEl.textContent = total;
+    totalEl.textContent = `${openTrades.length}🟢 ${closedTrades.length}✖`;
     winRateEl.textContent = `${winRate}%`;
     pnlEl.textContent = `$${totalPnl.toFixed(2)}`;
     pnlEl.style.color = totalPnl >= 0 ? 'var(--color-bullish)' : 'var(--color-bearish)';
 }
 
-function updateAnalysisHistoryList() {
-    const historyList = document.getElementById('historyList');
-    const historyCount = document.getElementById('historyCount');
+function updateAnalysisUnifiedList() {
+    const unifiedList = document.getElementById('analysisUnifiedList');
     const navInfo = document.getElementById('tradeNavInfo');
 
-    if (!historyList) return;
+    if (!unifiedList) return;
 
-    historyCount.textContent = filteredTrades.length;
-    navInfo.textContent = filteredTrades.length > 0 ? `${currentTradeIndex + 1}/${filteredTrades.length}` : '0/0';
+    if (navInfo) {
+        navInfo.textContent = filteredTrades.length > 0 ? `${currentTradeIndex + 1}/${filteredTrades.length}` : '0/0';
+    }
 
     if (filteredTrades.length === 0) {
-        historyList.innerHTML = '<div class="no-history">Sin trades para este filtro</div>';
+        unifiedList.innerHTML = '<div class="no-trades-analysis">Sin trades para este filtro</div>';
         return;
     }
 
     let html = '';
     filteredTrades.forEach((trade, index) => {
-        const pnlClass = (trade.pnl || 0) >= 0 ? 'positive' : 'negative';
-        const reasonClass = trade.reason === 'TP' ? 'tp' : 'sl';
         const selectedClass = index === currentTradeIndex ? 'selected' : '';
-
-        html += `
-        <div class="history-item ${selectedClass}" data-index="${index}" onclick="selectAnalysisTrade(${index})">
-            <div class="trade-row">
-                <span>${trade.symbol} <small>(C${trade.strategy_case || '?'})</small></span>
-                <span class="trade-reason ${reasonClass}">${trade.reason}</span>
+        
+        if (trade._type === 'open') {
+            // Posición abierta
+            html += `
+            <div class="trade-item open-position ${selectedClass}" data-index="${index}" onclick="selectAnalysisTrade(${index})">
+                <div class="trade-item-header">
+                    <span class="trade-symbol">${trade.symbol}</span>
+                    <span class="trade-badge case-badge">${getCaseLabel(trade.strategy_case)}</span>
+                    <span class="trade-badge open-badge">🟢 ABIERTA</span>
+                </div>
+                <div class="trade-details">
+                    <span>Entry: $${(trade.entry_price || 0).toFixed(4)}</span>
+                    <span>TP: $${(trade.take_profit || 0).toFixed(4)}</span>
+                </div>
+                <div class="trade-details">
+                    <span>SL: $${(trade.stop_loss || 0).toFixed(4)}</span>
+                    <span>Size: ${trade.size || 0}</span>
+                </div>
             </div>
-            <div class="trade-row">
-                <span>$${(trade.entry_price || 0).toFixed(4)} → $${(trade.close_price || 0).toFixed(4)}</span>
-                <span class="trade-pnl ${pnlClass}">$${(trade.pnl || 0).toFixed(4)}</span>
+            `;
+        } else {
+            // Trade cerrado
+            const pnlClass = (trade.pnl || 0) >= 0 ? 'positive' : 'negative';
+            const reasonClass = trade.reason === 'TP' ? 'tp' : 'sl';
+            
+            html += `
+            <div class="trade-item closed-trade ${selectedClass}" data-index="${index}" onclick="selectAnalysisTrade(${index})">
+                <div class="trade-item-header">
+                    <span class="trade-symbol">${trade.symbol}</span>
+                    <span class="trade-badge case-badge">${getCaseLabel(trade.strategy_case)}</span>
+                    <span class="trade-badge reason-badge ${reasonClass}">${trade.reason}</span>
+                </div>
+                <div class="trade-details">
+                    <span>$${(trade.entry_price || 0).toFixed(4)} → $${(trade.close_price || 0).toFixed(4)}</span>
+                    <span class="trade-pnl ${pnlClass}">$${(trade.pnl || 0).toFixed(4)}</span>
+                </div>
             </div>
-        </div>
-    `;
+            `;
+        }
     });
 
-    historyList.innerHTML = html;
+    unifiedList.innerHTML = html;
 
     // Scroll al trade seleccionado
-    const selectedItem = historyList.querySelector('.history-item.selected');
+    const selectedItem = unifiedList.querySelector('.trade-item.selected');
     if (selectedItem) {
         selectedItem.scrollIntoView({ block: 'nearest' });
     }
@@ -2625,7 +2657,7 @@ function updateAnalysisHistoryList() {
 
 function selectAnalysisTrade(index) {
     currentTradeIndex = index;
-    updateAnalysisHistoryList();
+    updateAnalysisUnifiedList();
     showTradeOnChart(filteredTrades[index]);
 }
 
@@ -2636,7 +2668,7 @@ function navigateTrade(direction) {
     if (currentTradeIndex < 0) currentTradeIndex = filteredTrades.length - 1;
     if (currentTradeIndex >= filteredTrades.length) currentTradeIndex = 0;
 
-    updateAnalysisHistoryList();
+    updateAnalysisUnifiedList();
     showTradeOnChart(filteredTrades[currentTradeIndex]);
 }
 
@@ -2665,26 +2697,30 @@ async function showTradeOnChart(trade) {
 
     // Dibujar líneas del trade
     // Entry (naranja)
-    const entryLine = candleSeries.createPriceLine({
-        price: trade.entry_price,
-        color: '#ff9800',
-        lineWidth: 2,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: `ENTRY ${trade.executions?.length > 1 ? '(avg)' : ''}`
-    });
-    analysisLines.push(entryLine);
+    if (trade.entry_price) {
+        const entryLine = candleSeries.createPriceLine({
+            price: trade.entry_price,
+            color: '#ff9800',
+            lineWidth: 2,
+            lineStyle: 0,
+            axisLabelVisible: true,
+            title: `ENTRY ${trade.executions?.length > 1 ? '(avg)' : ''}`
+        });
+        analysisLines.push(entryLine);
+    }
 
-    // Close (cyan)
-    const closeLine = candleSeries.createPriceLine({
-        price: trade.close_price,
-        color: '#00bcd4',
-        lineWidth: 2,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: 'CLOSE'
-    });
-    analysisLines.push(closeLine);
+    // Close (cyan) - solo para trades cerrados
+    if (trade.close_price) {
+        const closeLine = candleSeries.createPriceLine({
+            price: trade.close_price,
+            color: '#00bcd4',
+            lineWidth: 2,
+            lineStyle: 0,
+            axisLabelVisible: true,
+            title: 'CLOSE'
+        });
+        analysisLines.push(closeLine);
+    }
 
     // TP (verde)
     if (trade.take_profit) {

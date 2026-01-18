@@ -48,6 +48,7 @@ class FibonacciSwing:
     is_valid: bool = True
     current_candle_at_55: bool = False
     min_valid_case: int = 1  # Mínimo caso válido (1=todos, 2=desde C2, 3=desde C3, 4=solo C4)
+    path: int = 1  # Camino: 1 = normal, 2 = swing alternativo (High movido a izquierda)
 
 
 def get_zigzag_config(timeframe: str) -> dict:
@@ -57,8 +58,8 @@ def get_zigzag_config(timeframe: str) -> dict:
 
 def calculate_zigzag(candle_data: List[dict], timeframe: str = "1h") -> List[ZigZagPoint]:
     """
-    Calcular puntos ZigZag - VERSIÓN MEJORADA
-    Detecta correctamente máximos y mínimos locales significativos
+    Calcular puntos ZigZag - VERSIÓN ROBUSTA
+    Detecta máximos y mínimos locales significativos con mejor precisión
     """
     config = get_zigzag_config(timeframe)
     deviation = config["deviation"] / 100
@@ -68,152 +69,127 @@ def calculate_zigzag(candle_data: List[dict], timeframe: str = "1h") -> List[Zig
     if len(data) < depth * 2:
         return []
     
-    pivots = []
+    # ===== FASE 1: Encontrar TODOS los pivotes potenciales =====
+    # Usamos una ventana más flexible
+    potential_pivots = []
     
-    # ===== FASE 1: Encontrar todos los extremos locales =====
-    # Usar una ventana deslizante para detectar máximos y mínimos locales
-    local_highs = []
-    local_lows = []
-    
-    for i in range(depth, len(data) - depth):
-        # Verificar si es un máximo local
+    for i in range(depth, len(data) - 1):  # Hasta la penúltima vela
         is_high = True
-        current_high = data[i]["high"]
-        for j in range(i - depth, i + depth + 1):
-            if j != i and data[j]["high"] > current_high:
-                is_high = False
-                break
-        if is_high:
-            local_highs.append((i, current_high))
-        
-        # Verificar si es un mínimo local
         is_low = True
-        current_low = data[i]["low"]
-        for j in range(i - depth, i + depth + 1):
-            if j != i and data[j]["low"] < current_low:
+        
+        # Comparar con las velas en la ventana
+        for j in range(max(0, i - depth), min(len(data), i + depth + 1)):
+            if j == i:
+                continue
+            if data[j]["high"] >= data[i]["high"]:
+                is_high = False
+            if data[j]["low"] <= data[i]["low"]:
                 is_low = False
-                break
+        
+        if is_high:
+            potential_pivots.append({
+                "index": i,
+                "price": data[i]["high"],
+                "type": "high"
+            })
         if is_low:
-            local_lows.append((i, current_low))
+            potential_pivots.append({
+                "index": i,
+                "price": data[i]["low"],
+                "type": "low"
+            })
     
-    # También verificar las últimas velas (pueden ser extremos)
-    # Buscar el máximo en las últimas 'depth' velas
-    if len(data) > depth:
-        last_section_start = len(data) - depth
-        max_in_last = max(range(last_section_start, len(data)), key=lambda x: data[x]["high"])
-        min_in_last = min(range(last_section_start, len(data)), key=lambda x: data[x]["low"])
+    # También agregar extremos de las últimas velas
+    last_n = min(depth, len(data) - 1)
+    if last_n > 0:
+        last_section = data[-last_n:]
+        max_idx = len(data) - last_n + max(range(len(last_section)), key=lambda x: last_section[x]["high"])
+        min_idx = len(data) - last_n + min(range(len(last_section)), key=lambda x: last_section[x]["low"])
         
-        # Añadir si es significativo
-        if not any(h[0] == max_in_last for h in local_highs):
-            # Verificar que sea un máximo real comparado con velas anteriores
-            is_significant_high = True
-            for j in range(max(0, max_in_last - depth), max_in_last):
-                if data[j]["high"] > data[max_in_last]["high"]:
-                    is_significant_high = False
-                    break
-            if is_significant_high:
-                local_highs.append((max_in_last, data[max_in_last]["high"]))
-        
-        if not any(l[0] == min_in_last for l in local_lows):
-            is_significant_low = True
-            for j in range(max(0, min_in_last - depth), min_in_last):
-                if data[j]["low"] < data[min_in_last]["low"]:
-                    is_significant_low = False
-                    break
-            if is_significant_low:
-                local_lows.append((min_in_last, data[min_in_last]["low"]))
+        # Solo añadir si no existen ya
+        if not any(p["index"] == max_idx and p["type"] == "high" for p in potential_pivots):
+            potential_pivots.append({
+                "index": max_idx,
+                "price": data[max_idx]["high"],
+                "type": "high"
+            })
+        if not any(p["index"] == min_idx and p["type"] == "low" for p in potential_pivots):
+            potential_pivots.append({
+                "index": min_idx,
+                "price": data[min_idx]["low"],
+                "type": "low"
+            })
     
-    # ===== FASE 2: Combinar y filtrar por desviación =====
-    # Crear lista combinada de todos los extremos
-    all_extremes = []
-    for idx, price in local_highs:
-        all_extremes.append({"index": idx, "price": price, "type": "high"})
-    for idx, price in local_lows:
-        all_extremes.append({"index": idx, "price": price, "type": "low"})
+    if not potential_pivots:
+        return []
     
     # Ordenar por índice
-    all_extremes.sort(key=lambda x: x["index"])
+    potential_pivots.sort(key=lambda x: x["index"])
     
-    if not all_extremes:
-        return []
+    # ===== FASE 2: Construir ZigZag alternando y respetando desviación =====
+    zigzag = []
+    last_type = None
+    last_price = None
     
-    # ===== FASE 3: Construir ZigZag alternando High-Low =====
-    # Filtrar para alternar entre highs y lows, manteniendo los más significativos
-    
-    # Determinar dirección inicial
-    first_high_idx = next((i for i, e in enumerate(all_extremes) if e["type"] == "high"), None)
-    first_low_idx = next((i for i, e in enumerate(all_extremes) if e["type"] == "low"), None)
-    
-    if first_high_idx is None or first_low_idx is None:
-        return []
-    
-    # Empezar con el que viene primero cronológicamente
-    if first_high_idx < first_low_idx:
-        current_type = "high"
-    else:
-        current_type = "low"
-    
-    filtered_pivots = []
-    
-    i = 0
-    while i < len(all_extremes):
-        # Buscar el mejor extremo del tipo actual
-        best_extreme = None
-        best_idx = i
+    for pivot in potential_pivots:
+        if not zigzag:
+            # Primer pivote
+            zigzag.append(pivot)
+            last_type = pivot["type"]
+            last_price = pivot["price"]
+            continue
         
-        # Agrupar extremos consecutivos del mismo tipo y elegir el mejor
-        while i < len(all_extremes):
-            extreme = all_extremes[i]
+        # Si es del mismo tipo que el último
+        if pivot["type"] == last_type:
+            # Reemplazar si es más extremo
+            if last_type == "high" and pivot["price"] > zigzag[-1]["price"]:
+                zigzag[-1] = pivot
+                last_price = pivot["price"]
+            elif last_type == "low" and pivot["price"] < zigzag[-1]["price"]:
+                zigzag[-1] = pivot
+                last_price = pivot["price"]
+        else:
+            # Tipo diferente - verificar desviación
+            price_change = abs(pivot["price"] - last_price) / last_price
             
-            if extreme["type"] == current_type:
-                if best_extreme is None:
-                    best_extreme = extreme
-                    best_idx = i
-                else:
-                    # Para HIGH, queremos el más alto; para LOW, el más bajo
-                    if current_type == "high" and extreme["price"] > best_extreme["price"]:
-                        best_extreme = extreme
-                        best_idx = i
-                    elif current_type == "low" and extreme["price"] < best_extreme["price"]:
-                        best_extreme = extreme
-                        best_idx = i
-                i += 1
+            if price_change >= deviation:
+                zigzag.append(pivot)
+                last_type = pivot["type"]
+                last_price = pivot["price"]
             else:
-                # Encontramos un extremo del tipo opuesto
-                if best_extreme is not None:
-                    break
-                i += 1
-        
-        if best_extreme is not None:
-            # Verificar desviación mínima respecto al último pivot
-            if filtered_pivots:
-                last_pivot = filtered_pivots[-1]
-                price_change = abs(best_extreme["price"] - last_pivot["price"]) / last_pivot["price"]
-                
-                if price_change >= deviation:
-                    filtered_pivots.append(best_extreme)
-                    current_type = "low" if current_type == "high" else "high"
-                else:
-                    # No cumple desviación, pero si es mejor que el último del mismo tipo, reemplazar
-                    if best_extreme["type"] == last_pivot["type"]:
-                        if (current_type == "high" and best_extreme["price"] > last_pivot["price"]) or \
-                           (current_type == "low" and best_extreme["price"] < last_pivot["price"]):
-                            filtered_pivots[-1] = best_extreme
-            else:
-                filtered_pivots.append(best_extreme)
-                current_type = "low" if current_type == "high" else "high"
+                # No cumple desviación mínima - verificar si es mejor que el anterior del mismo tipo
+                if len(zigzag) >= 2 and zigzag[-2]["type"] == pivot["type"]:
+                    if pivot["type"] == "high" and pivot["price"] > zigzag[-2]["price"]:
+                        zigzag[-2] = pivot
+                    elif pivot["type"] == "low" and pivot["price"] < zigzag[-2]["price"]:
+                        zigzag[-2] = pivot
+    
+    # ===== FASE 3: Validar alternancia (debe ser High-Low-High-Low...) =====
+    final_zigzag = []
+    for i, pivot in enumerate(zigzag):
+        if not final_zigzag:
+            final_zigzag.append(pivot)
+        elif pivot["type"] != final_zigzag[-1]["type"]:
+            final_zigzag.append(pivot)
+        else:
+            # Mismo tipo - mantener el más extremo
+            if pivot["type"] == "high" and pivot["price"] > final_zigzag[-1]["price"]:
+                final_zigzag[-1] = pivot
+            elif pivot["type"] == "low" and pivot["price"] < final_zigzag[-1]["price"]:
+                final_zigzag[-1] = pivot
     
     # ===== FASE 4: Convertir a ZigZagPoint =====
-    for extreme in filtered_pivots:
-        idx = extreme["index"]
-        pivots.append(ZigZagPoint(
+    result = []
+    for pivot in final_zigzag:
+        idx = pivot["index"]
+        result.append(ZigZagPoint(
             index=idx,
             time=data[idx]["time"],
-            price=extreme["price"],
-            type=extreme["type"]
+            price=pivot["price"],
+            type=pivot["type"]
         ))
     
-    return pivots
+    return result
 
 
 def calculate_fibonacci_levels(high_price: float, low_price: float) -> Dict[str, float]:
@@ -230,10 +206,17 @@ def calculate_fibonacci_levels(high_price: float, low_price: float) -> Dict[str,
 def find_valid_fibonacci_swing(
     zigzag_points: List[ZigZagPoint], 
     candle_data: List[dict]
-) -> Optional[FibonacciSwing]:
+) -> Optional[List[FibonacciSwing]]:
     """
-    Encontrar un swing válido para Fibonacci SHORT
-    SINCRONIZADO con la lógica de app.js drawFibonacciForShort()
+    Encontrar swings válidos para Fibonacci SHORT
+    
+    SISTEMA DE 2 CAMINOS:
+    - Camino 1: Swing normal con High más reciente
+    - Camino 2: SIEMPRE buscar un Caso 1 alternativo con High movido a izquierda
+    
+    Garantiza que siempre haya un Caso 1 disponible si RSI >= 75
+    
+    Retorna: Lista de swings válidos (incluye swing del camino 1 Y swing del camino 2)
     """
     if len(zigzag_points) < 2 or len(candle_data) < 2:
         return None
@@ -255,24 +238,26 @@ def find_valid_fibonacci_swing(
         return None
     
     last_candle_index = len(candle_data) - 1
+    current_price = candle_data[-1]['close']
     
     # ===== REGLA: Si el último punto ZigZag es un HIGH, ignorarlo =====
-    # Esto evita medir swings muy pequeños desde picos recientes
     last_zigzag = max(zigzag_points, key=lambda p: p.index)
     skip_first_high = last_zigzag.type == "high"
     
-    if skip_first_high and len(high_points) > 1:
-        print(f"   ⚠️ Último punto ZigZag es HIGH ({last_zigzag.price:.4f}) - Ignorando, usando siguiente High")
-        high_points = high_points[1:]  # Saltar el primer High (más reciente)
+    working_high_points = high_points.copy()
+    if skip_first_high and len(working_high_points) > 1:
+        print(f"   ⚠️ Último punto ZigZag es HIGH ({last_zigzag.price:.4f}) - Ignorando")
+        working_high_points = working_high_points[1:]
     
-    # Iterar por los Highs de derecha a izquierda (más reciente primero)
-    for current_high in high_points:
-        # Verificar que hay velas después del High
+    valid_swings = []
+    found_path1_case1 = False  # Para saber si ya encontramos un Caso 1 en Path 1
+    
+    # ===== CAMINO 1: Buscar swing normal =====
+    for high_idx, current_high in enumerate(working_high_points):
         if current_high.index >= last_candle_index:
             continue
         
-        # ===== BUSCAR EL LOW REAL (precio mínimo de TODAS las velas después del High) =====
-        # No solo entre puntos ZigZag, sino el precio más bajo real
+        # Buscar el Low real
         lowest_price = float('inf')
         lowest_index = current_high.index + 1
         
@@ -284,7 +269,6 @@ def find_valid_fibonacci_swing(
         if lowest_price == float('inf'):
             continue
         
-        # Crear un ZigZagPoint virtual con el Low real
         lowest_low = ZigZagPoint(
             index=lowest_index,
             time=candle_data[lowest_index]["time"],
@@ -292,157 +276,213 @@ def find_valid_fibonacci_swing(
             type="low"
         )
         
-        # Calcular niveles
         range_val = current_high.price - lowest_low.price
         if range_val <= 0:
             continue
         
+        # Calcular niveles
         fib_618_level = lowest_low.price + (range_val * 0.618)
-        fib_58_level = lowest_low.price + (range_val * 0.58)
-        fib_75_level = lowest_low.price + (range_val * 0.75)
-        
-        # ===== CHECK 61.8% =====
-        # Verificar si el 61.8% fue tocado después del Low
-        # EXCLUIR las últimas 3 velas (actual + 2 anteriores)
-        has_touched_618 = False
-        exclude_from_index_618 = max(lowest_low.index + 1, len(candle_data) - 3)
-        
-        for k in range(lowest_low.index + 1, exclude_from_index_618):
-            if candle_data[k]["high"] >= fib_618_level:
-                has_touched_618 = True
-                break
-        
-        # ===== CHECK 58% =====
-        # Count intermediate candles that touch 58% (excluding last 3)
-        intermediates_touching_58 = 0
-        exclude_from_index_58 = max(lowest_low.index + 1, last_candle_index - 2)
-        
-        for k in range(lowest_low.index + 1, exclude_from_index_58):
-            if candle_data[k]["high"] >= fib_58_level:
-                intermediates_touching_58 += 1
-        
-        # Check if current candle OR 2 previous are at 58%+
-        recent_candles_at_58 = False
-        start_check_58 = max(0, last_candle_index - 2)
-        for k in range(start_check_58, last_candle_index + 1):
-            if candle_data[k]["high"] >= fib_58_level:
-                recent_candles_at_58 = True
-                break
-        
-        # ===== CHECK 75% (para Case 2/3) =====
-        # Check intermediate candles for 75% (excluding last 3)
-        intermediates_touching_75 = 0
-        exclude_from_index_75 = max(lowest_low.index + 1, last_candle_index - 2)
-        
-        for k in range(lowest_low.index + 1, exclude_from_index_75):
-            if candle_data[k]["high"] >= fib_75_level:
-                intermediates_touching_75 += 1
-        
-        # Check if current candle OR 2 previous are at 75%+
-        recent_candles_at_75 = False
-        start_check_75 = max(0, last_candle_index - 2)
-        for k in range(start_check_75, last_candle_index + 1):
-            if candle_data[k]["high"] >= fib_75_level:
-                recent_candles_at_75 = True
-                break
-        
-        # ===== VALIDATION LOGIC (synced with app.js) =====
-        invalidated_by_58 = intermediates_touching_58 > 0
-        invalidated_by_75 = intermediates_touching_75 > 0
-        
-        # ===== 90% LEVEL CHECK - IMMEDIATE INVALIDATION =====
-        # If ANY candle (including current) from Low to present touches 90%, invalidate
+        fib_786_level = lowest_low.price + (range_val * 0.786)
         fib_90_level = lowest_low.price + (range_val * 0.90)
-        invalidated_by_90 = False
         
+        # CHECK 90% - INVALIDACIÓN TOTAL
+        invalidated_by_90 = False
         for k in range(lowest_low.index + 1, last_candle_index + 1):
             if candle_data[k]["high"] >= fib_90_level:
                 invalidated_by_90 = True
-                print(f"   ⛔ 90% TOUCHED at index {k} ({candle_data[k]['high']:.4f} >= {fib_90_level:.4f}) - INVALIDATING SWING")
+                print(f"   ⛔ 90% TOUCHED - INVALIDATING SWING, moving to next High...")
                 break
         
         if invalidated_by_90:
-            print(f"   ⛔ Swing invalidated by 90% level - Moving to next High...")
-            continue  # Skip to next High
+            continue  # Intentar siguiente High
         
-        # ===== NIVEL MÍNIMO VÁLIDO DE ENTRADA =====
-        # En vez de invalidar todo el swing, determinar desde qué caso es válido
-        # Si tocó 61.8% -> casos 1,2 invalidados -> min_case = 3
-        # Si tocó 78.6% -> casos 1,2,3 invalidados -> min_case = 4
-        # Si no tocó nada -> todos los casos válidos -> min_case = 1
-        
-        min_valid_case = 1  # Por defecto, todos los casos válidos
-        
-        # Calcular niveles de invalidación
-        fib_786_level = lowest_low.price + (range_val * 0.786)
-        
-        # Check 78.6% (excluyendo últimas 3 velas)
+        # CHECK 61.8% y 78.6% (excluyendo últimas 3 velas)
+        has_touched_618 = False
         has_touched_786 = False
-        exclude_from_index_786 = max(lowest_low.index + 1, last_candle_index - 2)
-        for k in range(lowest_low.index + 1, exclude_from_index_786):
+        exclude_from_index = max(lowest_low.index + 1, last_candle_index - 2)
+        
+        for k in range(lowest_low.index + 1, exclude_from_index):
             if candle_data[k]["high"] >= fib_786_level:
                 has_touched_786 = True
-                print(f"   ⚠️ 78.6% TOUCHED at index {k} - Cases 1,2,3 invalidated, only Case 4 valid")
-                break
-        
-        # Check 61.8% (ya calculado arriba como has_touched_618)
+            if candle_data[k]["high"] >= fib_618_level:
+                has_touched_618 = True
         
         # Determinar min_valid_case
+        min_valid_case = 1
         if has_touched_786:
-            min_valid_case = 4  # Solo Case 4 válido
+            min_valid_case = 4
+            print(f"   ⚠️ 78.6% TOUCHED - Only Case 4 valid (Path 1)")
         elif has_touched_618:
-            min_valid_case = 3  # Cases 3 y 4 válidos
-            print(f"   ⚠️ 61.8% TOUCHED - Cases 1,2 invalidated, Cases 3,4 still valid")
-        else:
-            min_valid_case = 1  # Todos los casos válidos
+            min_valid_case = 3
+            print(f"   ⚠️ 61.8% TOUCHED - Cases 3,4 valid (Path 1)")
         
-        # ===== VALIDACIÓN FINAL =====
-        # El swing es válido si no tocó 90%
-        # min_valid_case indica desde qué caso se puede entrar
+        # Verificar si el precio actual está en zona válida para Path 1
+        level_case1_min = lowest_low.price + (range_val * CASE_1_MIN)  # 55%
         
-        is_valid_swing = True
+        # Si precio actual está debajo del nivel 55% Y tocó 61.8%, este swing no es útil
+        if has_touched_618 and current_price < level_case1_min:
+            print(f"   ⚠️ Precio debajo de 55% y 61.8% tocado - Swing no útil para Path 1, buscando siguiente High...")
+            continue  # Intentar siguiente High
         
-        if is_valid_swing:
-            # Calcular todos los niveles
-            levels = calculate_fibonacci_levels(current_high.price, lowest_low.price)
+        levels = calculate_fibonacci_levels(current_high.price, lowest_low.price)
+        
+        swing_path1 = FibonacciSwing(
+            high=current_high,
+            low=lowest_low,
+            levels=levels,
+            is_valid=True,
+            current_candle_at_55=False,
+            min_valid_case=min_valid_case,
+            path=1
+        )
+        
+        case_text = f"Cases {min_valid_case}-4" if min_valid_case > 1 else "All Cases"
+        print(f"   ✅ Swing válido (Path 1): High {current_high.price:.4f} -> Low {lowest_low.price:.4f}")
+        print(f"      Valid entries: {case_text}")
+        
+        valid_swings.append(swing_path1)
+        
+        if min_valid_case == 1:
+            found_path1_case1 = True
+        
+        break  # Encontramos swing de Path 1, salir del loop
+    
+    # ===== CAMINO 2: SIEMPRE buscar un Caso 1+ alternativo =====
+    # Se busca cuando Path 1 encontró un caso > 1 (es decir, no tiene Caso 1 disponible)
+    # Esto permite tener AMBOS: un Caso 2/3/4 de Path 1 Y un Caso 1+ de Path 2
+    
+    # NUEVA LÓGICA: Buscar Path 2 si:
+    # 1. Path 1 no encontró Caso 1 (min_valid_case > 1)
+    # 2. O si hay un swing en Path 1 pero su entrada ya pasó (precio arriba de 61.8%)
+    
+    path1_has_case1 = found_path1_case1
+    
+    if not path1_has_case1 and len(working_high_points) >= 2:
+        print(f"   🔄 Path 2: Buscando Caso 1+ alternativo...")
+        
+        # Empezar desde el segundo High (ya que el primero se usó en Path 1)
+        for alt_high_idx in range(1, len(working_high_points)):
+            alt_high = working_high_points[alt_high_idx]
             
-            case_text = f"Cases {min_valid_case}-4" if min_valid_case > 1 else "All Cases"
-            print(f"   ✅ Swing válido: High {current_high.price:.4f} -> Low {lowest_low.price:.4f}")
-            print(f"      Valid entries: {case_text}")
-            print(f"      58%: {fib_58_level:.4f} | 61.8%: {fib_618_level:.4f} | 75%: {fib_75_level:.4f}")
+            if alt_high.index >= last_candle_index:
+                continue
             
-            return FibonacciSwing(
-                high=current_high,
-                low=lowest_low,
-                levels=levels,
-                is_valid=True,
-                current_candle_at_55=recent_candles_at_58,
-                min_valid_case=min_valid_case  # Nuevo: caso mínimo válido
+            # Buscar Low desde este High alternativo (TODAS las velas a la derecha)
+            alt_lowest_price = float('inf')
+            alt_lowest_index = alt_high.index + 1
+            
+            for k in range(alt_high.index + 1, last_candle_index + 1):
+                if candle_data[k]["low"] < alt_lowest_price:
+                    alt_lowest_price = candle_data[k]["low"]
+                    alt_lowest_index = k
+            
+            if alt_lowest_price == float('inf'):
+                continue
+            
+            alt_lowest_low = ZigZagPoint(
+                index=alt_lowest_index,
+                time=candle_data[alt_lowest_index]["time"],
+                price=alt_lowest_price,
+                type="low"
             )
+            
+            alt_range = alt_high.price - alt_lowest_low.price
+            if alt_range <= 0:
+                continue
+            
+            alt_fib_90 = alt_lowest_low.price + (alt_range * 0.90)
+            alt_fib_618 = alt_lowest_low.price + (alt_range * 0.618)
+            
+            # PRIMERO verificar que 90% no haya sido tocado (incluyendo vela actual)
+            alt_invalidated_90 = False
+            for k in range(alt_lowest_low.index + 1, last_candle_index + 1):
+                if candle_data[k]["high"] >= alt_fib_90:
+                    alt_invalidated_90 = True
+                    break
+            
+            if alt_invalidated_90:
+                print(f"   ⛔ Path 2: 90% touched for High #{alt_high_idx+1}, trying next...")
+                continue
+            
+            # LUEGO verificar si 61.8% fue tocado (incluyendo vela actual)
+            alt_touched_618 = False
+            for k in range(alt_lowest_low.index + 1, last_candle_index + 1):
+                if candle_data[k]["high"] >= alt_fib_618:
+                    alt_touched_618 = True
+                    break
+            
+            # Para Path 2, solo buscamos Caso 1+ si el precio actual está DEBAJO de 61.8%
+            # Si 61.8% ya fue tocado, no podemos poner LIMIT ahí
+            if alt_touched_618:
+                print(f"   ⚠️ Path 2: 61.8% ya fue tocado para High #{alt_high_idx+1}, trying next...")
+                continue
+            
+            # Verificar que el precio actual esté en zona válida para Caso 1+ (debajo de 61.8%)
+            if current_price < alt_fib_618:
+                alt_levels = calculate_fibonacci_levels(alt_high.price, alt_lowest_low.price)
+                
+                swing_path2 = FibonacciSwing(
+                    high=alt_high,
+                    low=alt_lowest_low,
+                    levels=alt_levels,
+                    is_valid=True,
+                    current_candle_at_55=False,
+                    min_valid_case=1,  # Solo caso 1+ (usando el símbolo 1 pero es de Path 2)
+                    path=2  # Marcado como Path 2 para distinguirlo
+                )
+                
+                print(f"   ✅ Swing alternativo (Path 2): High {alt_high.price:.4f} -> Low {alt_lowest_low.price:.4f}")
+                print(f"      Valid entries: Case 1+ only (LIMIT @ 61.8%)")
+                
+                valid_swings.append(swing_path2)
+                break  # Encontramos Caso 1+ alternativo
+    
+    if valid_swings:
+        return valid_swings
     
     print("   ⚠️ No se encontró swing válido tras revisar todos los Highs")
     return None
 
 
-def determine_trading_case(current_price: float, swing: FibonacciSwing) -> int:
+def determine_trading_case(current_price: float, swing: FibonacciSwing, 
+                           candle_data: List[dict] = None, last_n_candles: int = 3) -> int:
     """
     Determinar el caso de trading según la posición del precio
     Los thresholds se leen de shared_config.json
     
-    NUEVO: Respeta min_valid_case del swing
-    Si el swing tiene min_valid_case=3, solo casos 3 y 4 son válidos
+    NUEVO: Verifica que el nivel de ENTRADA no haya sido tocado por la mecha
+    de las últimas N velas (para evitar entrar tarde)
+    
+    - Path 1: Casos según zona (1-4) respetando min_valid_case
+    - Path 2: Solo Caso 1 válido, zona expandida 0% - 61.8%
     
     Returns: 1, 2, 3, 4 o 0 (sin caso válido)
     """
-    # Calcular niveles usando thresholds de config
     low = swing.low.price
     range_val = swing.high.price - swing.low.price
     
+    # ===== PATH 2: Solo Caso 1, zona 0% - 61.8% =====
+    if swing.path == 2:
+        level_618 = low + range_val * 0.618
+        level_invalid = low + range_val * CASE_4_MAX  # 90%
+        
+        if current_price >= level_invalid:
+            return 0  # Invalidado
+        elif current_price >= low and current_price < level_618:
+            return 1  # Caso 1 en zona expandida
+        else:
+            return 0  # Fuera de zona
+    
+    # ===== PATH 1: Lógica normal de zonas =====
     level_case1_min = low + range_val * CASE_1_MIN  # 55%
     level_case2_min = low + range_val * CASE_2_MIN  # 61.8%
     level_case3_min = low + range_val * CASE_3_MIN  # 69%
     level_case4_min = low + range_val * CASE_4_MIN  # 75%
     level_invalid = low + range_val * CASE_4_MAX    # 90%
+    
+    # Niveles de entrada según caso
+    level_786 = low + range_val * 0.786  # Entrada para Caso 3
+    level_618 = low + range_val * 0.618  # Entrada para Caso 1
     
     # Determinar caso según zona
     detected_case = 0
@@ -454,17 +494,32 @@ def determine_trading_case(current_price: float, swing: FibonacciSwing) -> int:
     elif current_price >= level_case3_min:
         detected_case = 3  # 69% - 75%: LIMIT 78.6%, TP 62%
     elif current_price >= level_case2_min:
-        detected_case = 2  # 61.8% - 69%: MARKET + LIMIT 78.6%, TP 55%
+        detected_case = 2  # 61.8% - 69%: MARKET, TP 55%
     elif current_price >= level_case1_min:
-        detected_case = 1  # 55% - 61.8%: LIMIT 61.8% + LIMIT 78.6%, TP 55%
+        detected_case = 1  # 55% - 61.8%: LIMIT 61.8%, TP 55%
     else:
         detected_case = 0  # Precio muy bajo, sin caso válido
     
     # VALIDAR contra min_valid_case del swing
-    # Si el swing fue parcialmente invalidado, solo casos >= min_valid_case son válidos
     if detected_case > 0 and detected_case < swing.min_valid_case:
         print(f"   ⚠️ Case {detected_case} detected but invalidated (min valid = Case {swing.min_valid_case})")
         return 0
+    
+    # ===== NUEVA VALIDACIÓN: Verificar que el nivel de ENTRADA no haya sido tocado =====
+    # Si es Caso 3 (LIMIT en 78.6%), verificar que 78.6% no haya sido tocado recientemente
+    # Si es Caso 1 (LIMIT en 61.8%), verificar que 61.8% no haya sido tocado recientemente
+    if candle_data and detected_case in [1, 3]:
+        entry_level = level_618 if detected_case == 1 else level_786
+        
+        # Verificar últimas N velas (incluyendo la actual)
+        start_idx = max(0, len(candle_data) - last_n_candles)
+        
+        for i in range(start_idx, len(candle_data)):
+            candle_high = candle_data[i]["high"]
+            if candle_high >= entry_level:
+                print(f"   ⛔ Case {detected_case} INVALIDATED: Entry level already touched by wick (candle {i})")
+                print(f"      Entry: {entry_level:.6f}, Candle high: {candle_high:.6f}")
+                return 0  # El nivel ya fue tocado, no poner LIMIT
     
     return detected_case
 

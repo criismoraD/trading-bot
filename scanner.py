@@ -1,6 +1,7 @@
 """
-Scanner Multi-Par para Binance Futures
-Escanea top 100 pares, filtra por RSI >= 75, aplica prioridad de casos
+Scanner Multi-Par para Bybit Futures
+Escanea top pares, filtra por RSI >= 75, sin prioridad de casos
+Implementa sistema de 2 caminos para detección de swing Fibonacci
 """
 import json
 import asyncio
@@ -29,6 +30,7 @@ class ScanResult:
     current_price: float
     fib_levels: Dict[str, float]
     is_valid: bool
+    path: int = 1  # 1 = normal, 2 = alternativo (Caso 1+)
 
 
 class MarketScanner:
@@ -41,9 +43,9 @@ class MarketScanner:
         self.last_scan_results: Dict[str, ScanResult] = {}
     
     async def get_top_pairs(self) -> List[str]:
-        """Obtener top N pares por volumen de Binance Futures"""
+        """Obtener top N pares por volumen de Bybit Futures"""
         from config import EXCLUDED_PAIRS # Importar aquí para evitar ciclo si no está arriba
-        url = f"{REST_BASE_URL}/fapi/v1/ticker/24hr"
+        url = f"{REST_BASE_URL}/v5/market/tickers?category=linear"
         
         try:
             async with aiohttp.ClientSession() as session:
@@ -54,19 +56,25 @@ class MarketScanner:
                     
                     data = await response.json()
                     
+                    if data.get('retCode') != 0:
+                        print(f"❌ Error API Bybit: {data.get('retMsg')}")
+                        return self.pairs_cache or []
+                    
+                    tickers = data.get('result', {}).get('list', [])
+                    
                     # Filtrar y ordenar por volumen
                     usdt_pairs = [
-                        item for item in data 
+                        item for item in tickers 
                         if item['symbol'].endswith('USDT') 
                         and 'USDT' not in item['symbol'][:-4]  # Excluir USDTUSDT
                         and 'BTCDOM' not in item['symbol']
                         and item['symbol'] not in EXCLUDED_PAIRS # FILTRO CRÍTICO
                     ]
                     
-                    # Ordenar por volumen (quoteVolume = volumen en USDT)
+                    # Ordenar por volumen (turnover24h = volumen en USDT)
                     sorted_pairs = sorted(
                         usdt_pairs, 
-                        key=lambda x: float(x['quoteVolume']), 
+                        key=lambda x: float(x.get('turnover24h', 0)), 
                         reverse=True
                     )
                     
@@ -78,18 +86,57 @@ class MarketScanner:
             print(f"❌ Error en get_top_pairs: {e}")
             return self.pairs_cache or []
     
+    async def get_current_price(self, symbol: str) -> Optional[float]:
+        """Obtener precio actual de un símbolo vía REST API"""
+        url = f"{REST_BASE_URL}/v5/market/tickers"
+        params = {"category": "linear", "symbol": symbol}
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        return None
+                    data = await response.json()
+                    
+                    if data.get('retCode') != 0:
+                        return None
+                    
+                    tickers = data.get('result', {}).get('list', [])
+                    if tickers:
+                        return float(tickers[0].get('lastPrice', 0))
+            return None
+        except Exception as e:
+            print(f"❌ Error obteniendo precio de {symbol}: {e}")
+            return None
+    
     async def fetch_klines(self, session: aiohttp.ClientSession, 
                            symbol: str, interval: str = '5m', 
                            limit: int = 100) -> List[dict]:
-        """Obtener velas para un par"""
-        url = f"{REST_BASE_URL}/fapi/v1/klines"
-        params = {"symbol": symbol, "interval": interval, "limit": limit}
+        """Obtener velas para un par desde Bybit"""
+        # Convertir intervalo a formato Bybit (1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, M, W)
+        interval_map = {
+            '1m': '1', '3m': '3', '5m': '5', '15m': '15', '30m': '30',
+            '1h': '60', '2h': '120', '4h': '240', '6h': '360', '12h': '720',
+            '1d': 'D', '1w': 'W', '1M': 'M'
+        }
+        bybit_interval = interval_map.get(interval, '60')
+        
+        url = f"{REST_BASE_URL}/v5/market/kline"
+        params = {"category": "linear", "symbol": symbol, "interval": bybit_interval, "limit": limit}
         
         try:
             async with session.get(url, params=params) as response:
                 if response.status != 200:
                     return []
                 data = await response.json()
+                
+                if data.get('retCode') != 0:
+                    return []
+                
+                klines = data.get('result', {}).get('list', [])
+                # Bybit devuelve en orden descendente, invertir
+                klines = klines[::-1]
+                
                 return [
                     {
                         "time": int(c[0]) // 1000,
@@ -99,7 +146,7 @@ class MarketScanner:
                         "close": float(c[4]),
                         "volume": float(c[5])
                     }
-                    for c in data
+                    for c in klines
                 ]
         except:
             return []
@@ -132,8 +179,13 @@ class MarketScanner:
         return rsi
     
     async def scan_pair(self, session: aiohttp.ClientSession, 
-                        symbol: str) -> Optional[ScanResult]:
-        """Escanear un par individual"""
+                        symbol: str) -> Optional[List[ScanResult]]:
+        """
+        Escanear un par individual
+        
+        NUEVO: Puede retornar múltiples resultados (uno por cada swing válido)
+        debido al sistema de 2 caminos
+        """
         try:
             # Obtener velas 5m para RSI
             candles_5m = await self.fetch_klines(session, symbol, '5m', 100)
@@ -161,52 +213,69 @@ class MarketScanner:
                 return None
             
             print(f"   📊 {symbol}: ZigZag OK ({len(zigzag)} puntos), buscando swing...")
-            swing = find_valid_fibonacci_swing(zigzag, candles)
+            swings = find_valid_fibonacci_swing(zigzag, candles)
             
-            if not swing or not swing.is_valid:
+            if not swings:
                 print(f"   [DEBUG] {symbol}: No hay swing válido")
                 return None
             
             current_price = candles[-1]['close']
-            case = determine_trading_case(current_price, swing)
+            results = []
             
-            print(f"   ✅ {symbol}: Swing válido! Precio ${current_price:.4f} -> CASO {case}")
+            # Procesar cada swing encontrado (camino 1 y/o camino 2)
+            for swing in swings:
+                if not swing.is_valid:
+                    continue
+                    
+                # NUEVO: Pasar candle_data para validar que el nivel de entrada no fue tocado
+                case = determine_trading_case(current_price, swing, candles, last_n_candles=3)
+                
+                path_text = f"(Path {swing.path})" if swing.path == 2 else ""
+                print(f"   ✅ {symbol}: Swing válido {path_text}! Precio ${current_price:.4f} -> CASO {case}")
+                
+                if case == 0:
+                    print(f"   [DEBUG] {symbol}: Caso 0 (inválido) {path_text}")
+                    continue
+                
+                result = ScanResult(
+                    symbol=symbol,
+                    rsi=rsi,
+                    case=case,
+                    current_price=current_price,
+                    fib_levels={
+                        '45': swing.levels.get('45', swing.low.price + (swing.high.price - swing.low.price) * 0.45),
+                        '50': swing.levels.get('50', 0),
+                        '55': swing.levels.get('55', swing.low.price + (swing.high.price - swing.low.price) * 0.55),
+                        '60': swing.levels.get('60', swing.low.price + (swing.high.price - swing.low.price) * 0.60),
+                        '62': swing.levels.get('62', swing.low.price + (swing.high.price - swing.low.price) * 0.62),
+                        '618': swing.levels.get('61.8', 0),
+                        '69': swing.levels.get('69', swing.low.price + (swing.high.price - swing.low.price) * 0.69),
+                        '75': swing.levels.get('75', 0),
+                        '786': swing.levels.get('78.6', 0),
+                        'high': swing.high.price,
+                        'low': swing.low.price
+                    },
+                    is_valid=True,
+                    path=swing.path  # Guardar el path (1 = normal, 2 = alternativo)
+                )
+                results.append(result)
             
-            if case == 0:
-                print(f"   [DEBUG] {symbol}: Caso 0 (inválido)")
-                return None
-            
-            return ScanResult(
-                symbol=symbol,
-                rsi=rsi,
-                case=case,
-                current_price=current_price,
-                fib_levels={
-                    '45': swing.levels.get('45', swing.low.price + (swing.high.price - swing.low.price) * 0.45),
-                    '50': swing.levels.get('50', 0),
-                    '55': swing.levels.get('55', swing.low.price + (swing.high.price - swing.low.price) * 0.55),
-                    '60': swing.levels.get('60', swing.low.price + (swing.high.price - swing.low.price) * 0.60),
-                    '62': swing.levels.get('62', swing.low.price + (swing.high.price - swing.low.price) * 0.62),
-                    '618': swing.levels.get('61.8', 0),
-                    '69': swing.levels.get('69', swing.low.price + (swing.high.price - swing.low.price) * 0.69),
-                    '75': swing.levels.get('75', 0),
-                    '786': swing.levels.get('78.6', 0),
-                    'high': swing.high.price,  # Precio del High (100%)
-                    'low': swing.low.price     # Precio del Low (0%)
-                },
-                is_valid=True
-            )
+            return results if results else None
         except Exception as e:
             print(f"   ❌ {symbol}: Error - {e}")
             return None
     
     async def scan_all_pairs(self, pairs: List[str]) -> Dict[int, List[ScanResult]]:
-        """Escanear todos los pares y agrupar por caso"""
+        """
+        Escanear todos los pares y agrupar por caso
+        
+        NUEVO: scan_pair puede retornar múltiples resultados (por sistema de 2 caminos)
+        """
         results = {1: [], 2: [], 3: [], 4: []}
         
         async with aiohttp.ClientSession() as session:
             # Escanear en lotes (batch)
-            batch_size = 50  # Aumentado para mayor velocidad
+            batch_size = 50
             total_pairs = len(pairs)
             
             print(f"📊 Iniciando escaneo de {total_pairs} pares...")
@@ -214,21 +283,22 @@ class MarketScanner:
             for i in range(0, total_pairs, batch_size):
                 batch = pairs[i:i+batch_size]
                 
-                # Mostrar progreso visual
                 print(f"   ⚡ Escaneando bloque {i+1}-{min(i+batch_size, total_pairs)} ({batch[0]}...)...")
                 
                 tasks = [self.scan_pair(session, symbol) for symbol in batch]
                 batch_results = await asyncio.gather(*tasks)
                 
-                for result in batch_results:
-                    if result and result.is_valid:
-                        results[result.case].append(result)
-                        self.last_scan_results[result.symbol] = result
+                for scan_results in batch_results:
+                    # scan_results ahora es una lista de ScanResult (o None)
+                    if scan_results:
+                        for result in scan_results:
+                            if result and result.is_valid:
+                                results[result.case].append(result)
+                                self.last_scan_results[result.symbol] = result
                 
-                # Pequeña pausa para evitar rate limits
                 await asyncio.sleep(0.5)
         
-        print(f"🔍 Scan: Caso 3: {len(results[3])} | Caso 2: {len(results[2])} | Caso 1: {len(results[1])}")
+        print(f"🔍 Scan: C4: {len(results[4])} | C3: {len(results[3])} | C2: {len(results[2])} | C1: {len(results[1])}")
         return results
 
 
@@ -251,21 +321,24 @@ class MarketScanner:
         async with aiohttp.ClientSession() as session:
             for symbol in list(active_symbols):
                 try:
-                    # Endpoint correcto para Futuros: /fapi/v1/ticker/price
-                    url = f"{REST_BASE_URL}/fapi/v1/ticker/price?symbol={symbol}"
+                    # Bybit endpoint para ticker
+                    url = f"{REST_BASE_URL}/v5/market/tickers?category=linear&symbol={symbol}"
                     async with session.get(url) as response:
                         if response.status == 200:
                             data = await response.json()
-                            price = float(data['price'])
-                            
-                            # Actualizar cache 
-                            price_cache[symbol] = price
-                            
-                            # Validar TP/SL y Pending Orders
-                            if account.open_positions:
-                                account.check_positions(symbol, price)
-                            if account.pending_orders:
-                                account.check_pending_orders(symbol, price)
+                            if data.get('retCode') == 0:
+                                tickers = data.get('result', {}).get('list', [])
+                                if tickers:
+                                    price = float(tickers[0]['lastPrice'])
+                                    
+                                    # Actualizar cache 
+                                    price_cache[symbol] = price
+                                    
+                                    # Validar TP/SL y Pending Orders
+                                    if account.open_positions:
+                                        account.check_positions(symbol, price)
+                                    if account.pending_orders:
+                                        account.check_pending_orders(symbol, price)
                             
                             # print(f"   🛡️ {symbol}: ${price}")
                 except Exception as e:
@@ -273,8 +346,8 @@ class MarketScanner:
 
 async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: float = 3.0):
     """
-    Ejecutar escaneo SIN prioridad de casos
-    Todos los casos se procesan en orden de aparición
+    Ejecutar escaneo EN TIEMPO REAL
+    Las órdenes se colocan INMEDIATAMENTE cuando se encuentra un par válido
     """
     from paper_trading import OrderSide
     
@@ -292,390 +365,309 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
         print("❌ No se pudieron obtener pares")
         return
     
-    scan_results = await scanner.scan_all_pairs(pairs)
+    total_pairs = len(pairs)
+    orders_placed = 0
     
-    # Combinar todos los resultados sin prioridad
-    all_results = []
-    for case_num in [1, 2, 3, 4]:
-        for result in scan_results.get(case_num, []):
-            all_results.append((case_num, result))
+    print(f"📊 Escaneando {total_pairs} pares en paralelo...")
     
-    print(f"\n📊 Encontrados: {len(all_results)} pares con swing válido")
+    BATCH_SIZE = 20  # Procesar 20 pares en paralelo
     
-    # Procesar todos los resultados en orden de aparición
-    for case_num, result in all_results:
-        # Verificar límite de operaciones simultáneas
-        current_ops = len(account.open_positions) + len(account.pending_orders)
-        if current_ops >= max_ops:
-            print(f"⚠️ Límite de operaciones alcanzado: {current_ops}/{max_ops}")
-            break
+    async with aiohttp.ClientSession() as session:
+        # Procesar en batches para velocidad
+        for batch_start in range(0, total_pairs, BATCH_SIZE):
+            # Verificar límite antes de cada batch
+            current_ops = len(account.open_positions) + len(account.pending_orders)
+            if current_ops >= max_ops:
+                print(f"⚠️ Límite alcanzado: {current_ops}/{max_ops}")
+                break
+            
+            if account.get_available_margin() < MIN_AVAILABLE_MARGIN:
+                print(f"⚠️ Margen mínimo: ${account.get_available_margin():.2f}")
+                break
+            
+            batch_end = min(batch_start + BATCH_SIZE, total_pairs)
+            batch_pairs = pairs[batch_start:batch_end]
+            
+            # Escanear batch en paralelo
+            tasks = [scanner.scan_pair(session, symbol) for symbol in batch_pairs]
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Procesar resultados y colocar órdenes INMEDIATAMENTE
+            for symbol, scan_results in zip(batch_pairs, batch_results):
+                if isinstance(scan_results, Exception):
+                    continue
+                if not scan_results:
+                    continue
+                
+                for result in scan_results:
+                    if not result or not result.is_valid:
+                        continue
+                    
+                    # Re-verificar límites antes de cada orden
+                    current_ops = len(account.open_positions) + len(account.pending_orders)
+                    if current_ops >= max_ops:
+                        break
+                    
+                    case_num = result.case
+                    strategy_case_value = 11 if result.path == 2 else case_num
+                    
+                    # Verificar duplicados
+                    existing = any(p.symbol == result.symbol and p.strategy_case == strategy_case_value 
+                                   for p in account.open_positions.values())
+                    existing = existing or any(o.symbol == result.symbol and o.strategy_case == strategy_case_value 
+                                               for o in account.pending_orders.values())
+                    if existing:
+                        continue
+                    
+                    fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
+                    sl_price = None
+                    
+                    # Colocar orden INMEDIATAMENTE
+                    order_placed = await _place_order_for_case(
+                        scanner, account, result, case_num, 
+                        margin_per_trade, fib_range, sl_price, OrderSide, session
+                    )
+                    
+                    if order_placed:
+                        orders_placed += 1
+                        # Si C2/C3/C4, buscar C1++
+                        if case_num in [2, 3, 4]:
+                            await _search_and_place_c1pp(
+                                scanner, account, result.symbol,
+                                result.fib_levels.get('high', 0),
+                                result.fib_levels.get('low', 0),
+                                margin_per_trade, sl_price, OrderSide, session
+                            )
+            
+            # Pausa mínima entre batches
+            await asyncio.sleep(0.1)
+    
+    print(f"\n📊 Escaneo completado: {orders_placed} órdenes colocadas")
+    print(f"💰 Margen disponible: ${account.get_available_margin():.2f}")
+
+
+async def _place_order_for_case(scanner, account, result, case_num, margin_per_trade, fib_range, sl_price, OrderSide, session=None):
+    """Helper para colocar una orden según el caso"""
+    order_placed = False
+    
+    if case_num == 4:
+        # Caso 4: MARKET, TP 60%
+        fresh_price = await scanner.get_current_price(result.symbol)
+        if not fresh_price:
+            return False
         
-        if account.get_available_margin() < MIN_AVAILABLE_MARGIN:
-            print(f"⚠️ Margen mínimo alcanzado: ${account.get_available_margin():.2f}")
-            break
+        level_case4_min = result.fib_levels.get('low', 0) + fib_range * 0.75
+        level_case4_max = result.fib_levels.get('low', 0) + fib_range * 0.90
         
-        # Saltar si ya hay posición u orden en este par
-        if any(p.symbol == result.symbol for p in account.open_positions.values()):
-            continue
-        if any(o.symbol == result.symbol for o in account.pending_orders.values()):
-            continue
+        if fresh_price < level_case4_min or fresh_price >= level_case4_max:
+            print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C4")
+            return False
         
-        # Ejecutar según el caso
-        if case_num == 4:
-            # Caso 4: MARKET, TP 60%, SL 105%
-            tp_price = result.fib_levels['60']
-            # Calcular SL en nivel 105% (5% por encima del High)
-            fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-            sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
-            position = account.place_market_order(
-                symbol=result.symbol,
-                side=OrderSide.SELL,
-                current_price=result.current_price,
-                margin=margin_per_trade,
-                take_profit=tp_price,
-                stop_loss=sl_price,
-                strategy_case=case_num,
-                fib_high=result.fib_levels.get('high'),
-                fib_low=result.fib_levels.get('low')
-            )
-            if position:
-                print(f"   🔴 CASO 4 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
+        tp_price = result.fib_levels['60']
+        position = account.place_market_order(
+            symbol=result.symbol,
+            side=OrderSide.SELL,
+            current_price=fresh_price,
+            margin=margin_per_trade,
+            take_profit=tp_price,
+            stop_loss=sl_price,
+            strategy_case=case_num,
+            fib_high=result.fib_levels.get('high'),
+            fib_low=result.fib_levels.get('low')
+        )
+        if position:
+            print(f"   🔴 CASO 4 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}")
+            order_placed = True
+    
+    elif case_num == 3:
+        # Caso 3: LIMIT 78.6%, TP 55%
+        limit_price = result.fib_levels['786']
+        tp_price = result.fib_levels['55']
+        order = account.place_limit_order(
+            symbol=result.symbol,
+            side=OrderSide.SELL,
+            price=limit_price,
+            margin=margin_per_trade,
+            take_profit=tp_price,
+            stop_loss=sl_price,
+            strategy_case=case_num,
+            fib_high=result.fib_levels.get('high'),
+            fib_low=result.fib_levels.get('low')
+        )
+        if order:
+            print(f"   🟠 CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}")
+            order_placed = True
+    
+    elif case_num == 2:
+        # Caso 2: MARKET, TP 45%
+        fresh_price = await scanner.get_current_price(result.symbol)
+        if not fresh_price:
+            return False
         
-        elif case_num == 3:
-            # Caso 3: LIMIT 78.6%, TP 55%, SL 105%
-            limit_price = result.fib_levels['786']
-            tp_price = result.fib_levels['55']
-            # Calcular SL en nivel 105%
-            fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-            sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
+        level_case2_min = result.fib_levels.get('low', 0) + fib_range * 0.618
+        level_case2_max = result.fib_levels.get('low', 0) + fib_range * 0.69
+        
+        if fresh_price < level_case2_min or fresh_price >= level_case2_max:
+            print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C2")
+            return False
+        
+        tp_price = result.fib_levels['45']
+        position = account.place_market_order(
+            symbol=result.symbol,
+            side=OrderSide.SELL,
+            current_price=fresh_price,
+            margin=margin_per_trade,
+            take_profit=tp_price,
+            stop_loss=sl_price,
+            strategy_case=case_num,
+            fib_high=result.fib_levels.get('high'),
+            fib_low=result.fib_levels.get('low')
+        )
+        if position:
+            print(f"   🟡 CASO 2 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}")
+            order_placed = True
+    
+    elif case_num == 1:
+        # Caso 1 / Caso 1++: LIMIT 61.8%, TP 45%
+        case_label = "CASO 1++" if result.path == 2 else "CASO 1"
+        strategy_case_value = 11 if result.path == 2 else 1
+        
+        tp_price = result.fib_levels['45']
+        limit_price = result.fib_levels['618']
+        
+        order = account.place_limit_order(
+            symbol=result.symbol,
+            side=OrderSide.SELL,
+            price=limit_price,
+            margin=margin_per_trade,
+            take_profit=tp_price,
+            stop_loss=sl_price,
+            strategy_case=strategy_case_value,
+            fib_high=result.fib_levels.get('high'),
+            fib_low=result.fib_levels.get('low')
+        )
+        if order:
+            print(f"   🟢 {case_label} | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}")
+            order_placed = True
+    
+    return order_placed
+
+
+async def _search_and_place_c1pp(scanner, account, symbol, current_high, current_low, margin_per_trade, sl_price, OrderSide, session):
+    """
+    Buscar el siguiente High más alto y su Low más bajo para C1++
+    Evaluar si 61.8% no ha sido tocado, si fue tocado subir al siguiente
+    """
+    from fibonacci import calculate_zigzag, calculate_fibonacci_levels
+    
+    try:
+        # Obtener velas del par
+        timeframe = get_timeframe()
+        candle_data = await scanner._fetch_candles(session, symbol, timeframe, limit=500)
+        
+        if not candle_data or len(candle_data) < 50:
+            return
+        
+        # Obtener pivotes ZigZag
+        zigzag_pivots = calculate_zigzag(candle_data, timeframe)
+        
+        if not zigzag_pivots or len(zigzag_pivots) < 2:
+            return
+        
+        # Encontrar Highs más altos que el actual (zigzag_pivots son ZigZagPoint objects)
+        higher_highs = [p for p in zigzag_pivots if p.type == 'high' and p.price > current_high]
+        
+        if not higher_highs:
+            return  # No hay Highs más altos
+        
+        # Ordenar por precio (de menor a mayor, el siguiente más alto primero)
+        higher_highs.sort(key=lambda x: x.price)
+        
+        current_price = candle_data[-1]['close']
+        last_candle_index = len(candle_data) - 1
+        
+        # Iterar por cada High más alto hasta encontrar C1++ válido
+        for alt_high in higher_highs:
+            alt_high_idx = alt_high.index
+            
+            # Buscar el Low más bajo entre este High y la vela actual
+            candles_after_high = candle_data[alt_high_idx + 1:]
+            if not candles_after_high:
+                continue
+            
+            lowest_candle = min(candles_after_high, key=lambda x: x['low'])
+            lowest_price = lowest_candle['low']
+            lowest_idx = candle_data.index(lowest_candle)
+            
+            # Calcular rango y niveles Fib
+            alt_range = alt_high.price - lowest_price
+            if alt_range <= 0:
+                continue
+            
+            fib_618 = lowest_price + (alt_range * 0.618)
+            fib_90 = lowest_price + (alt_range * 0.90)
+            
+            # Verificar que 90% NO haya sido tocado
+            touched_90 = False
+            for k in range(lowest_idx + 1, last_candle_index + 1):
+                if candle_data[k]['high'] >= fib_90:
+                    touched_90 = True
+                    break
+            
+            if touched_90:
+                print(f"      ⚠️ C1++ {symbol}: 90% tocado para High ${alt_high.price:.4f}, probando siguiente...")
+                continue
+            
+            # Verificar que 61.8% NO haya sido tocado
+            touched_618 = False
+            for k in range(lowest_idx + 1, last_candle_index + 1):
+                if candle_data[k]['high'] >= fib_618:
+                    touched_618 = True
+                    break
+            
+            if touched_618:
+                print(f"      ⚠️ C1++ {symbol}: 61.8% ya tocado para High ${alt_high.price:.4f}, probando siguiente...")
+                continue
+            
+            # Precio debe estar por debajo de 61.8% para que sea C1++ válido
+            if current_price >= fib_618:
+                continue
+            
+            # ¡Encontramos C1++ válido!
+            alt_levels = calculate_fibonacci_levels(alt_high.price, lowest_price)
+            tp_price = alt_levels['45']
+            limit_price = alt_levels['618']
+            
+            # Verificar que no exista ya esta combinación
+            existing = False
+            for o in account.pending_orders.values():
+                if o.symbol == symbol and o.strategy_case == 11:
+                    existing = True
+                    break
+            for p in account.open_positions.values():
+                if p.symbol == symbol and p.strategy_case == 11:
+                    existing = True
+                    break
+            
+            if existing:
+                return
+            
             order = account.place_limit_order(
-                symbol=result.symbol,
+                symbol=symbol,
                 side=OrderSide.SELL,
                 price=limit_price,
                 margin=margin_per_trade,
                 take_profit=tp_price,
                 stop_loss=sl_price,
-                strategy_case=case_num,
-                fib_high=result.fib_levels.get('high'),
-                fib_low=result.fib_levels.get('low')
+                strategy_case=11,  # Caso 1++
+                fib_high=alt_high.price,
+                fib_low=lowest_price
             )
+            
             if order:
-                print(f"   🟠 CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
-        
-        elif case_num == 2:
-            # Caso 2: MARKET + LIMIT 78.6%, TP 45%, SL 105%
-            tp_price = result.fib_levels['45']
-            fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-            # SL en nivel 105% (5% por encima del High)
-            sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
+                print(f"   🟣 CASO 1++ | {symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} (High: ${alt_high.price:.4f})")
             
-            position = account.place_market_order(
-                symbol=result.symbol,
-                side=OrderSide.SELL,
-                current_price=result.current_price,
-                margin=margin_per_trade,
-                take_profit=tp_price,
-                stop_loss=sl_price,
-                strategy_case=case_num,
-                fib_high=result.fib_levels.get('high'),
-                fib_low=result.fib_levels.get('low')
-            )
-            if position and account.get_available_margin() >= MIN_AVAILABLE_MARGIN:
-                limit_price = result.fib_levels['786']
-                linked_order = account.place_limit_order(
-                    symbol=result.symbol,
-                    side=OrderSide.SELL,
-                    price=limit_price,
-                    margin=margin_per_trade,
-                    take_profit=tp_price,
-                    stop_loss=sl_price,
-                    linked_order_id=position.order_id,
-                    strategy_case=case_num,
-                    fib_high=result.fib_levels.get('high'),
-                    fib_low=result.fib_levels.get('low')
-                )
-                if linked_order:
-                    print(f"   🟡 CASO 2 | {result.symbol}: MARKET + LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
-        
-        elif case_num == 1:
-            # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 45%, SL 105%
-            if account.get_available_margin() < MIN_AVAILABLE_MARGIN * 2:
-                continue
-            tp_price = result.fib_levels['45']
-            limit_price_1 = result.fib_levels['618']
-            # SL en nivel 105% (5% por encima del High)
-            fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-            sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
+            return  # Solo colocar 1 C1++ por par
             
-            order1 = account.place_limit_order(
-                symbol=result.symbol,
-                side=OrderSide.SELL,
-                price=limit_price_1,
-                margin=margin_per_trade,
-                take_profit=tp_price,
-                stop_loss=sl_price,
-                strategy_case=case_num,
-                fib_high=result.fib_levels.get('high'),
-                fib_low=result.fib_levels.get('low')
-            )
-            if order1 and account.get_available_margin() >= MIN_AVAILABLE_MARGIN:
-                limit_price_2 = result.fib_levels['786']
-                order2 = account.place_limit_order(
-                    symbol=result.symbol,
-                    side=OrderSide.SELL,
-                    price=limit_price_2,
-                    margin=margin_per_trade,
-                    take_profit=tp_price,
-                    stop_loss=sl_price,
-                    linked_order_id=order1.id,
-                    strategy_case=case_num,
-                    fib_high=result.fib_levels.get('high'),
-                    fib_low=result.fib_levels.get('low')
-                )
-                if order2:
-                    print(f"   🟢 CASO 1 | {result.symbol}: LIMIT @ ${limit_price_1:.4f} + LIMIT @ ${limit_price_2:.4f} | SL ${sl_price:.4f}")
-    
-    print(f"\n💰 Margen disponible: ${account.get_available_margin():.2f}")
-
-
-async def run_priority_scan_real(scanner: MarketScanner, binance_trader, margin_per_trade: float = 3.0, leverage: int = 20):
-    """
-    Ejecutar escaneo con trading REAL en Binance Futures
-    Usa margen cruzado y las mismas reglas que paper trading
-    """
-    
-    # Obtener pares a escanear (igual que paper trading)
-    if scanner.pairs_cache:
-        pairs = scanner.pairs_cache
-        print(f"📊 [REAL] Usando {len(pairs)} par(es) definidos: {', '.join(pairs[:5])}{'...' if len(pairs) > 5 else ''}")
-    else:
-        # Fetch de todos los pares (igual que paper trading)
-        pairs = await scanner.get_top_pairs()
-        # Añadir pares activos si existen
-        if hasattr(scanner, 'active_pairs_to_include') and scanner.active_pairs_to_include:
-            pairs = list(set(pairs) | scanner.active_pairs_to_include)
-        print(f"📊 [REAL] Escaneando {len(pairs)} pares del mercado")
-    
-    if not pairs:
-        print("❌ No se pudieron obtener pares")
-        return
-    
-    scan_results = await scanner.scan_all_pairs(pairs)
-    
-    # Combinar todos los resultados sin prioridad
-    all_results = []
-    for case_num in [1, 2, 3, 4]:
-        for result in scan_results.get(case_num, []):
-            all_results.append((case_num, result))
-    
-    print(f"\n📊 [REAL] Encontrados: {len(all_results)} pares con swing válido")
-    
-    # Obtener límite de operaciones simultáneas
-    max_ops = get_max_simultaneous_operations()
-    
-    # Obtener balance actual de Binance
-    try:
-        balance_info = await binance_trader.get_account_balance()
-        available_balance = float(balance_info.get('availableBalance', 0))
-        print(f"💰 [REAL] Balance disponible: ${available_balance:.2f} USDT")
     except Exception as e:
-        print(f"❌ Error obteniendo balance: {e}")
-        return
-    
-    # Obtener posiciones abiertas actuales
-    try:
-        positions = await binance_trader.get_positions()
-        open_symbols = list(positions.keys())  # get_positions devuelve dict {symbol: BinancePosition}
-        if open_symbols:
-            print(f"📈 [REAL] Posiciones abiertas: {', '.join(open_symbols)}")
-    except Exception as e:
-        print(f"⚠️ Error obteniendo posiciones: {e}")
-        open_symbols = []
-    
-    # Obtener órdenes abiertas (solo LIMIT, no TP/SL)
-    try:
-        open_orders = await binance_trader.get_open_orders()
-        order_symbols = list(set(o.symbol for o in open_orders if o.order_type == "LIMIT"))
-        if order_symbols:
-            print(f"📋 [REAL] Órdenes pendientes en: {', '.join(order_symbols)}")
-    except Exception as e:
-        print(f"⚠️ Error obteniendo órdenes: {e}")
-        order_symbols = []
-    
-    # Actualizar estadísticas de máximo simultáneo
-    binance_trader.update_max_simultaneous(len(open_symbols), len(order_symbols))
-    
-    # Procesar todos los resultados en orden de aparición
-    for case_num, result in all_results:
-        # Verificar límite de operaciones simultáneas
-        current_ops = len(open_symbols) + len(order_symbols)
-        if current_ops >= max_ops:
-            print(f"⚠️ [REAL] Límite de operaciones alcanzado: {current_ops}/{max_ops}")
-            break
-        
-        # Verificar margen mínimo
-        if available_balance < MIN_AVAILABLE_MARGIN:
-            print(f"⚠️ [REAL] Margen mínimo alcanzado: ${available_balance:.2f}")
-            break
-        
-        # Saltar si ya hay posición u orden en este par
-        if result.symbol in open_symbols:
-            print(f"   ⏭️ {result.symbol}: Ya tiene posición abierta")
-            continue
-        if result.symbol in order_symbols:
-            print(f"   ⏭️ {result.symbol}: Ya tiene orden pendiente")
-            continue
-        
-        try:
-            # Ejecutar según el caso
-            if case_num == 4:
-                # Caso 4: MARKET, TP 60%, SL 105%
-                tp_price = result.fib_levels['60']
-                fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-                sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
-                fib_high = result.fib_levels.get('high')
-                fib_low = result.fib_levels.get('low')
-                
-                success = await binance_trader.execute_short_entry(
-                    symbol=result.symbol,
-                    margin=margin_per_trade,
-                    leverage=leverage,
-                    entry_price=result.current_price,
-                    take_profit=tp_price,
-                    stop_loss=sl_price,
-                    strategy_case=case_num,
-                    fib_high=fib_high,
-                    fib_low=fib_low
-                )
-                if success:
-                    print(f"   🔴 [REAL] CASO 4 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
-                    available_balance -= margin_per_trade
-            
-            elif case_num == 3:
-                # Caso 3: LIMIT 78.6%, TP 55%, SL 105%
-                limit_price = result.fib_levels['786']
-                tp_price = result.fib_levels['55']
-                fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-                sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
-                fib_high = result.fib_levels.get('high')
-                fib_low = result.fib_levels.get('low')
-                
-                success = await binance_trader.execute_limit_short(
-                    symbol=result.symbol,
-                    margin=margin_per_trade,
-                    leverage=leverage,
-                    limit_price=limit_price,
-                    take_profit=tp_price,
-                    stop_loss=sl_price,
-                    strategy_case=case_num,
-                    fib_high=fib_high,
-                    fib_low=fib_low,
-                    is_linked_order=False
-                )
-                if success:
-                    print(f"   🟠 [REAL] CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
-                    available_balance -= margin_per_trade
-            
-            elif case_num == 2:
-                # Caso 2: MARKET + LIMIT 78.6%, TP 45%, SL 105%
-                tp_price = result.fib_levels['45']
-                fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-                limit_price_786 = result.fib_levels['786']
-                # SL en nivel 105% (5% por encima del High)
-                sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
-                fib_high = result.fib_levels.get('high')
-                fib_low = result.fib_levels.get('low')
-                
-                # Primero orden MARKET
-                success1 = await binance_trader.execute_short_entry(
-                    symbol=result.symbol,
-                    margin=margin_per_trade,
-                    leverage=leverage,
-                    entry_price=result.current_price,
-                    take_profit=tp_price,
-                    stop_loss=sl_price,
-                    strategy_case=case_num,
-                    fib_high=fib_high,
-                    fib_low=fib_low
-                )
-                
-                if success1:
-                    available_balance -= margin_per_trade
-                    
-                    # Segunda orden LIMIT en 78.6% (LINKED - TP dinámico)
-                    if available_balance >= MIN_AVAILABLE_MARGIN:
-                        success2 = await binance_trader.execute_limit_short(
-                            symbol=result.symbol,
-                            margin=margin_per_trade,
-                            leverage=leverage,
-                            limit_price=limit_price_786,
-                            take_profit=tp_price,
-                            stop_loss=sl_price,
-                            strategy_case=case_num,
-                            fib_high=fib_high,
-                            fib_low=fib_low,
-                            is_linked_order=True  # TP dinámico
-                        )
-                        if success2:
-                            available_balance -= margin_per_trade
-                            print(f"   🟡 [REAL] CASO 2 | {result.symbol}: MARKET + LIMIT @ ${limit_price_786:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
-                        else:
-                            print(f"   🟡 [REAL] CASO 2 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
-                    else:
-                        print(f"   🟡 [REAL] CASO 2 | {result.symbol}: MARKET @ ${result.current_price:.4f} → TP ${tp_price:.4f} | SL ${sl_price:.4f}")
-            
-            elif case_num == 1:
-                # Caso 1: 2 LIMIT (61.8% + 78.6%), TP 45%, SL 105%
-                if available_balance < MIN_AVAILABLE_MARGIN * 2:
-                    continue
-                
-                tp_price = result.fib_levels['45']
-                limit_price_1 = result.fib_levels['618']
-                limit_price_2 = result.fib_levels['786']
-                fib_range = result.fib_levels.get('high', 0) - result.fib_levels.get('low', 0)
-                # SL en nivel 105% (5% por encima del High)
-                sl_price = result.fib_levels.get('low', 0) + (fib_range * 1.05) if fib_range > 0 else None
-                fib_high = result.fib_levels.get('high')
-                fib_low = result.fib_levels.get('low')
-                
-                # Primera orden LIMIT (no linked - es la primera)
-                success1 = await binance_trader.execute_limit_short(
-                    symbol=result.symbol,
-                    margin=margin_per_trade,
-                    leverage=leverage,
-                    limit_price=limit_price_1,
-                    take_profit=tp_price,
-                    stop_loss=sl_price,
-                    strategy_case=case_num,
-                    fib_high=fib_high,
-                    fib_low=fib_low,
-                    is_linked_order=False
-                )
-                
-                if success1:
-                    available_balance -= margin_per_trade
-                    
-                    if available_balance >= MIN_AVAILABLE_MARGIN:
-                        # Segunda orden LIMIT (LINKED - TP dinámico)
-                        success2 = await binance_trader.execute_limit_short(
-                            symbol=result.symbol,
-                            margin=margin_per_trade,
-                            leverage=leverage,
-                            limit_price=limit_price_2,
-                            take_profit=tp_price,
-                            stop_loss=sl_price,
-                            strategy_case=case_num,
-                            fib_high=fib_high,
-                            fib_low=fib_low,
-                            is_linked_order=True  # TP dinámico
-                        )
-                        if success2:
-                            available_balance -= margin_per_trade
-                            print(f"   🟢 [REAL] CASO 1 | {result.symbol}: LIMIT @ ${limit_price_1:.4f} + LIMIT @ ${limit_price_2:.4f} (TP dinámico) | SL ${sl_price:.4f}")
-        
-        except Exception as e:
-            print(f"   ❌ Error en {result.symbol} (Caso {case_num}): {e}")
-            continue
-    
-    print(f"\n💰 [REAL] Balance estimado restante: ${available_balance:.2f}")
-
+        print(f"      ❌ Error buscando C1++ para {symbol}: {e}")

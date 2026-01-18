@@ -856,6 +856,14 @@ body {
     backdrop-filter: blur(10px);
 }
 
+/* ===== Contenido Modo Normal (scrollable) ===== */
+.normal-mode-content {
+    display: flex;
+    flex-direction: column;
+    height: calc(100% - 50px);
+    overflow-y: auto;
+}
+
 .trades-panel-header {
     display: flex;
     justify-content: space-between;
@@ -1119,7 +1127,191 @@ body {
     padding: var(--space-sm);
 }
 
-/* ===== Modo Análisis de Historial ===== */
+/* ===== Modo Análisis Toggle Bar (arriba del panel) ===== */
+.analysis-mode-toggle-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    background: linear-gradient(135deg, rgba(41, 98, 255, 0.15), rgba(41, 98, 255, 0.05));
+    border-bottom: 1px solid var(--accent-primary);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.analysis-toggle-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+/* ===== Contenido Modo Análisis (ocupa todo el panel) ===== */
+.analysis-mode-content {
+    display: flex;
+    flex-direction: column;
+    height: calc(100% - 50px);
+    padding: var(--space-sm);
+}
+
+.analysis-mode-content .analysis-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: var(--space-sm);
+}
+
+/* Lista Unificada de Operaciones en Análisis */
+.analysis-unified-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.analysis-unified-list .trade-item {
+    padding: var(--space-sm);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition-fast);
+    border: 1px solid transparent;
+}
+
+.analysis-unified-list .trade-item:hover {
+    background: var(--bg-hover);
+}
+
+.analysis-unified-list .trade-item.selected {
+    border: 2px solid var(--accent-primary);
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.analysis-unified-list .trade-item.open-position {
+    border-left: 3px solid var(--color-bullish);
+}
+
+.analysis-unified-list .trade-item.closed-trade {
+    border-left: 3px solid var(--text-secondary);
+}
+
+.analysis-unified-list .trade-item .trade-item-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+}
+
+.analysis-unified-list .trade-item .trade-symbol {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text-primary);
+    flex-shrink: 0;
+}
+}
+
+.analysis-unified-list .trade-item .trade-status {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.analysis-unified-list .trade-item .trade-status.open {
+    background: rgba(76, 175, 80, 0.2);
+    color: var(--color-bullish);
+}
+
+.analysis-unified-list .trade-item .trade-status.closed {
+    background: rgba(158, 158, 158, 0.2);
+    color: var(--text-secondary);
+}
+
+.analysis-unified-list .trade-item .trade-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+.analysis-unified-list .trade-item .trade-pnl {
+    font-weight: 600;
+}
+
+.analysis-unified-list .trade-item .trade-pnl.positive {
+    color: var(--color-bullish);
+}
+
+.analysis-unified-list .trade-item .trade-pnl.negative {
+    color: var(--color-bearish);
+}
+
+/* Badges para modo análisis */
+.analysis-unified-list .trade-item-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.analysis-unified-list .trade-badge {
+    font-size: 9px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-weight: 500;
+}
+
+.analysis-unified-list .trade-badge.case-badge {
+    background: rgba(41, 98, 255, 0.2);
+    color: var(--accent-primary);
+}
+
+.analysis-unified-list .trade-badge.open-badge {
+    background: rgba(76, 175, 80, 0.2);
+    color: var(--color-bullish);
+}
+
+.analysis-unified-list .trade-badge.reason-badge {
+    font-weight: 600;
+}
+
+.analysis-unified-list .trade-badge.reason-badge.tp {
+    background: rgba(76, 175, 80, 0.3);
+    color: var(--color-bullish);
+}
+
+.analysis-unified-list .trade-badge.reason-badge.sl {
+    background: rgba(244, 67, 54, 0.3);
+    color: var(--color-bearish);
+}
+
+.analysis-unified-list .trade-details {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.no-trades-analysis {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: var(--space-md);
+    font-size: 11px;
+}
+
+/* Navegación de análisis (abajo del panel) */
+.analysis-mode-content .analysis-navigation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--border-color);
+    margin-top: auto;
+}
+
+/* ===== Modo Análisis de Historial (estilo legacy para compatibilidad) ===== */
 .analysis-mode-section {
     margin-top: var(--space-md);
     padding-top: var(--space-md);
