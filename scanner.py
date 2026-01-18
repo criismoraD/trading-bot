@@ -597,7 +597,14 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
                             and p.price > current_high]
         
         if not left_higher_highs:
-            print(f"      ❌ C1++ {symbol}: No hay Highs más altos a la izquierda")
+            # Debug: mostrar todos los Highs a la izquierda
+            all_left_highs = [p for p in zigzag_pivots 
+                              if p.type == 'high' and p.index < current_high_pivot.index]
+            if all_left_highs:
+                max_left = max(all_left_highs, key=lambda x: x.price)
+                print(f"      ❌ C1++ {symbol}: No hay Highs más altos a la izquierda (High actual: ${current_high:.4f}, Max izq: ${max_left.price:.4f})")
+            else:
+                print(f"      ❌ C1++ {symbol}: No hay Highs a la izquierda del pivote actual")
             return
         
         # Ordenar por precio descendente (el más alto primero)
