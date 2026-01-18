@@ -2535,10 +2535,17 @@ function applyAnalysisFilter() {
         return;
     }
 
-    // Combinar posiciones abiertas + historial cerrado (sin pending_orders)
+    // Combinar posiciones abiertas + órdenes límite + historial cerrado
     const openPositions = Object.entries(analysisData.open_positions || {}).map(([id, pos]) => ({
         ...pos,
         _type: 'open',
+        _id: id
+    }));
+    
+    // Añadir órdenes límite pendientes
+    const pendingOrders = Object.entries(analysisData.pending_orders || {}).map(([id, order]) => ({
+        ...order,
+        _type: 'pending',
         _id: id
     }));
     
@@ -2548,7 +2555,7 @@ function applyAnalysisFilter() {
         _id: `closed_${idx}`
     }));
 
-    let allTrades = [...openPositions, ...closedTrades];
+    let allTrades = [...openPositions, ...pendingOrders, ...closedTrades];
 
     // Aplicar filtro por caso
     if (currentCaseFilter !== 'all') {
@@ -2576,12 +2583,13 @@ function updateAnalysisStats() {
     const total = filteredTrades.length;
     const closedTrades = filteredTrades.filter(t => t._type === 'closed');
     const openTrades = filteredTrades.filter(t => t._type === 'open');
+    const pendingTrades = filteredTrades.filter(t => t._type === 'pending');
     
     const winners = closedTrades.filter(t => (t.pnl || 0) > 0).length;
     const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
     const winRate = closedTrades.length > 0 ? (winners / closedTrades.length * 100).toFixed(1) : 0;
 
-    totalEl.textContent = `${openTrades.length}🟢 ${closedTrades.length}✖`;
+    totalEl.textContent = `${openTrades.length}🟢 ${pendingTrades.length}📋 ${closedTrades.length}✖`;
     winRateEl.textContent = `${winRate}%`;
     pnlEl.textContent = `$${totalPnl.toFixed(2)}`;
     pnlEl.style.color = totalPnl >= 0 ? 'var(--color-bullish)' : 'var(--color-bearish)';
@@ -2622,6 +2630,25 @@ function updateAnalysisUnifiedList() {
                 <div class="trade-details">
                     <span>SL: $${(trade.stop_loss || 0).toFixed(4)}</span>
                     <span>Size: ${trade.size || 0}</span>
+                </div>
+            </div>
+            `;
+        } else if (trade._type === 'pending') {
+            // Orden límite pendiente
+            html += `
+            <div class="trade-item pending-order ${selectedClass}" data-index="${index}" onclick="selectAnalysisTrade(${index})">
+                <div class="trade-item-header">
+                    <span class="trade-symbol">${trade.symbol}</span>
+                    <span class="trade-badge case-badge">${getCaseLabel(trade.strategy_case)}</span>
+                    <span class="trade-badge pending-badge">📋 LÍMITE</span>
+                </div>
+                <div class="trade-details">
+                    <span>Price: $${(trade.price || 0).toFixed(4)}</span>
+                    <span>TP: $${(trade.take_profit || 0).toFixed(4)}</span>
+                </div>
+                <div class="trade-details">
+                    <span>Qty: ${(trade.quantity || 0).toFixed(2)}</span>
+                    <span>Margin: $${(trade.margin || 0).toFixed(2)}</span>
                 </div>
             </div>
             `;

@@ -1272,6 +1272,11 @@ body {
     color: var(--color-bullish);
 }
 
+.analysis-unified-list .trade-badge.pending-badge {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+}
+
 .analysis-unified-list .trade-badge.reason-badge {
     font-weight: 600;
 }

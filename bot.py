@@ -642,7 +642,7 @@ async def main():
                 pnl_color_pos = C_GREEN if pos.unrealized_pnl >= 0 else C_RED
                 current = price_cache.get(pos.symbol, pos.current_price)
                 side_color = C_RED if pos.side.value == 'SHORT' else C_GREEN
-                case_str = f"C{pos.strategy_case}" if pos.strategy_case else "??"
+                case_str = "C1++" if pos.strategy_case == 11 else f"C{pos.strategy_case}" if pos.strategy_case else "??"
                 
                 # Línea 1: Symbol, Case, Side, Qty
                 print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{pos.symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}{pos.side.value:<5}{C_RESET} │ Qty: {C_WHITE}{pos.quantity:.3f}{C_RESET}{' '*25}{C_CYAN}│{C_RESET}")
@@ -661,7 +661,7 @@ async def main():
             print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
             for order_id, order in account.pending_orders.items():
                 side_color = C_RED if order.side.value == 'SELL' else C_GREEN
-                case_str = f"C{order.strategy_case}" if order.strategy_case else "??"
+                case_str = "C1++" if order.strategy_case == 11 else f"C{order.strategy_case}" if order.strategy_case else "??"
                 
                 # Línea 1
                 print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{order.symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}LIMIT {order.side.value}{C_RESET} │ Qty: {C_WHITE}{order.quantity:.2f}{C_RESET}{' '*21}{C_CYAN}│{C_RESET}")
