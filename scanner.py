@@ -559,17 +559,17 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
     Evaluar si 61.8% no ha sido tocado, si fue tocado subir al siguiente
     """
     from fibonacci import calculate_zigzag, calculate_fibonacci_levels
+    from config import TIMEFRAME
     
     try:
         # Obtener velas del par
-        timeframe = get_timeframe()
-        candle_data = await scanner._fetch_candles(session, symbol, timeframe, limit=500)
+        candle_data = await scanner._fetch_candles(session, symbol, TIMEFRAME, limit=500)
         
         if not candle_data or len(candle_data) < 50:
             return
         
         # Obtener pivotes ZigZag
-        zigzag_pivots = calculate_zigzag(candle_data, timeframe)
+        zigzag_pivots = calculate_zigzag(candle_data, TIMEFRAME)
         
         if not zigzag_pivots or len(zigzag_pivots) < 2:
             return
