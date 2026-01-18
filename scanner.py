@@ -590,8 +590,8 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
     try:
         print(f"      🔍 Buscando C1++ para {symbol}...")
         
-        # Obtener velas del par (1500 para coincidir con visor web)
-        candle_data = await scanner.fetch_klines(session, symbol, TIMEFRAME, limit=1500)
+        # Obtener velas del par (2000 para historial completo)
+        candle_data = await scanner.fetch_klines(session, symbol, TIMEFRAME, limit=2000)
         
         if not candle_data or len(candle_data) < 50:
             print(f"      ❌ C1++ {symbol}: No hay suficientes velas")
@@ -632,8 +632,9 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
                 print(f"      ❌ C1++ {symbol}: No hay Highs a la izquierda del pivote actual")
             return
         
-        # Ordenar por precio descendente (el más alto primero)
-        left_higher_highs.sort(key=lambda x: x.price, reverse=True)
+        # Ordenar por índice descendente (el más cercano/reciente primero, no el más alto)
+        # Así tomamos el "siguiente" High más alto inmediato, no el máximo global
+        left_higher_highs.sort(key=lambda x: x.index, reverse=True)
         
         current_price = candle_data[-1]['close']
         last_candle_index = len(candle_data) - 1

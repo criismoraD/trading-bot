@@ -46,6 +46,6 @@
         "target_pairs": [],
         "timeframe": "4h",
         "top_pairs_limit": 600,
-        "candle_limit": 1500
+        "candle_limit": 2000
     }
 }
