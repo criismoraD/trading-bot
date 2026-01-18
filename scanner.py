@@ -565,8 +565,8 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
     try:
         print(f"      🔍 Buscando C1++ para {symbol}...")
         
-        # Obtener velas del par
-        candle_data = await scanner.fetch_klines(session, symbol, TIMEFRAME, limit=500)
+        # Obtener velas del par (1500 para coincidir con visor web)
+        candle_data = await scanner.fetch_klines(session, symbol, TIMEFRAME, limit=1500)
         
         if not candle_data or len(candle_data) < 50:
             print(f"      ❌ C1++ {symbol}: No hay suficientes velas")
