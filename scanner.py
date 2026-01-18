@@ -112,7 +112,7 @@ class MarketScanner:
     async def fetch_klines(self, session: aiohttp.ClientSession, 
                            symbol: str, interval: str = '5m', 
                            limit: int = 100) -> List[dict]:
-        """Obtener velas para un par desde Bybit"""
+        """Obtener velas para un par desde Bybit (con paginación automática si limit > 1000)"""
         # Convertir intervalo a formato Bybit (1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, M, W)
         interval_map = {
             '1m': '1', '3m': '3', '5m': '5', '15m': '15', '30m': '30',
@@ -122,34 +122,60 @@ class MarketScanner:
         bybit_interval = interval_map.get(interval, '60')
         
         url = f"{REST_BASE_URL}/v5/market/kline"
-        params = {"category": "linear", "symbol": symbol, "interval": bybit_interval, "limit": limit}
+        all_candles = []
+        remaining = limit
+        end_time = None
         
         try:
-            async with session.get(url, params=params) as response:
-                if response.status != 200:
-                    return []
-                data = await response.json()
+            while remaining > 0:
+                batch_limit = min(remaining, 1000)  # Bybit max 1000 per request
+                params = {"category": "linear", "symbol": symbol, "interval": bybit_interval, "limit": batch_limit}
                 
-                if data.get('retCode') != 0:
-                    return []
+                if end_time:
+                    params["end"] = end_time
                 
-                klines = data.get('result', {}).get('list', [])
-                # Bybit devuelve en orden descendente, invertir
-                klines = klines[::-1]
-                
-                return [
-                    {
-                        "time": int(c[0]) // 1000,
-                        "open": float(c[1]),
-                        "high": float(c[2]),
-                        "low": float(c[3]),
-                        "close": float(c[4]),
-                        "volume": float(c[5])
-                    }
-                    for c in klines
-                ]
-        except:
-            return []
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        break
+                    data = await response.json()
+                    
+                    if data.get('retCode') != 0:
+                        break
+                    
+                    klines = data.get('result', {}).get('list', [])
+                    if not klines:
+                        break
+                    
+                    # Bybit devuelve en orden descendente (más reciente primero)
+                    parsed = [
+                        {
+                            "time": int(c[0]) // 1000,
+                            "open": float(c[1]),
+                            "high": float(c[2]),
+                            "low": float(c[3]),
+                            "close": float(c[4]),
+                            "volume": float(c[5])
+                        }
+                        for c in klines
+                    ]
+                    
+                    # Insertar al inicio (son más antiguas)
+                    all_candles = parsed + all_candles
+                    
+                    remaining -= len(klines)
+                    
+                    if remaining > 0 and len(klines) == batch_limit:
+                        # Obtener timestamp de la vela más antigua para siguiente request
+                        end_time = int(klines[-1][0]) - 1  # -1 para no duplicar
+                    else:
+                        break
+            
+            # Ordenar por tiempo ascendente
+            all_candles.sort(key=lambda x: x['time'])
+            return all_candles
+            
+        except Exception as e:
+            return all_candles if all_candles else []
     
     def calculate_rsi(self, candles: List[dict], period: int = 14) -> float:
         """Calcular RSI de las velas"""
