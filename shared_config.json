@@ -1,6 +1,6 @@
 {
     "trading": {
-        "case_1_min": 0.55,
+        "case_1_min": 0.50,
         "case_1_max": 0.618,
         "case_2_min": 0.618,
         "case_2_max": 0.69,

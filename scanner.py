@@ -555,39 +555,58 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
 
 async def _search_and_place_c1pp(scanner, account, symbol, current_high, current_low, margin_per_trade, sl_price, OrderSide, session):
     """
-    Buscar el siguiente High más alto y su Low más bajo para C1++
-    Evaluar si 61.8% no ha sido tocado, si fue tocado subir al siguiente
+    Buscar el siguiente High a la izquierda (más antiguo) y su Low para C1++
+    La zona válida para C1++ es 0%-61.8%
+    Si 61.8% ya fue tocado, busca el siguiente High más a la izquierda
     """
     from fibonacci import calculate_zigzag, calculate_fibonacci_levels
     from config import TIMEFRAME
     
     try:
+        print(f"      🔍 Buscando C1++ para {symbol}...")
+        
         # Obtener velas del par
         candle_data = await scanner._fetch_candles(session, symbol, TIMEFRAME, limit=500)
         
         if not candle_data or len(candle_data) < 50:
+            print(f"      ❌ C1++ {symbol}: No hay suficientes velas")
             return
         
         # Obtener pivotes ZigZag
         zigzag_pivots = calculate_zigzag(candle_data, TIMEFRAME)
         
         if not zigzag_pivots or len(zigzag_pivots) < 2:
+            print(f"      ❌ C1++ {symbol}: No hay suficientes pivotes ZigZag")
             return
         
-        # Encontrar Highs más altos que el actual (zigzag_pivots son ZigZagPoint objects)
-        higher_highs = [p for p in zigzag_pivots if p.type == 'high' and p.price > current_high]
+        # Encontrar el índice del High actual del C2/C3/C4
+        current_high_pivot = None
+        for p in zigzag_pivots:
+            if p.type == 'high' and abs(p.price - current_high) < current_high * 0.001:  # Tolerancia 0.1%
+                current_high_pivot = p
+                break
         
-        if not higher_highs:
-            return  # No hay Highs más altos
+        if not current_high_pivot:
+            print(f"      ❌ C1++ {symbol}: No se encontró el High actual en los pivotes")
+            return
         
-        # Ordenar por precio (de menor a mayor, el siguiente más alto primero)
-        higher_highs.sort(key=lambda x: x.price)
+        # Buscar Highs que estén MÁS A LA IZQUIERDA (índice menor) del High actual
+        left_highs = [p for p in zigzag_pivots if p.type == 'high' and p.index < current_high_pivot.index]
+        
+        if not left_highs:
+            print(f"      ❌ C1++ {symbol}: No hay Highs a la izquierda")
+            return
+        
+        # Ordenar por índice descendente (el más cercano al actual primero)
+        left_highs.sort(key=lambda x: x.index, reverse=True)
         
         current_price = candle_data[-1]['close']
         last_candle_index = len(candle_data) - 1
         
-        # Iterar por cada High más alto hasta encontrar C1++ válido
-        for alt_high in higher_highs:
+        print(f"      📊 C1++ {symbol}: Encontrados {len(left_highs)} Highs a la izquierda")
+        
+        # Iterar por cada High a la izquierda hasta encontrar C1++ válido
+        for idx, alt_high in enumerate(left_highs):
             alt_high_idx = alt_high.index
             
             # Buscar el Low más bajo entre este High y la vela actual
@@ -615,7 +634,7 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
                     break
             
             if touched_90:
-                print(f"      ⚠️ C1++ {symbol}: 90% tocado para High ${alt_high.price:.4f}, probando siguiente...")
+                print(f"      ⚠️ C1++ {symbol}: 90% tocado para High #{idx+1} (${alt_high.price:.4f}), probando siguiente...")
                 continue
             
             # Verificar que 61.8% NO haya sido tocado
@@ -626,14 +645,17 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
                     break
             
             if touched_618:
-                print(f"      ⚠️ C1++ {symbol}: 61.8% ya tocado para High ${alt_high.price:.4f}, probando siguiente...")
+                print(f"      ⚠️ C1++ {symbol}: 61.8% ya tocado para High #{idx+1} (${alt_high.price:.4f}), probando siguiente...")
                 continue
             
-            # Precio debe estar por debajo de 61.8% para que sea C1++ válido
+            # Precio debe estar en zona 0%-61.8% para C1++ válido
             if current_price >= fib_618:
+                print(f"      ⚠️ C1++ {symbol}: Precio actual encima de 61.8% para High #{idx+1}, probando siguiente...")
                 continue
             
             # ¡Encontramos C1++ válido!
+            print(f"      ✅ C1++ {symbol}: Encontrado swing válido - High ${alt_high.price:.4f}")
+            
             alt_levels = calculate_fibonacci_levels(alt_high.price, lowest_price)
             tp_price = alt_levels['45']
             limit_price = alt_levels['618']
