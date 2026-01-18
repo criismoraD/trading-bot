@@ -555,9 +555,9 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
 
 async def _search_and_place_c1pp(scanner, account, symbol, current_high, current_low, margin_per_trade, sl_price, OrderSide, session):
     """
-    Buscar el siguiente High a la izquierda (más antiguo) y su Low para C1++
+    Buscar el siguiente High MÁS ALTO a la izquierda (más antiguo) y su Low para C1++
     La zona válida para C1++ es 0%-61.8%
-    Si 61.8% ya fue tocado, busca el siguiente High más a la izquierda
+    Si 61.8% ya fue tocado, busca el siguiente High más alto a la izquierda
     """
     from fibonacci import calculate_zigzag, calculate_fibonacci_levels
     from config import TIMEFRAME
@@ -566,7 +566,7 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
         print(f"      🔍 Buscando C1++ para {symbol}...")
         
         # Obtener velas del par
-        candle_data = await scanner._fetch_candles(session, symbol, TIMEFRAME, limit=500)
+        candle_data = await scanner.fetch_klines(session, symbol, TIMEFRAME, limit=500)
         
         if not candle_data or len(candle_data) < 50:
             print(f"      ❌ C1++ {symbol}: No hay suficientes velas")
@@ -590,23 +590,26 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
             print(f"      ❌ C1++ {symbol}: No se encontró el High actual en los pivotes")
             return
         
-        # Buscar Highs que estén MÁS A LA IZQUIERDA (índice menor) del High actual
-        left_highs = [p for p in zigzag_pivots if p.type == 'high' and p.index < current_high_pivot.index]
+        # Buscar Highs MÁS ALTOS que estén A LA IZQUIERDA (índice menor) del High actual
+        left_higher_highs = [p for p in zigzag_pivots 
+                            if p.type == 'high' 
+                            and p.index < current_high_pivot.index 
+                            and p.price > current_high]
         
-        if not left_highs:
-            print(f"      ❌ C1++ {symbol}: No hay Highs a la izquierda")
+        if not left_higher_highs:
+            print(f"      ❌ C1++ {symbol}: No hay Highs más altos a la izquierda")
             return
         
-        # Ordenar por índice descendente (el más cercano al actual primero)
-        left_highs.sort(key=lambda x: x.index, reverse=True)
+        # Ordenar por precio descendente (el más alto primero)
+        left_higher_highs.sort(key=lambda x: x.price, reverse=True)
         
         current_price = candle_data[-1]['close']
         last_candle_index = len(candle_data) - 1
         
-        print(f"      📊 C1++ {symbol}: Encontrados {len(left_highs)} Highs a la izquierda")
+        print(f"      📊 C1++ {symbol}: Encontrados {len(left_higher_highs)} Highs más altos a la izquierda")
         
-        # Iterar por cada High a la izquierda hasta encontrar C1++ válido
-        for idx, alt_high in enumerate(left_highs):
+        # Iterar por cada High más alto a la izquierda hasta encontrar C1++ válido
+        for idx, alt_high in enumerate(left_higher_highs):
             alt_high_idx = alt_high.index
             
             # Buscar el Low más bajo entre este High y la vela actual
