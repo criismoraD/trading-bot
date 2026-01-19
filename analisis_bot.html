@@ -273,7 +273,7 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('tp_c1', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="tp_c1" value="40" min="0" max="61.8" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="tp_c1" value="40" min="0" max="61.8" step="0.1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('tp_c1', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="tp_c1_val">40</span>
@@ -285,7 +285,7 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('sl_c1', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="sl_c1" value="110" min="62" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="sl_c1" value="110" min="62" max="200" step="0.1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('sl_c1', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="sl_c1_val">110</span>
@@ -312,7 +312,7 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('tp_c2', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="tp_c2" value="45" min="0" max="61.8" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="tp_c2" value="45" min="0" max="61.8" step="0.1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('tp_c2', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="tp_c2_val">45</span>
@@ -324,7 +324,7 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('sl_c2', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="sl_c2" value="110" min="69" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="sl_c2" value="110" min="69" max="200" step="0.1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('sl_c2', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="sl_c2_val">110</span>
@@ -351,7 +351,7 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('tp_c3', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="tp_c3" value="62" min="0" max="78.6" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="tp_c3" value="62" min="0" max="78.6" step="0.1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('tp_c3', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="tp_c3_val">62</span>
@@ -363,7 +363,7 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('sl_c3', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="sl_c3" value="94" min="79" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="sl_c3" value="94" min="79" max="200" step="0.1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('sl_c3', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="sl_c3_val">94</span>
@@ -390,7 +390,7 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('tp_c4', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="tp_c4" value="70" min="0" max="75" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="tp_c4" value="70" min="0" max="75" step="0.1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('tp_c4', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="tp_c4_val">70</span>
@@ -402,11 +402,61 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('sl_c4', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="sl_c4" value="93" min="90" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="sl_c4" value="93" min="90" max="200" step="0.1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('sl_c4', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="sl_c4_val">93</span>
                                 </div>
+                            </div>
+                        </div>
+                        <!-- C5 (Promediado C2/C3/C4 + C1++) -->
+                        <div class="p-2 bg-purple-50 rounded border border-purple-200">
+                            <div class="flex justify-between items-center mb-1">
+                                <div class="flex items-center gap-2">
+                                    <div class="font-bold text-xs text-purple-700">CASO 5 (Promediado)</div>
+                                    <label class="toggle-switch" title="Activar/desactivar promediado C5">
+                                        <input type="checkbox" id="enableC5Averaging" onchange="runSimulation();" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="toggle-container">
+                                    <span class="text-[9px] text-purple-400">SL</span>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="sl_enabled_c5" onchange="toggleSL(5); runSimulation();" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <p class="text-[9px] text-purple-600 mb-2">Fusión automática de C2/C3/C4 + C1++ cuando ambos se ejecutan y SL ≥ entry C1++</p>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="slider-container">
+                                    <div class="slider-header">
+                                        <label class="text-[10px] text-slate-500">TP Fib % <span class="text-purple-400">(máx 61.8)</span></label>
+                                        <button onclick="resetSlider('tp_c5', 45)" class="reset-btn" title="Restablecer">↺</button>
+                                    </div>
+                                    <div class="slider-with-controls">
+                                        <button onclick="adjustSlider('tp_c5', -1)" class="precision-btn">&lt;</button>
+                                        <input type="range" id="tp_c5" value="45" min="0" max="61.8" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <button onclick="adjustSlider('tp_c5', 1)" class="precision-btn">&gt;</button>
+                                    </div>
+                                    <span class="slider-value" id="tp_c5_val">45</span>
+                                </div>
+                                <div class="slider-container" id="sl_container_c5">
+                                    <div class="slider-header">
+                                        <label class="text-[10px] text-slate-500">SL Fib % <span class="text-purple-400">(mín 62)</span></label>
+                                        <button onclick="resetSlider('sl_c5', 110)" class="reset-btn" title="Restablecer">↺</button>
+                                    </div>
+                                    <div class="slider-with-controls">
+                                        <button onclick="adjustSlider('sl_c5', -1)" class="precision-btn">&lt;</button>
+                                        <input type="range" id="sl_c5" value="110" min="62" max="200" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <button onclick="adjustSlider('sl_c5', 1)" class="precision-btn">&gt;</button>
+                                    </div>
+                                    <span class="slider-value" id="sl_c5_val">110</span>
+                                </div>
+                            </div>
+                            <div class="mt-2 p-2 bg-purple-100 rounded flex items-center justify-between">
+                                <span class="text-[10px] text-purple-700 font-medium">📊 Fusiones detectadas:</span>
+                                <span id="c5_count" class="text-sm font-bold text-purple-800 bg-purple-200 px-2 py-0.5 rounded">0</span>
                             </div>
                         </div>
                     </div>
@@ -517,6 +567,7 @@
                             <button onclick="setCasePriority(2)" id="btnCase2" class="case-btn text-xs px-2 py-1 rounded border border-yellow-300 bg-white text-yellow-700 hover:bg-yellow-50">C2</button>
                             <button onclick="setCasePriority(3)" id="btnCase3" class="case-btn text-xs px-2 py-1 rounded border border-orange-300 bg-white text-orange-700 hover:bg-orange-50">C3</button>
                             <button onclick="setCasePriority(4)" id="btnCase4" class="case-btn text-xs px-2 py-1 rounded border border-red-300 bg-white text-red-700 hover:bg-red-50">C4</button>
+                            <button onclick="setCasePriority(5)" id="btnCase5" class="case-btn text-xs px-2 py-1 rounded border border-purple-300 bg-white text-purple-700 hover:bg-purple-50">C5</button>
                             <span class="mx-1 text-slate-300">|</span>
                             <span class="text-[10px] text-slate-500">Ordenar:</span>
                             <button onclick="setSortMode('none')" id="btnSortNone" class="sort-btn text-xs px-2 py-1 rounded border border-slate-300 bg-slate-800 text-white">Por defecto</button>
@@ -549,6 +600,15 @@
                             <label class="flex items-center gap-1 cursor-pointer">
                                 <input type="checkbox" id="ignoreC4" onchange="runSimulation()" class="w-3 h-3 rounded">
                                 <span class="text-xs text-red-600">C4</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="ignoreC5" onchange="runSimulation()" class="w-3 h-3 rounded">
+                                <span class="text-xs text-purple-600">C5</span>
+                            </label>
+                            <span class="mx-1 text-slate-300">|</span>
+                            <label class="flex items-center gap-2 cursor-pointer" title="Cancelar C1++ si su C2/C3/C4 asociado cerró en TP">
+                                <input type="checkbox" id="cancelC1ppOnTP" onchange="runSimulation()" class="w-4 h-4 rounded border-purple-300">
+                                <span class="text-xs text-purple-600 font-medium">Cancelar C1++ si TP ✅</span>
                             </label>
                             <span class="mx-1 text-slate-300">|</span>
                             <label class="flex items-center gap-2 cursor-pointer">
@@ -728,27 +788,33 @@
         let isWebServer = false;
 
         async function autoLoadTradesJson() {
-            // Intentar cargar trades.json automáticamente
-            try {
-                // Usar timestamp + random para evitar cualquier caché
-                const cacheBuster = Date.now() + '-' + Math.random();
-                const response = await fetch('/trades.json?nocache=' + cacheBuster, {
-                    cache: 'no-store',
-                    headers: { 'Cache-Control': 'no-cache' }
-                });
-                if (response.ok) {
-                    rawData = await response.json();
-                    document.getElementById('dashboard').classList.remove('hidden');
-                    runSimulation();
-                    console.log('✅ trades.json cargado:', new Date().toLocaleTimeString());
-                    isWebServer = true;
-                    
-                    // Mostrar botón de refresh manual
-                    showRefreshButton();
+            // Intentar cargar archivos JSON automáticamente (primero 2trades.json, luego trades.json)
+            const filesToTry = ['/2trades.json', '/trades.json'];
+            
+            for (const fileName of filesToTry) {
+                try {
+                    // Usar timestamp + random para evitar cualquier caché
+                    const cacheBuster = Date.now() + '-' + Math.random();
+                    const response = await fetch(fileName + '?nocache=' + cacheBuster, {
+                        cache: 'no-store',
+                        headers: { 'Cache-Control': 'no-cache' }
+                    });
+                    if (response.ok) {
+                        rawData = await response.json();
+                        document.getElementById('dashboard').classList.remove('hidden');
+                        runSimulation();
+                        console.log('✅ ' + fileName + ' cargado:', new Date().toLocaleTimeString());
+                        isWebServer = true;
+                        
+                        // Mostrar botón de refresh manual
+                        showRefreshButton();
+                        return; // Salir después de cargar exitosamente
+                    }
+                } catch (e) {
+                    console.log('ℹ️ No se pudo cargar ' + fileName);
                 }
-            } catch (e) {
-                console.log('ℹ️ No se pudo auto-cargar trades.json, usa el selector de archivo');
             }
+            console.log('ℹ️ No se encontró ningún archivo JSON, usa el selector de archivo');
         }
 
         function showRefreshButton() {
@@ -790,6 +856,16 @@
         });
 
         function getCaseSettings(caseId) {
+            // C5 tiene su propia configuración
+            if (caseId == 5) {
+                let tp = (parseFloat(document.getElementById('tp_c5').value) || 0) / 100;
+                const slEnabled = document.getElementById('sl_enabled_c5').checked;
+                let sl = slEnabled ? (parseFloat(document.getElementById('sl_c5').value) || 0) / 100 : 0;
+                if (tp > 0.618) tp = 0.618;
+                if (sl > 0 && sl < 0.62) sl = 0.62;
+                return { tp, sl, tpMax: 0.618, slMin: 0.62 };
+            }
+            
             let c = (caseId == 11) ? 1 : caseId;
             if (![1, 2, 3, 4].includes(c)) c = 1;
 
@@ -824,6 +900,7 @@
             const minProfitReq = parseFloat(document.getElementById('filter_min_profit').value) || 0;
             const maxProfitReq = parseFloat(document.getElementById('filter_max_profit').value) || 0;
             const showIgnored = document.getElementById('showIgnored').checked;
+            const cancelC1ppOnTP = document.getElementById('cancelC1ppOnTP').checked;
             
             // Obtener casos ignorados
             const ignoredCases = {
@@ -831,7 +908,8 @@
                 11: document.getElementById('ignoreC11').checked,
                 2: document.getElementById('ignoreC2').checked,
                 3: document.getElementById('ignoreC3').checked,
-                4: document.getElementById('ignoreC4').checked
+                4: document.getElementById('ignoreC4').checked,
+                5: document.getElementById('ignoreC5').checked
             };
 
             // Estructura de Datos
@@ -843,7 +921,7 @@
             };
 
             let caseStats = {};
-            [1, 11, 2, 3, 4].forEach(i => {
+            [1, 11, 2, 3, 4, 5].forEach(i => {
                 caseStats[i] = {
                     total: 0, closed: 0, open: 0,
                     wins: 0, losses: 0,
@@ -861,21 +939,14 @@
             // Historial
             if (rawData.history) rawData.history.forEach(t => {
                 t._src = 'HIST';
-                // Para HIST: calcular el precio máximo DURANTE la operación usando min_pnl
-                // min_pnl negativo significa pérdida (precio subió en SHORT)
-                let impliedMaxDuring = t.entry_price;
-                if (t.min_pnl !== undefined && t.min_pnl < 0) {
-                    impliedMaxDuring = t.entry_price - (t.min_pnl / t.quantity);
-                }
+                // Para HIST: usar precio máximo DURANTE la operación (pre-close)
+                let impliedMaxDuring = t.max_price_pre_close || t.entry_price;
                 // Para SL: usar SOLO el precio máximo DURANTE la operación
                 t._max = impliedMaxDuring;
                 
                 // Para TP: usar el precio mínimo DURANTE y POST operación
                 // Esto permite simular TPs más bajos que el original
-                let impliedMinDuring = t.entry_price;
-                if (t.max_pnl !== undefined && t.max_pnl > 0) {
-                    impliedMinDuring = t.entry_price - (t.max_pnl / t.quantity);
-                }
+                let impliedMinDuring = t.min_price_pre_close || t.entry_price;
                 // Combinar el mínimo durante operación con el mínimo post-close
                 let minPostClose = t.min_price_post_close || t.close_price;
                 t._min = Math.min(impliedMinDuring, t.close_price, minPostClose);
@@ -889,31 +960,129 @@
                 // Usar current_price válido, o entry_price como fallback
                 const effectivePrice = (t.current_price && t.current_price > 0) ? t.current_price : t.entry_price;
                 
-                // Calcular riesgo maximo basado en drawdown
-                let impliedMax = t.entry_price;
-                if (t.min_pnl !== undefined && t.min_pnl !== null && t.min_pnl < 0) {
-                    impliedMax = t.entry_price - (t.min_pnl / t.quantity); // Short logic
-                }
-                // También usar max_price_pre_close si está disponible
-                if (t.max_price_pre_close && t.max_price_pre_close > 0) {
-                    impliedMax = Math.max(impliedMax, t.max_price_pre_close);
-                }
+                // Usar max_price_pre_close para el precio máximo alcanzado
+                let impliedMax = t.max_price_pre_close || t.entry_price;
                 t._max = Math.max(impliedMax, effectivePrice);
 
-                let impliedMin = t.entry_price;
-                if (t.max_pnl !== undefined && t.max_pnl !== null && t.max_pnl > 0) {
-                    impliedMin = t.entry_price - (t.max_pnl / t.quantity);
-                }
-                // También usar min_price_pre_close si está disponible
-                if (t.min_price_pre_close && t.min_price_pre_close > 0) {
-                    impliedMin = Math.min(impliedMin, t.min_price_pre_close);
-                }
+                // Usar min_price_pre_close para el precio mínimo alcanzado
+                let impliedMin = t.min_price_pre_close || t.entry_price;
                 t._min = Math.min(impliedMin, effectivePrice);
 
                 if (!t.fib_high) t.fib_high = t.entry_price * 1.05;
                 if (!t.fib_low) t.fib_low = t.entry_price * 0.95;
                 allTrades.push(t);
             });
+
+            // 1.5. Pre-procesar: Detectar símbolos donde C2/C3/C4 tocó TP (para cancelar C1++ asociado)
+            let symbolsWithTPHit = new Set();
+            if (cancelC1ppOnTP) {
+                allTrades.forEach(t => {
+                    const cID = t.strategy_case || 1;
+                    // Solo procesar C2, C3, C4 (no C1 ni C1++)
+                    if (cID >= 2 && cID <= 4) {
+                        const s = getCaseSettings(cID);
+                        const range = t.fib_high - t.fib_low;
+                        const tpPrice = t.fib_low + (range * s.tp);
+                        // Verificar si tocó TP
+                        const hitTP = t._min <= tpPrice;
+                        if (hitTP) {
+                            symbolsWithTPHit.add(t.symbol);
+                        }
+                    }
+                });
+            }
+
+            // 1.6. DETECTAR CASO 5 (Promediado): C2/C3/C4 + C1++ del mismo símbolo que se fusionan
+            // Condición: 1) El SL del C2/C3/C4 >= entry del C1++
+            //            2) Ambos trades llegaron a ejecutarse
+            //            3) El mainTrade NO cerró en TP antes de que C1++ se ejecute
+            let c5Trades = [];  // Trades C5 sintéticos
+            let tradesConvertedToC5 = new Set();  // order_ids que se fusionaron en C5
+            const enableC5Averaging = document.getElementById('enableC5Averaging') ? document.getElementById('enableC5Averaging').checked : true;
+            
+            if (enableC5Averaging) {
+                // Agrupar trades por símbolo
+                let tradesBySymbol = {};
+                allTrades.forEach(t => {
+                    const sym = t.symbol;
+                    if (!tradesBySymbol[sym]) tradesBySymbol[sym] = [];
+                    tradesBySymbol[sym].push(t);
+                });
+                
+                // Para cada símbolo, buscar pares C2/C3/C4 + C1++
+                for (const symbol in tradesBySymbol) {
+                    const symTrades = tradesBySymbol[symbol];
+                    
+                    // Buscar C2/C3/C4 (principal) y C1++ (complementario)
+                    const mainTrades = symTrades.filter(t => [2, 3, 4].includes(t.strategy_case));
+                    const c1ppTrades = symTrades.filter(t => t.strategy_case === 11);
+                    
+                    if (mainTrades.length === 0 || c1ppTrades.length === 0) continue;
+                    
+                    // Para cada par principal + C1++
+                    mainTrades.forEach(mainTrade => {
+                        c1ppTrades.forEach(c1ppTrade => {
+                            // 1. Calcular entry del C1++
+                            const c1ppRange = c1ppTrade.fib_high - c1ppTrade.fib_low;
+                            const c1ppEntry = c1ppTrade.fib_low + (c1ppRange * 0.618);
+                            
+                            // 2. Verificar si el SL del trade principal está >= al entry del C1++
+                            const mainCaseSettings = getCaseSettings(mainTrade.strategy_case);
+                            const mainRange = mainTrade.fib_high - mainTrade.fib_low;
+                            const mainSL = mainTrade.fib_low + (mainRange * mainCaseSettings.sl);
+                            
+                            // Si SL < entry C1++, no se fusionan (el SL se ejecutaría antes)
+                            if (mainSL < c1ppEntry) return;
+                            
+                            // 3. Verificar si mainTrade cerró en TP ANTES de que C1++ se ejecutara
+                            const mainTP = mainTrade.fib_low + (mainRange * mainCaseSettings.tp);
+                            const mainHitTP = mainTrade._min <= mainTP;
+                            
+                            // Si mainTrade cerró en TP, C1++ se cancela (no se fusionan)
+                            if (mainHitTP) return;
+                            
+                            // 4. Verificar si el precio subió hasta el entry del C1++ (C1++ se ejecutó)
+                            const c1ppExecuted = mainTrade._max >= c1ppEntry;
+                            if (!c1ppExecuted) return;
+                            
+                            // ¡SE FUSIONAN EN C5!
+                            // Calcular precio promediado ponderado
+                            const mainQty = mainTrade.quantity || 1;
+                            const c1ppQty = c1ppTrade.quantity || 1;
+                            const avgEntry = (mainTrade.entry_price * mainQty + c1ppEntry * c1ppQty) / (mainQty + c1ppQty);
+                            
+                            // Crear trade C5 sintético (hereda niveles Fib del C1++)
+                            const c5Trade = {
+                                ...c1ppTrade,  // Hereda la mayoría del C1++
+                                symbol: symbol,
+                                strategy_case: 5,
+                                entry_price: avgEntry,
+                                quantity: mainQty + c1ppQty,
+                                margin: (mainTrade.margin || 2) + (c1ppTrade.margin || 2),
+                                _src: mainTrade._src,
+                                _max: Math.max(mainTrade._max, c1ppTrade._max || 0),
+                                _min: Math.min(mainTrade._min, c1ppTrade._min || Infinity),
+                                // Componentes originales para referencia
+                                _mainTrade: mainTrade,
+                                _c1ppTrade: c1ppTrade,
+                                _avgExplanation: `Avg: $${mainTrade.entry_price.toFixed(4)} (${mainQty.toFixed(2)}) + $${c1ppEntry.toFixed(4)} (${c1ppQty.toFixed(2)})`
+                            };
+                            
+                            c5Trades.push(c5Trade);
+                            tradesConvertedToC5.add(mainTrade.order_id);
+                            tradesConvertedToC5.add(c1ppTrade.order_id);
+                        });
+                    });
+                }
+                
+                // Filtrar trades que se convirtieron en C5
+                allTrades = allTrades.filter(t => !tradesConvertedToC5.has(t.order_id));
+                // Agregar los C5 sintéticos
+                allTrades = allTrades.concat(c5Trades);
+            }
+            
+            // Actualizar contador de C5
+            document.getElementById('c5_count').textContent = c5Trades.length;
 
             // 2. Procesar trades y almacenar datos para renderizado
             let processedTrades = [];
@@ -924,6 +1093,31 @@
                 let cID = t.strategy_case || 1;
                 // Mantener case 11 separado, no mapear a 1
                 if (!caseStats[cID]) cID = 1;
+                
+                // Verificar si C1++ debe cancelarse porque su C2/C3/C4 asociado tocó TP
+                if (cancelC1ppOnTP && cID === 11 && symbolsWithTPHit.has(t.symbol)) {
+                    stats.ignoredByCase++;
+                    if (showIgnored) {
+                        const s = getCaseSettings(cID);
+                        const range = t.fib_high - t.fib_low;
+                        const tpPrice = t.fib_low + (range * s.tp);
+                        let slPrice = Infinity;
+                        if (s.sl > 0) slPrice = t.fib_low + (range * s.sl);
+                        
+                        ignoredTrades.push({
+                            t, cID, s, tpPrice, slPrice, slIsValid: true,
+                            status: "CANCELADO (TP HIT) 🟣", 
+                            rPnl: 0, fPnl: 0, 
+                            css: "bg-purple-100", 
+                            tradePF: '-', pfDisplay: '-', 
+                            rrDisplay: '-', rrValue: 0,
+                            potProfit: 0,
+                            isIgnored: true,
+                            cancelReason: 'tp_hit'
+                        });
+                    }
+                    return;
+                }
                 
                 // Verificar si el caso está ignorado
                 if (ignoredCases[cID]) {
@@ -1107,18 +1301,22 @@
 
             // 4. Renderizar tabla
             processedTrades.forEach(({ t, cID, s, tpPrice, slPrice, slIsValid, status, rPnl, fPnl, css, tradePF, pfDisplay, rrDisplay, rrValue, isIgnored, potProfit }) => {
-                const caseDisplay = t.strategy_case == 11 ? 'C1++' : `C${t.strategy_case}`;
-                const rowClass = isIgnored ? 'bg-amber-50 opacity-60' : 'hover:bg-slate-50';
+                const caseDisplay = t.strategy_case == 11 ? 'C1++' : (t.strategy_case == 5 ? 'C5' : `C${t.strategy_case}`);
+                const rowClass = isIgnored ? 'bg-amber-50 opacity-60' : (t.strategy_case == 5 ? 'bg-purple-50' : 'hover:bg-slate-50');
                 // Mostrar SL con indicador si es inválido (SL debajo del entry)
                 const slDisplay = s.sl > 0 
                     ? (slIsValid !== false ? slPrice.toFixed(4) : `${slPrice.toFixed(4)} ⚠️`) 
                     : '∞';
+                // Para C5, mostrar entrada promediada con tooltip
+                const entryDisplay = t.strategy_case == 5 && t._avgExplanation 
+                    ? `<span title="${t._avgExplanation}">${t.entry_price.toFixed(5)} 📊</span>`
+                    : t.entry_price.toFixed(5);
                 tbody.innerHTML += `
                     <tr class="${rowClass} border-b border-slate-100">
                         <td class="p-2"><span class="badge ${t._src === 'OPEN' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}">${t._src}</span></td>
                         <td class="p-2 font-bold">${t.symbol}</td>
-                        <td class="p-2 text-center"><span class="badge bg-slate-200 text-slate-700">${caseDisplay}</span></td>
-                        <td class="p-2 text-slate-500">${t.entry_price.toFixed(5)}</td>
+                        <td class="p-2 text-center"><span class="badge ${t.strategy_case == 5 ? 'bg-purple-200 text-purple-800' : 'bg-slate-200 text-slate-700'}">${caseDisplay}</span></td>
+                        <td class="p-2 text-slate-500">${entryDisplay}</td>
                         <td class="p-2 text-center text-[10px]">
                             <div class="text-green-600">TP: ${tpPrice.toFixed(4)}</div>
                             <div class="text-red-400">SL: ${slDisplay}</div>
@@ -1132,11 +1330,11 @@
                 `;
             });
 
-            // 5. Renderizar Tabla por Caso - Incluyendo C1++ (caso 11) separado
+            // 5. Renderizar Tabla por Caso - Incluyendo C1++ (caso 11) y C5 separado
             const caseBody = document.getElementById('casesTableBody');
             caseBody.innerHTML = '';
-            const caseOrder = [1, 11, 2, 3, 4];  // Orden de casos incluyendo C1++ (11)
-            const caseNames = { 1: 'Caso 1', 11: 'Caso 1++', 2: 'Caso 2', 3: 'Caso 3', 4: 'Caso 4' };
+            const caseOrder = [1, 11, 2, 3, 4, 5];  // Orden de casos incluyendo C1++ (11) y C5
+            const caseNames = { 1: 'Caso 1', 11: 'Caso 1++', 2: 'Caso 2', 3: 'Caso 3', 4: 'Caso 4', 5: 'Caso 5 (Avg)' };
 
             caseOrder.forEach(i => {
                 const s = caseStats[i];

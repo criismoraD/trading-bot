@@ -296,12 +296,12 @@ def find_valid_fibonacci_swing(
         if invalidated_by_90:
             continue  # Intentar siguiente High
         
-        # CHECK 61.8% y 78.6% (excluyendo últimas 3 velas)
+        # CHECK 61.8% y 78.6% - verificar TODAS las velas desde el Low hasta la actual
+        # Esto garantiza que si el nivel de entrada ya fue tocado, busquemos el siguiente High
         has_touched_618 = False
         has_touched_786 = False
-        exclude_from_index = max(lowest_low.index + 1, last_candle_index - 2)
         
-        for k in range(lowest_low.index + 1, exclude_from_index):
+        for k in range(lowest_low.index + 1, last_candle_index + 1):
             if candle_data[k]["high"] >= fib_786_level:
                 has_touched_786 = True
             if candle_data[k]["high"] >= fib_618_level:
@@ -318,10 +318,23 @@ def find_valid_fibonacci_swing(
         
         # Verificar si el precio actual está en zona válida para Path 1
         level_case1_min = lowest_low.price + (range_val * CASE_1_MIN)  # 55%
+        level_case3_min = lowest_low.price + (range_val * CASE_3_MIN)  # 69%
+        level_case4_min = lowest_low.price + (range_val * CASE_4_MIN)  # 75%
         
         # Si precio actual está debajo del nivel 55% Y tocó 61.8%, este swing no es útil
         if has_touched_618 and current_price < level_case1_min:
             print(f"   ⚠️ Precio debajo de 55% y 61.8% tocado - Swing no útil para Path 1, buscando siguiente High...")
+            continue  # Intentar siguiente High
+        
+        # Si solo Case 4 es válido (78.6% tocado) pero precio no está en zona de C4, buscar siguiente High
+        if min_valid_case == 4 and current_price < level_case4_min:
+            print(f"   ⚠️ Solo Case 4 válido pero precio ({current_price:.4f}) debajo de zona C4 ({level_case4_min:.4f}) - buscando siguiente High...")
+            continue  # Intentar siguiente High
+        
+        # Si solo Cases 3-4 válidos (61.8% tocado) pero precio no está en zona de C3+, buscar siguiente High
+        if min_valid_case == 3 and current_price < level_case3_min:
+            print(f"   ⚠️ Solo Cases 3-4 válidos pero precio ({current_price:.4f}) debajo de zona C3 ({level_case3_min:.4f}) - buscando siguiente High...")
+            continue  # Intentar siguiente High
             continue  # Intentar siguiente High
         
         levels = calculate_fibonacci_levels(current_high.price, lowest_low.price)
@@ -418,21 +431,42 @@ def determine_trading_case(current_price: float, swing: FibonacciSwing,
         print(f"   ⚠️ Case {detected_case} detected but invalidated (min valid = Case {swing.min_valid_case})")
         return 0
     
-    # ===== NUEVA VALIDACIÓN: Verificar que el nivel de ENTRADA no haya sido tocado =====
-    # Si es Caso 3 (LIMIT en 78.6%), verificar que 78.6% no haya sido tocado recientemente
-    # Si es Caso 1 (LIMIT en 61.8%), verificar que 61.8% no haya sido tocado recientemente
-    if candle_data and detected_case in [1, 3]:
-        entry_level = level_618 if detected_case == 1 else level_786
+    # ===== VALIDACIÓN: Verificar que el nivel de ENTRADA no haya sido tocado =====
+    # Para TODOS los casos con orden LIMIT, verificar que el nivel no haya sido tocado desde el Low del swing
+    # - Caso 1: LIMIT en 61.8%
+    # - Caso 2: LIMIT en 61.8% (mismo que C1)
+    # - Caso 3: LIMIT en 78.6%
+    # - Caso 4: MARKET (no tiene LIMIT, pero verificamos el 75% máx)
+    if candle_data and detected_case > 0:
+        # Determinar el nivel de entrada según el caso
+        if detected_case == 1 or detected_case == 2:
+            entry_level = level_618  # 61.8%
+        elif detected_case == 3:
+            entry_level = level_786  # 78.6%
+        elif detected_case == 4:
+            entry_level = level_invalid  # 90% (si toca 90%, invalida C4)
+        else:
+            entry_level = None
         
-        # Verificar últimas N velas (incluyendo la actual)
-        start_idx = max(0, len(candle_data) - last_n_candles)
-        
-        for i in range(start_idx, len(candle_data)):
-            candle_high = candle_data[i]["high"]
-            if candle_high >= entry_level:
-                print(f"   ⛔ Case {detected_case} INVALIDATED: Entry level already touched by wick (candle {i})")
-                print(f"      Entry: {entry_level:.6f}, Candle high: {candle_high:.6f}")
-                return 0  # El nivel ya fue tocado, no poner LIMIT
+        if entry_level:
+            # Encontrar el índice del Low del swing
+            low_idx = None
+            for i, candle in enumerate(candle_data):
+                if candle["low"] <= swing.low.price * 1.001:  # Tolerancia 0.1%
+                    low_idx = i
+            
+            # Verificar desde el Low hasta la vela actual (incluida)
+            if low_idx is not None:
+                start_idx = low_idx + 1  # Empezar desde la vela después del Low
+            else:
+                start_idx = 0  # Si no encontramos el Low, verificar todas las velas
+            
+            for i in range(start_idx, len(candle_data)):
+                candle_high = candle_data[i]["high"]
+                if candle_high >= entry_level:
+                    print(f"   ⛔ Case {detected_case} INVALIDATED: Entry level already touched by wick (candle {i})")
+                    print(f"      Entry: {entry_level:.6f}, Candle high: {candle_high:.6f}")
+                    return 0  # El nivel ya fue tocado, no poner orden
     
     return detected_case
 

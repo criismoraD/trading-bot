@@ -90,10 +90,6 @@ class Position:
     unrealized_pnl: float = 0.0
     current_price: float = 0.0  # Precio actual para calcular PnL
     linked_order_id: Optional[str] = None  # ID de orden vinculada para cerrar juntas
-    min_pnl: float = 0.0  # Máximo drawdown registrado (valor negativo mas bajo)
-    min_pnl_time: Optional[str] = None  # Timestamp del máximo drawdown
-    max_pnl: float = 0.0  # Máximo beneficio alcanzado
-    max_pnl_time: Optional[str] = None  # Timestamp del máximo beneficio
     # Precios extremos durante la operación (pre-close)
     max_price_pre_close: Optional[float] = None  # Precio máximo durante la operación
     max_price_pre_close_time: Optional[str] = None
@@ -108,7 +104,7 @@ class Position:
     executions: List[dict] = field(default_factory=list)  # [{price, qty, time, order_num}]
     
     def calculate_pnl(self, current_price: float) -> float:
-        """Calcular PnL no realizado y actualizar min_pnl/max_pnl y precios extremos"""
+        """Calcular PnL no realizado y actualizar precios extremos"""
         from datetime import datetime
         current_time = datetime.now().isoformat()
         
@@ -120,16 +116,6 @@ class Position:
             # Para LONG: ganamos si el precio sube
             pnl = (current_price - self.entry_price) * self.quantity
         self.unrealized_pnl = pnl
-        
-        # Actualizar Max Drawdown (menor PnL registrado) con timestamp
-        if pnl < self.min_pnl:
-            self.min_pnl = pnl
-            self.min_pnl_time = current_time
-
-        # Actualizar Max Profit (mayor PnL registrado) con timestamp
-        if pnl > self.max_pnl:
-            self.max_pnl = pnl
-            self.max_pnl_time = current_time
         
         # Actualizar precios extremos durante la operación y registrar pivotes
         if self.max_price_pre_close is None or current_price > self.max_price_pre_close:
@@ -200,6 +186,10 @@ class PaperTradingAccount:
         # === Monitoreo de posiciones cerradas (seguimiento de precio post-cierre) ===
         self.closed_positions_monitoring: Dict[str, dict] = {}  # {order_id: {symbol, close_price, price_history: [{price, time}]}}
         
+        # === Control de guardado para evitar exceso de escrituras ===
+        self._last_save_time = 0  # Timestamp del último guardado
+        self._save_interval = 1.0  # Intervalo mínimo entre guardados (segundos)
+        
         # === NUEVO: Estadísticas de operaciones simultáneas ===
         self.stats = {
             "max_simultaneous_positions": 0,
@@ -242,7 +232,11 @@ class PaperTradingAccount:
                     self.trade_history = data.get("history", [])
                     self.balance = data.get("balance", self.initial_balance)
                     self.stats = data.get("stats", self.stats)
+                    # Restaurar monitoreo de posiciones cerradas
+                    self.closed_positions_monitoring = data.get("closed_positions_monitoring", {})
                     print(f"📂 Historial cargado: {len(self.trade_history)} trades, Balance: ${self.balance:.2f}")
+                    if self.closed_positions_monitoring:
+                        print(f"   👁️ Monitoreando post-cierre: {len(self.closed_positions_monitoring)} trades")
                     if self.stats["max_simultaneous_total"] > 0:
                         print(f"   📊 Max simultáneo: {self.stats['max_simultaneous_total']} operaciones")
             except Exception as e:
@@ -263,10 +257,6 @@ class PaperTradingAccount:
             "unrealized_pnl": pos.unrealized_pnl,
             "current_price": pos.current_price,
             "linked_order_id": pos.linked_order_id,
-            "min_pnl": pos.min_pnl,
-            "min_pnl_time": pos.min_pnl_time,
-            "max_pnl": pos.max_pnl,
-            "max_pnl_time": pos.max_pnl_time,
             "max_price_pre_close": pos.max_price_pre_close,
             "max_price_pre_close_time": pos.max_price_pre_close_time,
             "min_price_pre_close": pos.min_price_pre_close,
@@ -294,6 +284,7 @@ class PaperTradingAccount:
                 "stats": self.stats,
                 "open_positions": {k: self._serialize_position(v) for k, v in self.open_positions.items()},
                 "pending_orders": {k: v.to_dict() for k, v in self.pending_orders.items()},
+                "closed_positions_monitoring": self.closed_positions_monitoring,  # Persistir monitoreo post-cierre
                 "last_updated": datetime.now().isoformat()
             }
             with open(self.trades_file, 'w') as f:
@@ -609,13 +600,23 @@ class PaperTradingAccount:
     
     def check_positions(self, symbol: str, current_price: float):
         """Verificar TP/SL de posiciones abiertas"""
+        import time
         positions_to_close = []
+        significant_change = False
         
         for order_id, position in self.open_positions.items():
             if position.symbol != symbol:
                 continue
             
+            # Guardar valores previos para detectar cambios significativos
+            prev_max = position.max_price_pre_close
+            prev_min = position.min_price_pre_close
+            
             position.calculate_pnl(current_price)
+            
+            # Detectar si hubo nuevo máximo o mínimo (cambio significativo)
+            if position.max_price_pre_close != prev_max or position.min_price_pre_close != prev_min:
+                significant_change = True
             
             if position.check_take_profit(current_price):
                 positions_to_close.append((order_id, "TP", current_price))
@@ -624,6 +625,18 @@ class PaperTradingAccount:
         
         for order_id, reason, price in positions_to_close:
             self._close_position(order_id, price, reason)
+        
+        # Guardar si hay posiciones abiertas actualizadas (con throttle)
+        current_time = time.time()
+        should_save = (
+            not positions_to_close and  # No se cerró nada (ya guarda en _close_position)
+            len(self.open_positions) > 0 and  # Hay posiciones abiertas
+            (significant_change or current_time - self._last_save_time >= self._save_interval)
+        )
+        
+        if should_save:
+            self._save_trades()
+            self._last_save_time = current_time
         
         # Actualizar seguimiento de precios post-cierre
         self._update_closed_positions_price(symbol, current_price)
@@ -761,10 +774,6 @@ class PaperTradingAccount:
             "quantity": position.quantity,
             "margin": position.margin,
             "pnl": pnl,
-            "min_pnl": position.min_pnl,  # Max Drawdown
-            "min_pnl_time": position.min_pnl_time,  # Timestamp del max drawdown
-            "max_pnl": position.max_pnl,  # Max Profit alcanzado
-            "max_pnl_time": position.max_pnl_time,  # Timestamp del max profit
             # Precios extremos DURANTE la operación (pre-close)
             "max_price_pre_close": position.max_price_pre_close,
             "max_price_pre_close_time": position.max_price_pre_close_time,

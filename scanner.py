@@ -11,6 +11,10 @@ from dataclasses import dataclass
 
 from config import REST_BASE_URL, MARGIN_PER_TRADE, MIN_AVAILABLE_MARGIN, TIMEFRAME, CANDLE_LIMIT
 from fibonacci import calculate_zigzag, find_valid_fibonacci_swing, determine_trading_case
+from logger import setup_logger
+
+# Logger para el scanner
+scanner_logger = setup_logger("scanner")
 
 # Cargar límite de operaciones simultáneas desde config
 def get_max_simultaneous_operations() -> int:
@@ -588,12 +592,14 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
     from config import TIMEFRAME
     
     try:
+        scanner_logger.info(f"🔍 C1++ {symbol}: Iniciando búsqueda (High actual: ${current_high:.4f})")
         print(f"      🔍 Buscando C1++ para {symbol}...")
         
         # Obtener velas del par (2000 para historial completo)
         candle_data = await scanner.fetch_klines(session, symbol, TIMEFRAME, limit=2000)
         
         if not candle_data or len(candle_data) < 50:
+            scanner_logger.warning(f"C1++ {symbol}: No hay suficientes velas ({len(candle_data) if candle_data else 0})")
             print(f"      ❌ C1++ {symbol}: No hay suficientes velas")
             return
         
@@ -601,6 +607,7 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
         zigzag_pivots = calculate_zigzag(candle_data, TIMEFRAME)
         
         if not zigzag_pivots or len(zigzag_pivots) < 2:
+            scanner_logger.warning(f"C1++ {symbol}: No hay suficientes pivotes ZigZag")
             print(f"      ❌ C1++ {symbol}: No hay suficientes pivotes ZigZag")
             return
         
@@ -612,8 +619,11 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
                 break
         
         if not current_high_pivot:
+            scanner_logger.warning(f"C1++ {symbol}: No se encontró High actual ${current_high:.4f} en pivotes")
             print(f"      ❌ C1++ {symbol}: No se encontró el High actual en los pivotes")
             return
+        
+        scanner_logger.info(f"C1++ {symbol}: High actual encontrado en índice {current_high_pivot.index}")
         
         # Buscar Highs MÁS ALTOS que estén A LA IZQUIERDA (índice menor) del High actual
         left_higher_highs = [p for p in zigzag_pivots 
@@ -627,8 +637,10 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
                               if p.type == 'high' and p.index < current_high_pivot.index]
             if all_left_highs:
                 max_left = max(all_left_highs, key=lambda x: x.price)
+                scanner_logger.warning(f"C1++ {symbol}: No hay Highs más altos a la izquierda (Actual: ${current_high:.4f}, Max izq: ${max_left.price:.4f})")
                 print(f"      ❌ C1++ {symbol}: No hay Highs más altos a la izquierda (High actual: ${current_high:.4f}, Max izq: ${max_left.price:.4f})")
             else:
+                scanner_logger.warning(f"C1++ {symbol}: No hay Highs a la izquierda")
                 print(f"      ❌ C1++ {symbol}: No hay Highs a la izquierda del pivote actual")
             return
         
@@ -638,6 +650,10 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
         
         current_price = candle_data[-1]['close']
         last_candle_index = len(candle_data) - 1
+        
+        scanner_logger.info(f"C1++ {symbol}: Encontrados {len(left_higher_highs)} Highs más altos a la izquierda")
+        for i, h in enumerate(left_higher_highs[:5]):  # Log primeros 5
+            scanner_logger.debug(f"  High #{i+1}: ${h.price:.4f} (idx: {h.index})")
         
         print(f"      📊 C1++ {symbol}: Encontrados {len(left_higher_highs)} Highs más altos a la izquierda")
         
@@ -662,34 +678,44 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
             fib_618 = lowest_price + (alt_range * 0.618)
             fib_90 = lowest_price + (alt_range * 0.90)
             
+            scanner_logger.debug(f"C1++ {symbol} High #{idx+1}: High=${alt_high.price:.4f}, Low=${lowest_price:.4f}, 61.8%=${fib_618:.4f}, 90%=${fib_90:.4f}")
+            
             # Verificar que 90% NO haya sido tocado
             touched_90 = False
+            touched_90_candle_idx = None
             for k in range(lowest_idx + 1, last_candle_index + 1):
                 if candle_data[k]['high'] >= fib_90:
                     touched_90 = True
+                    touched_90_candle_idx = k
                     break
             
             if touched_90:
+                scanner_logger.info(f"C1++ {symbol}: ❌ 90% tocado para High #{idx+1} (High=${alt_high.price:.4f}) en vela idx={touched_90_candle_idx}")
                 print(f"      ⚠️ C1++ {symbol}: 90% tocado para High #{idx+1} (${alt_high.price:.4f}), probando siguiente...")
                 continue
             
             # Verificar que 61.8% NO haya sido tocado
             touched_618 = False
+            touched_618_candle_idx = None
             for k in range(lowest_idx + 1, last_candle_index + 1):
                 if candle_data[k]['high'] >= fib_618:
                     touched_618 = True
+                    touched_618_candle_idx = k
                     break
             
             if touched_618:
+                scanner_logger.info(f"C1++ {symbol}: ❌ 61.8% (${fib_618:.4f}) tocado para High #{idx+1} en vela idx={touched_618_candle_idx}")
                 print(f"      ⚠️ C1++ {symbol}: 61.8% ya tocado para High #{idx+1} (${alt_high.price:.4f}), probando siguiente...")
                 continue
             
             # Precio debe estar en zona 0%-61.8% para C1++ válido
             if current_price >= fib_618:
+                scanner_logger.info(f"C1++ {symbol}: ❌ Precio actual ${current_price:.4f} >= 61.8% ${fib_618:.4f} para High #{idx+1}")
                 print(f"      ⚠️ C1++ {symbol}: Precio actual encima de 61.8% para High #{idx+1}, probando siguiente...")
                 continue
             
             # ¡Encontramos C1++ válido!
+            scanner_logger.info(f"C1++ {symbol}: ✅ VÁLIDO! High=${alt_high.price:.4f}, Low=${lowest_price:.4f}, Entry=${fib_618:.4f}")
             print(f"      ✅ C1++ {symbol}: Encontrado swing válido - High ${alt_high.price:.4f}")
             
             alt_levels = calculate_fibonacci_levels(alt_high.price, lowest_price)

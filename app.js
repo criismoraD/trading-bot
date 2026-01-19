@@ -1093,8 +1093,9 @@ function updateTradesPanel(data) {
         `;
     }).join('');
 
-    // Draw lines on chart
-    drawTradeLines(allTrades);
+    // NOTE: Lines are drawn by drawPositionLines() in the trades panel system
+    // Don't call drawTradeLines here to avoid duplicates
+    // drawTradeLines(allTrades);
 }
 
 

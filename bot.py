@@ -367,37 +367,25 @@ def show_startup_menu(account):
     print(f"🚀 BOT DE TRADING FIBONACCI")
     print(f"{'='*60}")
     
-    open_count = len(account.open_positions) + len(account.pending_orders)
+    # === SIEMPRE RESETEAR AL INICIAR ===
+    import os
     
-    print(f"\n📊 Estado actual (Paper Trading):")
-    print(f"   Posiciones abiertas: {len(account.open_positions)}")
-    print(f"   Órdenes pendientes: {len(account.pending_orders)}")
+    # Eliminar el archivo trades.json si existe
+    if os.path.exists(TRADES_FILE):
+        os.remove(TRADES_FILE)
+        print(f"   🗑️  Archivo {TRADES_FILE} eliminado")
+    
+    # Reiniciar cuenta en memoria
+    account.open_positions.clear()
+    account.pending_orders.clear()
+    account.balance = INITIAL_BALANCE
+    account.trade_history = []
+    account._save_trades()  # Crear archivo nuevo vacío
+    
+    print(f"\n📊 Estado (Paper Trading):")
     print(f"   Balance: ${account.balance:.2f}")
     print(f"   Margen disponible: ${account.get_available_margin():.2f}")
-    
-    # Solo preguntar si hay historial existente
-    if open_count > 0 or account.trade_history:
-        print(f"\n¿Resetear historial? (s/n)")
-        choice = input(">>> ").strip().lower()
-        
-        if choice in ("s", "si", "y", "yes", "1"):
-            # Eliminar el archivo trades.json físicamente
-            import os
-            if os.path.exists(TRADES_FILE):
-                os.remove(TRADES_FILE)
-                print(f"   🗑️  Archivo {TRADES_FILE} eliminado")
-            
-            # Reiniciar cuenta en memoria
-            account.open_positions.clear()
-            account.pending_orders.clear()
-            account.balance = INITIAL_BALANCE
-            account.trade_history = []
-            account._save_trades()  # Crear archivo nuevo vacío
-            print(f"\n✅ Trades eliminados. Balance reseteado a ${INITIAL_BALANCE}")
-        else:
-            print(f"\n✅ Continuando con historial existente")
-    else:
-        print(f"\n✅ Iniciando con cuenta limpia")
+    print(f"\n✅ Cuenta reseteada. Iniciando desde 0")
 
 
 async def main():
@@ -518,6 +506,9 @@ async def main():
                             new_needed = set(pos.symbol.lower() for pos in account.open_positions.values())
                             if account.pending_orders:
                                 new_needed.update(order.symbol.lower() for order in account.pending_orders.values())
+                            # También incluir símbolos con monitoreo post-cierre activo
+                            if account.closed_positions_monitoring:
+                                new_needed.update(data.get("symbol", "").lower() for data in account.closed_positions_monitoring.values())
                             if new_needed != current_symbols_set:
                                 break # Salir para reconectar
                             
@@ -535,6 +526,9 @@ async def main():
                                         account.check_positions(symbol, price)
                                     if account.pending_orders:
                                         account.check_pending_orders(symbol, price)
+                                    # Actualizar precios post-cierre para monitoreo
+                                    if account.closed_positions_monitoring:
+                                        account._update_closed_positions_price(symbol, price)
                                         
                             except asyncio.TimeoutError:
                                 # Bybit ping
@@ -732,12 +726,15 @@ async def main():
         
         while True:
             # 1. Verificar TP/SL y Pending Orders en tiempo real (WebSocket Cache)
-            # Obtener todos los símbolos activos (Posiciones + Órdenes Pendientes)
+            # Obtener todos los símbolos activos (Posiciones + Órdenes Pendientes + Monitoreo Post-Cierre)
             active_symbols = set()
             if account.open_positions:
                 active_symbols.update(pos.symbol for pos in account.open_positions.values())
             if account.pending_orders:
                 active_symbols.update(order.symbol for order in account.pending_orders.values())
+            # También incluir símbolos con monitoreo post-cierre
+            if account.closed_positions_monitoring:
+                active_symbols.update(data.get("symbol", "") for data in account.closed_positions_monitoring.values())
             
             if active_symbols:
                 for symbol in list(active_symbols):
@@ -751,6 +748,10 @@ async def main():
                         # 2. Verificar Activación de Órdenes Pendientes (Limit)
                         if account.pending_orders:
                             account.check_pending_orders(symbol, price)
+                        
+                        # 3. Actualizar precios post-cierre para monitoreo
+                        if account.closed_positions_monitoring:
+                            account._update_closed_positions_price(symbol, price)
             
             # --- WATCHDOG PERIÓDICO (Cada 10s) ---
             if scan_countdown % 10 == 0 and (account.open_positions or account.pending_orders):
