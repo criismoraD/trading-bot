@@ -25,6 +25,7 @@ from fibonacci import (
 from logger import bot_logger as logger, trading_logger, log_trade, log_scan_result
 from telegram_bot import telegram_bot, notify_trade_open, notify_trade_close, notify_limit_filled
 from metrics import PerformanceCalculator, performance_calculator
+from web_server import start_web_server
 
 
 # ===== CLASE LEGACY - ACTUALMENTE NO SE USA =====
@@ -374,28 +375,29 @@ def show_startup_menu(account):
     print(f"   Balance: ${account.balance:.2f}")
     print(f"   Margen disponible: ${account.get_available_margin():.2f}")
     
-    print(f"\n¿Qué deseas hacer?")
-    print(f"   [1] Paper Trading - Empezar de cero (eliminar historial)")
-    print(f"   [2] Paper Trading - Continuar con trades existentes")
-    
-    choice = input("\nOpción: ").strip()
-    
-    if choice == "1":
-        # Eliminar el archivo trades.json físicamente
-        import os
-        if os.path.exists(TRADES_FILE):
-            os.remove(TRADES_FILE)
-            print(f"   🗑️  Archivo {TRADES_FILE} eliminado")
+    # Solo preguntar si hay historial existente
+    if open_count > 0 or account.trade_history:
+        print(f"\n¿Resetear historial? (s/n)")
+        choice = input(">>> ").strip().lower()
         
-        # Reiniciar cuenta en memoria
-        account.open_positions.clear()
-        account.pending_orders.clear()
-        account.balance = INITIAL_BALANCE
-        account.trade_history = []
-        account._save_trades()  # Crear archivo nuevo vacío
-        print(f"\n✅ Trades eliminados. Balance reseteado a ${INITIAL_BALANCE}")
-    
-    print(f"\n✅ Continuando con Paper Trading")
+        if choice in ("s", "si", "y", "yes", "1"):
+            # Eliminar el archivo trades.json físicamente
+            import os
+            if os.path.exists(TRADES_FILE):
+                os.remove(TRADES_FILE)
+                print(f"   🗑️  Archivo {TRADES_FILE} eliminado")
+            
+            # Reiniciar cuenta en memoria
+            account.open_positions.clear()
+            account.pending_orders.clear()
+            account.balance = INITIAL_BALANCE
+            account.trade_history = []
+            account._save_trades()  # Crear archivo nuevo vacío
+            print(f"\n✅ Trades eliminados. Balance reseteado a ${INITIAL_BALANCE}")
+        else:
+            print(f"\n✅ Continuando con historial existente")
+    else:
+        print(f"\n✅ Iniciando con cuenta limpia")
 
 
 async def main():
@@ -420,9 +422,14 @@ async def main():
     # Mostrar menú de inicio (antes del loop async)
     show_startup_menu(account)
     
-    # Iniciar servidor HTTP en hilo separado
+    # Iniciar servidor HTTP en hilo separado (puerto 8000 - archivos generales)
     http_thread = threading.Thread(target=start_http_server, daemon=True)
     http_thread.start()
+    
+    # Iniciar servidor del Analizador (puerto 8080 - con CORS para ngrok)
+    analyzer_thread = threading.Thread(target=start_web_server, daemon=True)
+    analyzer_thread.start()
+    
     await asyncio.sleep(0.5)
     
     # Configuración: Pares específicos desde shared_config.json
@@ -708,15 +715,20 @@ async def main():
         await scanner.update_prices_for_positions(account, price_cache)
         
         # --- Iniciar Bot de Telegram en paralelo ---
-        telegram_bot.account = account
-        telegram_bot.scanner = scanner
-        telegram_bot.price_cache = price_cache
-        telegram_bot.running = True
-        asyncio.create_task(telegram_bot.run_polling_loop())
-        asyncio.create_task(telegram_bot.run_report_loop())
-        logger.info("Bot de Telegram iniciado - Envía /start a @criismorabot")
-        # Notificación inmediata si hay chats autorizados
-        await telegram_bot.broadcast_message("🚀 <b>BOT INICIADO</b>\nEl sistema está en línea y operando.")
+        from config import TELEGRAM_TOKEN
+        if TELEGRAM_TOKEN:
+            logger.info(f"Token de Telegram configurado: {TELEGRAM_TOKEN[:10]}...")
+            telegram_bot.account = account
+            telegram_bot.scanner = scanner
+            telegram_bot.price_cache = price_cache
+            telegram_bot.running = True
+            asyncio.create_task(telegram_bot.run_polling_loop())
+            asyncio.create_task(telegram_bot.run_report_loop())
+            logger.info("Bot de Telegram iniciado - Envía /start a @criismorabot")
+            # Notificación inmediata si hay chats autorizados
+            await telegram_bot.broadcast_message("🚀 <b>BOT INICIADO</b>\nEl sistema está en línea y operando.")
+        else:
+            logger.warning("⚠️ TELEGRAM_TOKEN no configurado - Bot de Telegram deshabilitado")
         
         while True:
             # 1. Verificar TP/SL y Pending Orders en tiempo real (WebSocket Cache)
