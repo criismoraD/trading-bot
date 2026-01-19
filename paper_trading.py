@@ -165,12 +165,24 @@ class Position:
     
     def check_stop_loss(self, current_price: float) -> bool:
         """Verificar si se alcanzó el Stop Loss"""
-        if self.stop_loss is None:
+        sl_price = self.stop_loss
+        
+        # Si no hay SL guardado, calcularlo desde niveles Fibonacci
+        if sl_price is None and self.fib_high and self.fib_low:
+            range_val = self.fib_high - self.fib_low
+            # SL por caso: C1/C1++/C2=110%, C3=94%, C4=93%
+            case = self.strategy_case if self.strategy_case != 11 else 1
+            sl_ratios = {1: 1.10, 2: 1.10, 3: 0.94, 4: 0.93}
+            sl_ratio = sl_ratios.get(case, 1.10)
+            sl_price = self.fib_low + (range_val * sl_ratio)
+        
+        if sl_price is None:
             return False
+            
         if self.side == PositionSide.SHORT:
-            return current_price >= self.stop_loss
+            return current_price >= sl_price
         else:
-            return current_price <= self.stop_loss
+            return current_price <= sl_price
 
 
 class PaperTradingAccount:

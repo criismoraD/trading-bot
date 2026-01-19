@@ -885,18 +885,30 @@
             // Abiertas
             if (rawData.open_positions) Object.values(rawData.open_positions).forEach(t => {
                 t._src = 'OPEN';
+                
+                // Usar current_price válido, o entry_price como fallback
+                const effectivePrice = (t.current_price && t.current_price > 0) ? t.current_price : t.entry_price;
+                
                 // Calcular riesgo maximo basado en drawdown
                 let impliedMax = t.entry_price;
-                if (t.min_pnl !== undefined && t.min_pnl < 0) {
+                if (t.min_pnl !== undefined && t.min_pnl !== null && t.min_pnl < 0) {
                     impliedMax = t.entry_price - (t.min_pnl / t.quantity); // Short logic
                 }
-                t._max = Math.max(impliedMax, t.current_price);
+                // También usar max_price_pre_close si está disponible
+                if (t.max_price_pre_close && t.max_price_pre_close > 0) {
+                    impliedMax = Math.max(impliedMax, t.max_price_pre_close);
+                }
+                t._max = Math.max(impliedMax, effectivePrice);
 
                 let impliedMin = t.entry_price;
-                if (t.max_pnl !== undefined && t.max_pnl > 0) {
+                if (t.max_pnl !== undefined && t.max_pnl !== null && t.max_pnl > 0) {
                     impliedMin = t.entry_price - (t.max_pnl / t.quantity);
                 }
-                t._min = Math.min(impliedMin, t.current_price);
+                // También usar min_price_pre_close si está disponible
+                if (t.min_price_pre_close && t.min_price_pre_close > 0) {
+                    impliedMin = Math.min(impliedMin, t.min_price_pre_close);
+                }
+                t._min = Math.min(impliedMin, effectivePrice);
 
                 if (!t.fib_high) t.fib_high = t.entry_price * 1.05;
                 if (!t.fib_low) t.fib_low = t.entry_price * 0.95;
