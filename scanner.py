@@ -273,6 +273,7 @@ class MarketScanner:
                     case=case,
                     current_price=current_price,
                     fib_levels={
+                        '40': swing.levels.get('40', swing.low.price + (swing.high.price - swing.low.price) * 0.40),
                         '45': swing.levels.get('45', swing.low.price + (swing.high.price - swing.low.price) * 0.45),
                         '50': swing.levels.get('50', 0),
                         '55': swing.levels.get('55', swing.low.price + (swing.high.price - swing.low.price) * 0.55),
@@ -280,6 +281,7 @@ class MarketScanner:
                         '62': swing.levels.get('62', swing.low.price + (swing.high.price - swing.low.price) * 0.62),
                         '618': swing.levels.get('61.8', 0),
                         '69': swing.levels.get('69', swing.low.price + (swing.high.price - swing.low.price) * 0.69),
+                        '70': swing.levels.get('70', swing.low.price + (swing.high.price - swing.low.price) * 0.70),
                         '75': swing.levels.get('75', 0),
                         '786': swing.levels.get('78.6', 0),
                         'high': swing.high.price,
@@ -480,7 +482,7 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
     order_placed = False
     
     if case_num == 4:
-        # Caso 4: MARKET, TP 60%
+        # Caso 4: MARKET, TP 70%
         fresh_price = await scanner.get_current_price(result.symbol)
         if not fresh_price:
             return False
@@ -492,7 +494,7 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C4")
             return False
         
-        tp_price = result.fib_levels['60']
+        tp_price = result.fib_levels['70']
         position = account.place_market_order(
             symbol=result.symbol,
             side=OrderSide.SELL,
@@ -509,9 +511,9 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             order_placed = True
     
     elif case_num == 3:
-        # Caso 3: LIMIT 78.6%, TP 55%
+        # Caso 3: LIMIT 78.6%, TP 62%
         limit_price = result.fib_levels['786']
-        tp_price = result.fib_levels['55']
+        tp_price = result.fib_levels['62']
         order = account.place_limit_order(
             symbol=result.symbol,
             side=OrderSide.SELL,
@@ -557,11 +559,11 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             order_placed = True
     
     elif case_num == 1:
-        # Caso 1 / Caso 1++: LIMIT 61.8%, TP 45%
+        # Caso 1 / Caso 1++: LIMIT 61.8%, TP 40%
         case_label = "CASO 1++" if result.path == 2 else "CASO 1"
         strategy_case_value = 11 if result.path == 2 else 1
         
-        tp_price = result.fib_levels['45']
+        tp_price = result.fib_levels['40']
         limit_price = result.fib_levels['618']
         
         order = account.place_limit_order(

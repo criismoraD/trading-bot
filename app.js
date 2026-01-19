@@ -292,11 +292,22 @@ function updateOHLCDisplay(data) {
 // ===== Data Fetching =====
 async function fetchHistoricalData() {
     try {
-        showLoading(true);
+        showLoading(true, 'Verificando símbolo...');
+
+        // Verificar que tengamos un símbolo válido
+        if (!CONFIG.symbol) {
+            console.error('❌ No hay símbolo configurado');
+            showLoading(true, '❌ Error: No hay símbolo configurado');
+            return;
+        }
+
+        showLoading(true, `Descargando datos de ${CONFIG.symbol}...`);
 
         // Bybit API endpoint for klines
         const bybitInterval = TIMEFRAME_MAP[currentInterval] || '60';
         const url = `${CONFIG.restBaseUrl}/v5/market/kline?category=linear&symbol=${CONFIG.symbol}&interval=${bybitInterval}&limit=${CONFIG.candleLimit}`;
+        
+        console.log(`📡 Fetching data for ${CONFIG.symbol}...`);
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -339,7 +350,7 @@ async function fetchHistoricalData() {
 
     } catch (error) {
         console.error('Error fetching historical data:', error);
-        showLoading(false);
+        showLoading(true, `❌ Error: ${error.message}`);
     }
 }
 
@@ -737,8 +748,12 @@ function updateConnectionStatus() {
 }
 
 // ===== UI Helpers =====
-function showLoading(show) {
+function showLoading(show, message = '') {
     elements.chartOverlay.classList.toggle('hidden', !show);
+    const detailEl = document.getElementById('loadingDetail');
+    if (detailEl && message) {
+        detailEl.textContent = message;
+    }
 }
 
 function updateTime() {
@@ -1631,39 +1646,41 @@ function drawFibonacciForShort() {
         }
 
         // ===== MIN VALID CASE - PARTIAL INVALIDATION =====
-        // Instead of invalidating entire swing, determine minimum valid case
-        // Touched 61.8% -> Cases 1,2 invalidated -> minValidCase = 3
-        // Touched 78.6% -> Cases 1,2,3 invalidated -> minValidCase = 4
+        // LÓGICA CORREGIDA:
+        // - Tocó 61.8% → Casos válidos: 2, 3, 4 (minValidCase = 2)
+        // - Tocó 69%   → Casos válidos: 3, 4    (minValidCase = 3)
+        // - Tocó 78.6% → Casos válidos: 4       (minValidCase = 4)
         let minValidCase = 1;  // Default: all cases valid
 
+        const fib69Level = lowestLow.price + (range * 0.69);
         const fib786Level = lowestLow.price + (range * 0.786);
+        let hasTouched618 = false;
+        let hasTouched69 = false;
         let hasTouched786 = false;
-        const excludeFromIndex786 = Math.max(lowestLow.index + 1, lastCandleIndex - 2);
+        const excludeFromIndexMinCase = Math.max(lowestLow.index + 1, lastCandleIndex - 2);
 
-        for (let k = lowestLow.index + 1; k < excludeFromIndex786; k++) {
+        for (let k = lowestLow.index + 1; k < excludeFromIndexMinCase; k++) {
             if (candleData[k].high >= fib786Level) {
                 hasTouched786 = true;
-                console.log(`   ⚠️ 78.6% TOUCHED at index ${k} - Cases 1,2,3 invalidated, only Case 4 valid`);
-                break;
             }
-        }
-
-        // Check 61.8% (use invalidatedBySecondary from config check above)
-        let hasTouched618 = false;
-        const excludeFromIndex618 = Math.max(lowestLow.index + 1, lastCandleIndex - 2);
-        for (let k = lowestLow.index + 1; k < excludeFromIndex618; k++) {
+            if (candleData[k].high >= fib69Level) {
+                hasTouched69 = true;
+            }
             if (candleData[k].high >= fib618Level) {
                 hasTouched618 = true;
-                break;
             }
         }
 
-        // Determine minValidCase
+        // Determine minValidCase (LÓGICA CORREGIDA)
         if (hasTouched786) {
             minValidCase = 4;  // Only Case 4 valid
-        } else if (hasTouched618) {
+            console.log(`   ⚠️ 78.6% TOUCHED - Only Case 4 valid`);
+        } else if (hasTouched69) {
             minValidCase = 3;  // Cases 3 and 4 valid
-            console.log(`   ⚠️ 61.8% TOUCHED - Cases 1,2 invalidated, Cases 3,4 still valid`);
+            console.log(`   ⚠️ 69% TOUCHED - Cases 3,4 valid`);
+        } else if (hasTouched618) {
+            minValidCase = 2;  // Cases 2, 3 and 4 valid
+            console.log(`   ⚠️ 61.8% TOUCHED - Cases 2,3,4 valid`);
         }
 
         if (invalidatedBy58) {
@@ -1804,6 +1821,7 @@ function updateZigZagOnNewCandle() {
 // ===== Initialization =====
 async function init() {
     console.log('Initializing WLD/USDT Futures Visualizer...');
+    showLoading(true, 'Cargando configuración...');
 
     // Load shared configuration first
     await loadSharedConfig();
@@ -1829,6 +1847,7 @@ async function init() {
     }
 
     // Populate pair selector from config or Bybit API
+    showLoading(true, 'Obteniendo lista de pares...');
     await populatePairSelect();
 
     async function populatePairSelect() {
@@ -1918,6 +1937,8 @@ async function init() {
             currentSymbol = 'BTCUSDT';
             console.log('⚠️ Usando BTCUSDT como fallback');
         }
+        
+        console.log(`🎯 Símbolo inicial configurado: ${currentSymbol}`);
     }
 
     // ===== Navigation Functions =====
@@ -2142,17 +2163,10 @@ async function init() {
             const starIcon = hasMultipleExecutions ? ' ⭐' : '';
             const marginInfo = hasMultipleExecutions ? ` (x${executions.length})` : '';
             
-            // Determinar qué mostrar según el caso
-            let slText = '';
-            if (strategyCase === 1 || strategyCase === 2) {
-                // Caso 1/2: SL solo si tiene múltiples ejecuciones
-                slText = hasMultipleExecutions 
-                    ? `<span style="color: #ef5350;">SL: -$${Math.abs(potentialLoss).toFixed(4)}</span>`
-                    : `<span style="color: #888;">SL: --</span>`;
-            } else {
-                // Caso 3/4: Mostrar SL directamente
-                slText = `<span style="color: #ef5350;">SL: -$${Math.abs(potentialLoss).toFixed(4)}</span>`;
-            }
+            // Siempre mostrar SL para todos los casos
+            const slText = slPrice > 0 
+                ? `<span style="color: #ef5350;">SL: -$${Math.abs(potentialLoss).toFixed(4)}</span>`
+                : `<span style="color: #888;">SL: --</span>`;
             
             const pnlValue = pos.unrealized_pnl || 0;
             const pnlSign = pnlValue >= 0 ? '+' : '';

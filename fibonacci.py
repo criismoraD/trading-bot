@@ -22,8 +22,8 @@ CASE_1_MAX = _trading.get("case_1_max", 0.618)
 CASE_2_MIN = _trading.get("case_2_min", 0.618)
 CASE_2_MAX = _trading.get("case_2_max", 0.69)
 CASE_3_MIN = _trading.get("case_3_min", 0.69)
-CASE_3_MAX = _trading.get("case_3_max", 0.75)
-CASE_4_MIN = _trading.get("case_4_min", 0.75)
+CASE_3_MAX = _trading.get("case_3_max", 0.786)
+CASE_4_MIN = _trading.get("case_4_min", 0.786)
 CASE_4_MAX = _trading.get("case_4_max", 0.90)
 
 # Niveles de invalidación (desde config o defaults)
@@ -299,43 +299,55 @@ def find_valid_fibonacci_swing(
         # CHECK 61.8% y 78.6% - verificar TODAS las velas desde el Low hasta la actual
         # Esto garantiza que si el nivel de entrada ya fue tocado, busquemos el siguiente High
         has_touched_618 = False
+        has_touched_69 = False
         has_touched_786 = False
+        
+        fib_69_level = lowest_low.price + (range_val * 0.69)  # Nivel 69%
         
         for k in range(lowest_low.index + 1, last_candle_index + 1):
             if candle_data[k]["high"] >= fib_786_level:
                 has_touched_786 = True
+            if candle_data[k]["high"] >= fib_69_level:
+                has_touched_69 = True
             if candle_data[k]["high"] >= fib_618_level:
                 has_touched_618 = True
         
-        # Determinar min_valid_case
+        # Determinar min_valid_case (LÓGICA CORREGIDA)
+        # - Si tocó 61.8% → Casos válidos: 2, 3, 4 (min_valid_case = 2)
+        # - Si tocó 69%   → Casos válidos: 3, 4    (min_valid_case = 3)
+        # - Si tocó 78.6% → Casos válidos: 4       (min_valid_case = 4)
         min_valid_case = 1
         if has_touched_786:
             min_valid_case = 4
             print(f"   ⚠️ 78.6% TOUCHED - Only Case 4 valid (Path 1)")
-        elif has_touched_618:
+        elif has_touched_69:
             min_valid_case = 3
-            print(f"   ⚠️ 61.8% TOUCHED - Cases 3,4 valid (Path 1)")
+            print(f"   ⚠️ 69% TOUCHED - Cases 3,4 valid (Path 1)")
+        elif has_touched_618:
+            min_valid_case = 2
+            print(f"   ⚠️ 61.8% TOUCHED - Cases 2,3,4 valid (Path 1)")
         
         # Verificar si el precio actual está en zona válida para Path 1
-        level_case1_min = lowest_low.price + (range_val * CASE_1_MIN)  # 55%
+        level_case1_min = lowest_low.price + (range_val * CASE_1_MIN)  # 55% (o 40%)
+        level_case2_min = lowest_low.price + (range_val * CASE_2_MIN)  # 61.8%
         level_case3_min = lowest_low.price + (range_val * CASE_3_MIN)  # 69%
-        level_case4_min = lowest_low.price + (range_val * CASE_4_MIN)  # 75%
+        level_case4_min = lowest_low.price + (range_val * CASE_4_MIN)  # 78.6%
         
-        # Si precio actual está debajo del nivel 55% Y tocó 61.8%, este swing no es útil
-        if has_touched_618 and current_price < level_case1_min:
-            print(f"   ⚠️ Precio debajo de 55% y 61.8% tocado - Swing no útil para Path 1, buscando siguiente High...")
-            continue  # Intentar siguiente High
+        # Si precio actual está debajo del nivel mínimo válido, buscar siguiente High
+        # - min_valid_case = 2: precio debe estar >= 61.8% (zona C2+)
+        # - min_valid_case = 3: precio debe estar >= 69%   (zona C3+)
+        # - min_valid_case = 4: precio debe estar >= 78.6%   (zona C4)
+        if min_valid_case == 2 and current_price < level_case2_min:
+            print(f"   ⚠️ Casos 2-4 válidos pero precio ({current_price:.4f}) debajo de zona C2 ({level_case2_min:.4f}) - buscando siguiente High...")
+            continue
         
-        # Si solo Case 4 es válido (78.6% tocado) pero precio no está en zona de C4, buscar siguiente High
-        if min_valid_case == 4 and current_price < level_case4_min:
-            print(f"   ⚠️ Solo Case 4 válido pero precio ({current_price:.4f}) debajo de zona C4 ({level_case4_min:.4f}) - buscando siguiente High...")
-            continue  # Intentar siguiente High
-        
-        # Si solo Cases 3-4 válidos (61.8% tocado) pero precio no está en zona de C3+, buscar siguiente High
         if min_valid_case == 3 and current_price < level_case3_min:
-            print(f"   ⚠️ Solo Cases 3-4 válidos pero precio ({current_price:.4f}) debajo de zona C3 ({level_case3_min:.4f}) - buscando siguiente High...")
-            continue  # Intentar siguiente High
-            continue  # Intentar siguiente High
+            print(f"   ⚠️ Casos 3-4 válidos pero precio ({current_price:.4f}) debajo de zona C3 ({level_case3_min:.4f}) - buscando siguiente High...")
+            continue
+        
+        if min_valid_case == 4 and current_price < level_case4_min:
+            print(f"   ⚠️ Solo Caso 4 válido pero precio ({current_price:.4f}) debajo de zona C4 ({level_case4_min:.4f}) - buscando siguiente High...")
+            continue
         
         levels = calculate_fibonacci_levels(current_high.price, lowest_low.price)
         
@@ -416,9 +428,9 @@ def determine_trading_case(current_price: float, swing: FibonacciSwing,
     if current_price >= level_invalid:
         detected_case = 0  # Invalidado (encima de 90%)
     elif current_price >= level_case4_min:
-        detected_case = 4  # 75% - 90%: MARKET, TP 62%
+        detected_case = 4  # 78.6% - 90%: MARKET, TP 62%
     elif current_price >= level_case3_min:
-        detected_case = 3  # 69% - 75%: LIMIT 78.6%, TP 62%
+        detected_case = 3  # 69% - 78.6%: LIMIT 78.6%, TP 62%
     elif current_price >= level_case2_min:
         detected_case = 2  # 61.8% - 69%: MARKET, TP 55%
     elif current_price >= level_case1_min:
@@ -434,13 +446,15 @@ def determine_trading_case(current_price: float, swing: FibonacciSwing,
     # ===== VALIDACIÓN: Verificar que el nivel de ENTRADA no haya sido tocado =====
     # Para TODOS los casos con orden LIMIT, verificar que el nivel no haya sido tocado desde el Low del swing
     # - Caso 1: LIMIT en 61.8%
-    # - Caso 2: LIMIT en 61.8% (mismo que C1)
+    # - Caso 2: MARKET en zona 61.8%-69%, invalidar si tocó 69%
     # - Caso 3: LIMIT en 78.6%
-    # - Caso 4: MARKET (no tiene LIMIT, pero verificamos el 75% máx)
+    # - Caso 4: MARKET (no tiene LIMIT, pero verificamos el 90% máx)
     if candle_data and detected_case > 0:
-        # Determinar el nivel de entrada según el caso
-        if detected_case == 1 or detected_case == 2:
-            entry_level = level_618  # 61.8%
+        # Determinar el nivel de invalidación según el caso
+        if detected_case == 1:
+            entry_level = level_618  # 61.8% - Caso 1 usa LIMIT en 61.8%
+        elif detected_case == 2:
+            entry_level = level_case3_min  # 69% - Caso 2 es MARKET, invalidar si tocó 69%
         elif detected_case == 3:
             entry_level = level_786  # 78.6%
         elif detected_case == 4:

@@ -1,12 +1,12 @@
 {
     "trading": {
-        "case_1_min": 0.0,
+        "case_1_min": 0.55,
         "case_1_max": 0.618,
         "case_2_min": 0.618,
         "case_2_max": 0.69,
         "case_3_min": 0.69,
-        "case_3_max": 0.75,
-        "case_4_min": 0.75,
+        "case_3_max": 0.786,
+        "case_4_min": 0.786,
         "case_4_max": 0.90,
         "initial_balance": 100,
         "margin_per_trade": 2.0,
@@ -46,7 +46,7 @@
     "scanner": {
         "rsi_threshold": 75,
         "first_scan_delay": 2,
-        "scan_interval": 66,
+        "scan_interval": 30,
         "target_pairs": [],
         "timeframe": "4h",
         "top_pairs_limit": 600,

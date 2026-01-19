@@ -127,8 +127,8 @@ class FibonacciTradingBot:
         tp_c3 = levels.get("62", levels["61.8"])  # Case 3: TP en 62%
         tp_c4 = levels.get("70", levels["69"])    # Case 4: TP en 70%
         # SLs configurados por caso (según análisis óptimo)
-        sl_c1 = levels.get("110", levels["100"] * 1.10)  # Case 1 & 1++: SL en 110%
-        sl_c2 = levels.get("110", levels["100"] * 1.10)  # Case 2: SL en 110%
+        sl_c1 = levels.get("80", levels["78.6"])         # Case 1 & 1++: SL en 80%
+        sl_c2 = levels.get("85", levels["78.6"] * 1.08)  # Case 2: SL en 85%
         sl_c3 = levels.get("94", levels["90"])           # Case 3: SL en 94%
         sl_c4 = levels.get("93", levels["90"])           # Case 4: SL en 93%
         level_618 = levels["61.8"]
@@ -145,7 +145,7 @@ class FibonacciTradingBot:
                 price=level_618,
                 margin=MARGIN_PER_TRADE,
                 take_profit=tp_c1,  # TP en 40%
-                stop_loss=sl_c1     # SL en 110%
+                stop_loss=sl_c1     # SL en 80%
             )
             
             if order1:
@@ -155,7 +155,7 @@ class FibonacciTradingBot:
                     price=level_786,
                     margin=MARGIN_PER_TRADE,
                     take_profit=tp_c1,   # TP en 40%
-                    stop_loss=sl_c1,     # SL en 110%
+                    stop_loss=sl_c1,     # SL en 80%
                     linked_order_id=order1.id  # Vincular para cancelar si TP de order1 se ejecuta
                 )
             
@@ -169,7 +169,7 @@ class FibonacciTradingBot:
                 current_price=current_price,
                 margin=MARGIN_PER_TRADE,
                 take_profit=tp_c2,  # TP en 45%
-                stop_loss=sl_c2     # SL en 110%
+                stop_loss=sl_c2     # SL en 85%
             )
             
             if position:
@@ -179,7 +179,7 @@ class FibonacciTradingBot:
                     price=level_786,
                     margin=MARGIN_PER_TRADE,
                     take_profit=tp_c2,   # TP en 45%
-                    stop_loss=sl_c2,     # SL en 110%
+                    stop_loss=sl_c2,     # SL en 85%
                     linked_order_id=position.order_id
                 )
             

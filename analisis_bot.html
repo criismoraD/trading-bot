@@ -617,12 +617,12 @@
                             <div class="grid grid-cols-2 gap-3">
                                 <div class="slider-container">
                                     <div class="slider-header">
-                                        <label class="text-[10px] text-slate-400">TP Fib % <span class="text-red-400">(máx 61.8)</span></label>
+                                        <label class="text-[10px] text-slate-400">TP Fib % <span class="text-red-400">(máx 61)</span></label>
                                         <button onclick="resetSlider('tp_c1', 40)" class="reset-btn" title="Restablecer">↺</button>
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('tp_c1', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="tp_c1" value="40" min="0" max="61.8" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="tp_c1" value="40" min="0" max="61" step="1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('tp_c1', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="tp_c1_val">40</span>
@@ -630,14 +630,14 @@
                                 <div class="slider-container" id="sl_container_c1">
                                     <div class="slider-header">
                                         <label class="text-[10px] text-slate-400">SL Fib % <span class="text-red-400">(mín 62)</span></label>
-                                        <button onclick="resetSlider('sl_c1', 110)" class="reset-btn" title="Restablecer">↺</button>
+                                        <button onclick="resetSlider('sl_c1', 80)" class="reset-btn" title="Restablecer">↺</button>
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('sl_c1', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="sl_c1" value="110" min="62" max="200" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="sl_c1" value="80" min="62" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('sl_c1', 1)" class="precision-btn">&gt;</button>
                                     </div>
-                                    <span class="slider-value" id="sl_c1_val">110</span>
+                                    <span class="slider-value" id="sl_c1_val">80</span>
                                 </div>
                             </div>
                         </div>
@@ -656,12 +656,12 @@
                             <div class="grid grid-cols-2 gap-3">
                                 <div class="slider-container">
                                     <div class="slider-header">
-                                        <label class="text-[10px] text-slate-400">TP Fib % <span class="text-red-400">(máx 61.8)</span></label>
+                                        <label class="text-[10px] text-slate-400">TP Fib % <span class="text-red-400">(máx 61)</span></label>
                                         <button onclick="resetSlider('tp_c2', 45)" class="reset-btn" title="Restablecer">↺</button>
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('tp_c2', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="tp_c2" value="45" min="0" max="61.8" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="tp_c2" value="45" min="0" max="61" step="1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('tp_c2', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="tp_c2_val">45</span>
@@ -669,14 +669,14 @@
                                 <div class="slider-container" id="sl_container_c2">
                                     <div class="slider-header">
                                         <label class="text-[10px] text-slate-400">SL Fib % <span class="text-red-400">(mín 69)</span></label>
-                                        <button onclick="resetSlider('sl_c2', 110)" class="reset-btn" title="Restablecer">↺</button>
+                                        <button onclick="resetSlider('sl_c2', 85)" class="reset-btn" title="Restablecer">↺</button>
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('sl_c2', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="sl_c2" value="110" min="69" max="200" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="sl_c2" value="85" min="69" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('sl_c2', 1)" class="precision-btn">&gt;</button>
                                     </div>
-                                    <span class="slider-value" id="sl_c2_val">110</span>
+                                    <span class="slider-value" id="sl_c2_val">85</span>
                                 </div>
                             </div>
                         </div>
@@ -695,12 +695,12 @@
                             <div class="grid grid-cols-2 gap-3">
                                 <div class="slider-container">
                                     <div class="slider-header">
-                                        <label class="text-[10px] text-slate-400">TP Fib % <span class="text-red-400">(máx 78.6)</span></label>
+                                        <label class="text-[10px] text-slate-400">TP Fib % <span class="text-red-400">(máx 78)</span></label>
                                         <button onclick="resetSlider('tp_c3', 62)" class="reset-btn" title="Restablecer">↺</button>
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('tp_c3', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="tp_c3" value="62" min="0" max="78.6" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="tp_c3" value="62" min="0" max="78" step="1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('tp_c3', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="tp_c3_val">62</span>
@@ -712,7 +712,7 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('sl_c3', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="sl_c3" value="94" min="79" max="200" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="sl_c3" value="94" min="79" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('sl_c3', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="sl_c3_val">94</span>
@@ -734,12 +734,12 @@
                             <div class="grid grid-cols-2 gap-3">
                                 <div class="slider-container">
                                     <div class="slider-header">
-                                        <label class="text-[10px] text-slate-400">TP Fib % <span class="text-red-400">(máx 75)</span></label>
+                                        <label class="text-[10px] text-slate-400">TP Fib % <span class="text-red-400">(máx 78)</span></label>
                                         <button onclick="resetSlider('tp_c4', 70)" class="reset-btn" title="Restablecer">↺</button>
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('tp_c4', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="tp_c4" value="70" min="0" max="75" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="tp_c4" value="70" min="0" max="78" step="1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('tp_c4', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="tp_c4_val">70</span>
@@ -751,7 +751,7 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('sl_c4', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="sl_c4" value="93" min="90" max="200" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="sl_c4" value="93" min="90" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('sl_c4', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="sl_c4_val">93</span>
@@ -780,12 +780,12 @@
                             <div class="grid grid-cols-2 gap-3">
                                 <div class="slider-container">
                                     <div class="slider-header">
-                                        <label class="text-[10px] text-slate-400">TP Fib % <span class="text-purple-400">(máx 61.8)</span></label>
+                                        <label class="text-[10px] text-slate-400">TP Fib % <span class="text-purple-400">(máx 61)</span></label>
                                         <button onclick="resetSlider('tp_c5', 45)" class="reset-btn" title="Restablecer">↺</button>
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('tp_c5', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="tp_c5" value="45" min="0" max="61.8" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="tp_c5" value="45" min="0" max="61" step="1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('tp_c5', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="tp_c5_val" style="color: var(--accent-purple); text-shadow: 0 0 10px var(--glow-purple);">45</span>
@@ -797,7 +797,7 @@
                                     </div>
                                     <div class="slider-with-controls">
                                         <button onclick="adjustSlider('sl_c5', -1)" class="precision-btn">&lt;</button>
-                                        <input type="range" id="sl_c5" value="110" min="62" max="200" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                        <input type="range" id="sl_c5" value="110" min="62" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
                                         <button onclick="adjustSlider('sl_c5', 1)" class="precision-btn">&gt;</button>
                                     </div>
                                     <span class="slider-value" id="sl_c5_val" style="color: var(--accent-purple); text-shadow: 0 0 10px var(--glow-purple);">110</span>
@@ -937,7 +937,7 @@
                             <span class="text-xs text-slate-400" id="filter_stats_text"></span>
                         </div>
                         <div class="flex items-center gap-4 flex-wrap">
-                            <span class="text-[10px] text-slate-400 font-semibold uppercase">Ignorar:</span>
+                            <span class="text-[10px] text-slate-400 font-semibold uppercase">Aislar:</span>
                             <label class="flex items-center gap-2 cursor-pointer group">
                                 <input type="checkbox" id="ignoreC1" onchange="runSimulation()">
                                 <span class="text-xs group-hover:text-cyan-400 transition-colors" style="color: var(--accent-blue);">C1</span>
@@ -1108,8 +1108,8 @@
             document.getElementById('tp_c3').value = 62;
             document.getElementById('tp_c4').value = 70;
             // SL Defaults (valores óptimos de la imagen)
-            document.getElementById('sl_c1').value = 110;
-            document.getElementById('sl_c2').value = 110;
+            document.getElementById('sl_c1').value = 80;
+            document.getElementById('sl_c2').value = 85;
             document.getElementById('sl_c3').value = 94;
             document.getElementById('sl_c4').value = 93;
             // Filters
@@ -1230,12 +1230,12 @@
             const slEnabled = document.getElementById(`sl_enabled_c${c}`).checked;
             let sl = slEnabled ? (parseFloat(document.getElementById(`sl_c${c}`).value) || 0) / 100 : 0;
 
-            // Aplicar límites según caso
+            // Aplicar límites según caso (ajustados para enteros redondeados)
             const limits = {
-                1: { tpMax: 0.618, slMin: 0.62 },   // C1 y C1+: TP máx 61.8%, SL mín 62%
-                2: { tpMax: 0.618, slMin: 0.69 },   // C2: TP máx 61.8%, SL mín 69%
-                3: { tpMax: 0.786, slMin: 0.79 },   // C3: TP máx 78.6%, SL mín 79%
-                4: { tpMax: 0.75, slMin: 0.90 }     // C4: TP máx 75%, SL mín 90%
+                1: { tpMax: 0.61, slMin: 0.62 },    // C1 y C1+: TP máx 61%, SL mín 62%
+                2: { tpMax: 0.61, slMin: 0.69 },    // C2: TP máx 61%, SL mín 69%
+                3: { tpMax: 0.78, slMin: 0.79 },    // C3: TP máx 78%, SL mín 79%
+                4: { tpMax: 0.90, slMin: 0.90 }     // C4: TP mín 78%, SL mín 90%
             };
 
             const limit = limits[c] || limits[1];
@@ -1536,7 +1536,22 @@
                 // Si SL está debajo del entry, es inválido y se ignora
                 const slIsValid = slPrice > t.entry_price;
                 const hitSL = (s.sl > 0) && slIsValid && (t._max >= slPrice);
-                const hitTP = t._min <= tpPrice;
+                
+                // Para TP: usar solo min DURANTE la operación para trades HIST que cerraron por SL
+                // Si el trade original cerró por SL pero el SL simulado es más alto,
+                // no debemos usar precios post-close para simular TP
+                const originalReason = (t.reason || '').toUpperCase();
+                const originalClosedBySL = t._src === 'HIST' && originalReason === 'SL';
+                
+                // Si cerró por SL originalmente pero SL simulado no se tocó,
+                // usar solo precios DURANTE la operación (no post-close)
+                let effectiveMinForTP = t._min;
+                if (originalClosedBySL && !hitSL) {
+                    // Usar solo el mínimo durante la operación, no post-close
+                    effectiveMinForTP = t.min_price_pre_close || t.entry_price;
+                }
+                
+                const hitTP = effectiveMinForTP <= tpPrice;
 
                 // Calcular pérdida potencial al SL para PF (solo si SL es válido)
                 const potLoss = (s.sl > 0 && slIsValid) ? Math.abs((slPrice - t.entry_price) * t.quantity) : 0;
@@ -1557,17 +1572,43 @@
                     // PF = Ganancia / Riesgo (pérdida potencial al SL)
                     tradePF = potLoss > 0 ? (potProfit / potLoss) : (potProfit > 0 ? Infinity : 0);
                 } else {
-                    // No tocó limites nuevos
+                    // No tocó limites de simulación
                     if (t._src === 'HIST') {
-                        // Ya cerró manualmente en historial
-                        status = "MANUAL CLOSED";
-                        rPnl = t.pnl; // PnL original
-                        isClosed = true;
-                        css = "bg-neutral";
-                        tradePF = potLoss > 0 ? (Math.abs(rPnl) / potLoss) : 0;
-                        if (rPnl < 0) tradePF = 0;  // Si fue pérdida, PF = 0
+                        // Para trades históricos que no tocaron TP ni SL simulados
+                        if (originalReason === 'TP') {
+                            // El trade original cerró por TP y la simulación confirma
+                            status = "TP HIT ✅";
+                            rPnl = t.pnl;
+                            css = "bg-win";
+                            tradePF = potLoss > 0 ? (Math.abs(t.pnl) / potLoss) : (t.pnl > 0 ? Infinity : 0);
+                            isClosed = true;
+                        } else if (originalReason === 'SL' && !hitSL) {
+                            // El trade original cerró por SL pero SL simulado es más alto
+                            // → Habría seguido abierto (RUNNING)
+                            // Usar close_price para estimar PnL flotante al momento del cierre original
+                            const effectiveCurrentPrice = t.close_price || t.entry_price;
+                            status = "RUNNING ⏳";
+                            fPnl = (t.entry_price - effectiveCurrentPrice) * t.quantity;
+                            isClosed = false;
+                            css = "bg-run";
+                            tradePF = '-';
+                        } else if (originalReason === 'SL') {
+                            // SL simulado se tocó (caso redundante pero por claridad)
+                            status = "SL HIT ❌";
+                            rPnl = t.pnl;
+                            css = "bg-loss";
+                            tradePF = 0;
+                            isClosed = true;
+                        } else {
+                            // Cerrado por otra razón (liquidación, manual, etc.)
+                            status = `CLOSED (${originalReason || 'OTHER'})`;
+                            rPnl = t.pnl;
+                            css = t.pnl >= 0 ? "bg-win" : "bg-loss";
+                            tradePF = potLoss > 0 ? (Math.abs(t.pnl) / potLoss) : 0;
+                            isClosed = true;
+                        }
                     } else {
-                        // Sigue abierta
+                        // Sigue abierta (posición actual)
                         status = "RUNNING ⏳";
                         fPnl = (t.entry_price - t.current_price) * t.quantity; // Flotante actual
                         isClosed = false;

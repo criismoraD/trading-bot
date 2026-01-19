@@ -1,122 +1,116 @@
-# 📘 Guía de Lógica del Bot de Trading (Fibonacci + ZigZag)
+# Explicación del Algoritmo de Trading (ZigZag + Fibonacci)
 
-Este documento explica cómo el bot detecta oportunidades de trading, cómo traza los niveles de Fibonacci y cómo funcionan los diferentes "Casos" o escenarios de entrada.
+Este documento detalla el funcionamiento interno del bot, desde la detección de puntos pivote hasta la ejecución de órdenes según los 4 casos + el caso especial 1++.
 
----
+## 1. Flujo del ZigZag
 
-## 📐 1. Indicador ZigZag (Estructura de Mercado)
+El cálculo del ZigZag es el primer paso para estructurar el mercado. Se utiliza para identificar **Highs (Máximos)** y **Lows (Mínimos)** significativos.
 
-El bot utiliza un algoritmo de **ZigZag** personalizado para identificar los puntos máximos (Highs) y mínimos (Lows) significativos del mercado. Esto es fundamental para trazar los movimientos de precio (Swings).
-
-### ¿Cómo funciona?
-El algoritmo (`fibonacci.py`) sigue estos pasos:
-1.  **Detección de Pivotes**: Escanea las velas buscando puntos que sean máximos o mínimos locales en una ventana de tiempo definida (`depth`).
-2.  **Filtrado por Desviación**: Solo se confirma un nuevo punto si el precio se ha movido un porcentaje mínimo (ej. 5%) desde el punto anterior. Esto elimina el "ruido" de pequeños movimientos.
-3.  **Alternancia**: Asegura que siempre haya una secuencia Hig -> Low -> High -> Low...
-4.  **Búsqueda Robusta**: Si hay múltiples máximos consecutivos, se queda con el más alto (o el más bajo para los mínimos).
-
-**Objetivo:** Encontrar un **Swing Bajista** (un movimiento desde un High reciente hasta un Low).
+### Lógica de Construcción (`calculate_zigzag`)
+1.  **Detección de Pivotes**: Se analiza una ventana de velas (basada en el parámetro `depth`) para encontrar máximos y mínimos locales.
+2.  **Filtrado por Desviación**: Para que un nuevo movimiento sea considerado, el precio debe haberse movido un porcentaje mínimo (configurado en `deviation`) desde el último punto.
+3.  **Alternancia Estricta**: El algoritmo fuerza una secuencia **High -> Low -> High -> Low**.
+    *   Si se detectan dos Highs consecutivos, se mantiene solo el más alto.
+    *   Si se detectan dos Lows consecutivos, se mantiene solo el más bajo.
+4.  **Actualización en Tiempo Real**: Si el precio actual supera el último High o rompe el último Low sin completar la desviación para un nuevo punto, se actualiza el punto extremo existente.
 
 ---
 
-## 🔢 2. Trazado de Fibonacci
+## 2. Validación de Swings de Fibonacci
 
-Una vez identificado un Swing válido (High → Low), el bot traza los niveles de retroceso de Fibonacci para buscar entradas en **SHORT** (Venta).
+Una vez calculados los puntos ZigZag, el algoritmo busca un "Swing" válido para proyectar los niveles de Fibonacci. El bot opera principalmente en **Short**, buscando swings bajistas (High a Low) para vender en los retrocesos.
 
-**Rango del Swing:**
-*   **0% (Base):** Precio del Low.
-*   **100% (Tope):** Precio del High.
+### Proceso de Búsqueda (`find_valid_fibonacci_swing`)
+El sistema recorre los Highs detectados por el ZigZag, empezando por el más reciente (Path 1), y busca conectar con el Low más bajo posterior.
 
-El bot calcula niveles intermedios donde es probable que el precio reboten hacia abajo:
-*   **45% / 50% / 55%**: Zonas de toma de ganancias (Take Profit).
-*   **61.8% ("Golden Pocket")**: Nivel clave de entrada.
-*   **78.6%**: Nivel profundo de entrada.
-*   **90%**: Nivel de **Invalidación** (Stop Loss conceptual del swing).
+### Reglas de Invalidación y Filtrado
+Para cada Swing candidato (High -> Low), se aplican las siguientes validaciones:
 
-**Regla de Oro:** Si el precio toca o supera el nivel del **90%**, el swing se considera "roto" o invalidado y se descarta.
+1.  **Regla del 90% (Invalidación Total)**:
+    *   Si *cualquier* vela posterior al Low del swing ha tocado el nivel **90%** del retroceso, el swing se considera "quemado" o invalidado. Se descarta inmediatamente y se busca el siguiente High.
 
----
+2.  **Regla de "Toques Previos" (Min Valid Case)**:
+    El algoritmo verifica qué niveles de Fibonacci ya han sido tocados por mechas de velas anteriores dentro del mismo retroceso. Esto define qué casos de trading siguen disponibles:
 
-## 🎯 3. Casos de Trading (Escenarios)
+    *   🔴 **Si tocó 78.6%**: Ya se "gastaron" los casos 1, 2 y 3. **Solo el Caso 4 es válido**.
+    *   🟠 **Si tocó 69%**: Ya se "gastaron" los casos 1 y 2. **Solo Casos 3 y 4 son válidos**.
+    *   🟡 **Si tocó 61.8%**: Ya se "gastó" el caso 1. **Solo Casos 2, 3 y 4 son válidos**.
+    *   🟢 **Si no tocó 61.8%**: **Todos los casos (1, 2, 3, 4) son válidos**.
 
-El bot clasifica la oportunidad en uno de **4 Casos** dependiendo de dónde se encuentre el precio actual respecto al retroceso del Fibonacci.
-
-El sistema utiliza **2 Caminos (Paths)** para encontrar oportunidades:
-
-### 🛤️ Camino 1: Swing Principal (High más reciente)
-
-Se evalúa la posición actual del precio dentro del rango del swing.
-
-#### **🔴 CASO 4: Zona Extrema (75% - 90%)**
-*   **Escenario:** El precio ha subido mucho y está muy cerca de invalidar, pero ofrece un ratio riesgo/beneficio muy agresivo.
-*   **Acción:** **MARKET ORDER** (Venta inmediata).
-*   **Take Profit:** 60% del retroceso.
-*   **Riesgo:** Alto (Stop Loss cerca, al 90%).
-
-#### **🟠 CASO 3: Zona Alta (69% - 75%)**
-*   **Escenario:** El precio está alto, pero preferimos esperar una mejor entrada en el 78.6%.
-*   **Acción:** **LIMIT ORDER** en el nivel **78.6%**.
-*   **Take Profit:** 55% del retroceso.
-*   **Validación:** Se verifica que el precio no haya tocado ya el 78.6% recientemente (para no entrar tarde).
-
-#### **🟡 CASO 2: Zona Media-Alta (61.8% - 69%)**
-*   **Escenario:** El precio está justo en la "Golden Zone" (encima del 61.8%).
-*   **Acción:** **MARKET ORDER** (Venta inmediata).
-*   **Take Profit:** 45% del retroceso.
-
-#### **🟢 CASO 1: Zona de Espera (55% - 61.8%)**
-*   **Escenario:** El precio ha rebotado un poco (pasó el 55%) pero aún no llega a la zona óptima de entrada.
-*   **Acción:** **LIMIT ORDER** en el nivel **61.8%**.
-*   **Take Profit:** 45% del retroceso.
-*   **Condición:** Si el precio ya tocó el 61.8% en este swing previamente, el Caso 1 se invalida (ya dio entrada).
+3.  **Validación de Zona Actual**:
+    El precio actual (Current Price) debe estar dentro o por encima de la zona de activación del caso mínimo válido.
+    *   *Ejemplo*: Si `Min Valid Case = 2` (porque ya tocó el 61.8%), el precio actual debe estar por encima del nivel 61.8%. Si está por debajo (ej. 58%), se considera que ya dio la entrada y se fue, por lo tanto se ignora este swing.
 
 ---
 
-### 🛤️ Camino 2: Caso 1++ (Swing Alternativo)
+## 3. Casos de Trading y Escenarios
 
-Este es un sistema avanzado. Si el bot entra en un Caso 2, 3 o 4 (swing "pequeño" o reciente), inmediatamente busca un **"Plan B"** o cobertura en una estructura mayor.
+El bot clasifica la oportunidad de trading en uno de 4 casos (más un caso especial) dependiendo de dónde se encuentre el precio actual respecto a los niveles de Fibonacci.
 
-#### **🟣 CASO 1++ (Cobertura)**
-*   **Lógica:** Busca un **High Anterior más alto** (a la izquierda en el gráfico) para trazar un Fibonacci más grande.
-*   **Acción:** Coloca una **LIMIT ORDER** en el **61.8%** de este swing mayor.
-*   **Take Profit:** 45% de este swing mayor.
-*   **Objetivo:** Si el precio rompe el swing pequeño (stop loss), es probable que frene en el 61.8% del swing grande, recuperando pérdidas.
+### Niveles Clave
+*   **Zona C1**: 55% - 61.8%
+*   **Zona C2**: 61.8% - 69%
+*   **Zona C3**: 69% - 78.6%
+*   **Zona C4**: 78.6% - 90%
+*   **Invalidación**: > 90%
+
+### Descripción de los Casos
+
+#### 🟢 CASO 1: Entrada Confirmada (Limit)
+*   **Condición**: Precio actual entre **55% y 61.8%**.
+*   **Requisito**: El nivel 61.8% **NO** debe haber sido tocado previamente.
+*   **Operación**: Orden **LIMIT SELL** al **61.8%**.
+*   **Take Profit**: Nivel 45%.
+*   **Lógica**: Esperamos que el precio suba un poco más para llenar la orden en el nivel aureo (Golden Pocket) y caer.
+
+#### 🟡 CASO 2: Entrada Agresiva (Market)
+*   **Condición**: Precio actual entre **61.8% y 69%**.
+*   **Requisito**: El nivel 69% **NO** debe haber sido tocado previamente (para evitar entrar tarde en un swing profundo).
+*   **Operación**: Orden **MARKET SELL** inmediata.
+*   **Take Profit**: Nivel 45%.
+*   **Lógica**: El precio ya está en la zona del Golden Pocket extendida. Se entra a mercado para no perder la bajada.
+
+#### 🟠 CASO 3: Entrada Profunda (Limit)
+*   **Condición**: Precio actual entre **69% y 78.6%**.
+*   **Requisito**: El nivel 78.6% **NO** debe haber sido tocado previamente.
+*   **Operación**: Orden **LIMIT SELL** al **78.6%**.
+*   **Take Profit**: Nivel 55%.
+*   **Lógica**: El precio ha roto el 69%, indicando fuerza alcista en el retroceso. Esperamos una reacción en el último bastión (78.6%) antes de la invalidación.
+
+#### 🔴 CASO 4: Entrada Extrema (Market)
+*   **Condición**: Precio actual entre **78.6% y 90%**.
+*   **Requisito**: Precio por debajo del 90%.
+*   **Operación**: Orden **MARKET SELL** inmediata.
+*   **Take Profit**: Nivel 60%.
+*   **Lógica**: Situación de alto riesgo/recompensa. El precio está muy cerca de la invalidación. Se vende a mercado buscando un rechazo rápido antes del 90%.
 
 ---
 
-## 🛑 Reglas de Invalidación y Seguridad
+## 4. El Caso Especial: C1++ (Path 2)
 
-1.  **Toque del 90%:** Si cualquier vela toca el 90% del retroceso, todo el swing se cancela.
-2.  **Toque Previo de Entrada:**
-    *   Para **Caso 3**: Si el precio ya tocó el 78.6% antes, no se pone la orden Limit (se asume que la oportunidad ya pasó).
-    *   Para **Caso 1**: Si el precio ya tocó el 61.8% antes, no se pone la orden Limit.
-3.  **RSI:** El bot solo busca operaciones si el RSI (14 periodos) en 5 minutos está por encima del umbral (ej. 75), indicando sobrecompra.
+Este es un mecanismo de cobertura inteligente. Si el bot entra en una operación "profunda" (Casos 2, 3 o 4), significa que el retroceso ha ido más allá de lo ideal. El bot activa entonces un escáner secundario para buscar un **Swing Mayor**.
+
+### ¿Cómo funciona? (`_search_and_place_c1pp`)
+1.  **Trigger**: Se activa solo después de colocar una orden de Caso 2, 3 o 4.
+2.  **Búsqueda de Historia**: Busca en el pasado puntos ZigZag de tipo **High** que sean **más altos** que el High del swing actual.
+3.  **Construcción de Swing Mayor**:
+    *   Toma ese High Histórico y el Low más bajo detectado desde entonces.
+    *   Traza un nuevo Fibonacci masivo.
+4.  **Validación C1++**:
+    *   Verifica que el nivel 90% de este nuevo swing mayor NO haya sido tocado.
+    *   Verifica que el nivel 61.8% de este nuevo swing mayor **NO** haya sido tocado aún.
+    *   Verifica que el precio actual esté **por debajo** del 61.8%.
+5.  **Ejecución**:
+    *   Si se cumplen las condiciones, coloca una **LIMIT SELL** en el **61.8% del Swing Mayor**.
+    *   **Take Profit**: 45% (del swing mayor).
+
+**Objetivo**: Si la operación original (C2/C3/C4) sale mal y el precio sigue subiendo, es muy probable que esté yendo a buscar el 61.8% de una estructura fractalmente mayor. El C1++ deja esa orden lista para atrapar ese movimiento.
 
 ---
 
-## 📊 Resumen Visual
+## Resumen de Validaciones de Entrada (Doble Check)
 
-```text
-      High (100%) ──────────────────────────
-           |
-           |      [INVALIDACIÓN > 90%]
-           |
-      90%  ├────────────────────────────────  <-- Stop Loss Técnico de la Estructura/Swing
-           |      🔴 CASO 4 (Market)
-      78.6%├────────────────────────────────  <-- Entrada Limit (Caso 3)
-           |      🟠 CASO 3 (Wait Limit)
-      75%  ├────────────────────────────────
-           |
-      69%  ├────────────────────────────────
-           |      🟡 CASO 2 (Market)
-      61.8%├────────────────────────────────  <-- Entrada Limit (Caso 1 / 1++)
-           |      🟢 CASO 1 (Wait Limit)
-      55%  ├────────────────────────────────  <-- Zona mínima para considerar trade
-           |
-      50%  ├────────────────────────────────  <-- TP Común
-           |
-      45%  ├────────────────────────────────  <-- TP Agresivo
-           |
-           |
-      Low (0%) ─────────────────────────────
-```
+Antes de poner cualquier orden, el sistema hace una última validación de seguridad (`determine_trading_case` -> validación final):
+
+*   **Check de Mechas Traicioneras**: Revisa vela por vela desde el Low hasta la vela actual. Si alguna mecha ya tocó el nivel de entrada de la orden que queremos poner (ej. ya tocó el 61.8% para un Caso 1, o ya tocó el limit del 78.6% para un Caso 3), la orden se cancela.
+*   **Propósito**: Evitar poner órdenes Limit que "deberían haberse llenado ya" o entrar en setups que ya cumplieron su recorrido y están rebotando.
