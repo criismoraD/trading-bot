@@ -730,12 +730,17 @@
         async function autoLoadTradesJson() {
             // Intentar cargar trades.json automáticamente
             try {
-                const response = await fetch('/trades.json?t=' + Date.now());
+                // Usar timestamp + random para evitar cualquier caché
+                const cacheBuster = Date.now() + '-' + Math.random();
+                const response = await fetch('/trades.json?nocache=' + cacheBuster, {
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
                 if (response.ok) {
                     rawData = await response.json();
                     document.getElementById('dashboard').classList.remove('hidden');
                     runSimulation();
-                    console.log('✅ trades.json cargado');
+                    console.log('✅ trades.json cargado:', new Date().toLocaleTimeString());
                     isWebServer = true;
                     
                     // Mostrar botón de refresh manual

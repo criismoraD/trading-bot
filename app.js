@@ -2052,10 +2052,20 @@ async function init() {
             });
             positionPriceLines.push(tpLine);
 
-            // SL line (red) - only if exists
-            if (pos.stop_loss) {
+            // SL line (red) - calculate from Fibonacci if not set
+            let slPrice = pos.stop_loss;
+            if (!slPrice && pos.fib_high && pos.fib_low) {
+                // Calculate SL based on strategy case
+                const range = pos.fib_high - pos.fib_low;
+                const caseNum = pos.strategy_case === 11 ? 1 : pos.strategy_case;
+                // SL levels: C1/C2=110%, C3=94%, C4=93%
+                const slLevels = { 1: 1.10, 2: 1.10, 3: 0.94, 4: 0.93 };
+                const slRatio = slLevels[caseNum] || 1.10;
+                slPrice = pos.fib_low + (range * slRatio);
+            }
+            if (slPrice) {
                 const slLine = candleSeries.createPriceLine({
-                    price: pos.stop_loss,
+                    price: slPrice,
                     color: '#ef5350',
                     lineWidth: 2,
                     lineStyle: 2, // Dashed
@@ -2615,7 +2625,16 @@ function updateAnalysisUnifiedList() {
         const selectedClass = index === currentTradeIndex ? 'selected' : '';
         
         if (trade._type === 'open') {
-            // Posición abierta
+            // Posición abierta - Calcular SL si no existe
+            let slPrice = trade.stop_loss || 0;
+            if (!slPrice && trade.fib_high && trade.fib_low) {
+                const range = trade.fib_high - trade.fib_low;
+                const caseNum = trade.strategy_case === 11 ? 1 : trade.strategy_case;
+                const slLevels = { 1: 1.10, 2: 1.10, 3: 0.94, 4: 0.93 };
+                const slRatio = slLevels[caseNum] || 1.10;
+                slPrice = trade.fib_low + (range * slRatio);
+            }
+            
             html += `
             <div class="trade-item open-position ${selectedClass}" data-index="${index}" onclick="selectAnalysisTrade(${index})">
                 <div class="trade-item-header">
@@ -2628,7 +2647,7 @@ function updateAnalysisUnifiedList() {
                     <span>TP: $${(trade.take_profit || 0).toFixed(4)}</span>
                 </div>
                 <div class="trade-details">
-                    <span>SL: $${(trade.stop_loss || 0).toFixed(4)}</span>
+                    <span>SL: $${slPrice.toFixed(4)}</span>
                     <span>Size: ${trade.size || 0}</span>
                 </div>
             </div>
@@ -2762,10 +2781,18 @@ async function showTradeOnChart(trade) {
         analysisLines.push(tpLine);
     }
 
-    // SL (rojo)
-    if (trade.stop_loss) {
+    // SL (rojo) - calcular si no existe
+    let slPrice = trade.stop_loss;
+    if (!slPrice && trade.fib_high && trade.fib_low) {
+        const range = trade.fib_high - trade.fib_low;
+        const caseNum = trade.strategy_case === 11 ? 1 : trade.strategy_case;
+        const slLevels = { 1: 1.10, 2: 1.10, 3: 0.94, 4: 0.93 };
+        const slRatio = slLevels[caseNum] || 1.10;
+        slPrice = trade.fib_low + (range * slRatio);
+    }
+    if (slPrice) {
         const slLine = candleSeries.createPriceLine({
-            price: trade.stop_loss,
+            price: slPrice,
             color: '#f44336',
             lineWidth: 2,
             lineStyle: 2,
