@@ -1,6 +1,6 @@
 {
     "trading": {
-        "case_1_min": 0.50,
+        "case_1_min": 0.0,
         "case_1_max": 0.618,
         "case_2_min": 0.618,
         "case_2_max": 0.69,
@@ -8,7 +8,7 @@
         "case_3_max": 0.75,
         "case_4_min": 0.75,
         "case_4_max": 0.90,
-        "initial_balance": 80.0,
+        "initial_balance": 100,
         "margin_per_trade": 2.0,
         "min_available_margin": 2.0,
         "leverage": 10,
