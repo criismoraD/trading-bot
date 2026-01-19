@@ -120,12 +120,21 @@ class FibonacciTradingBot:
             return
         
         levels = self.current_swing.levels
-        tp_50 = levels["50"]
+        # TPs configurados por caso (según análisis óptimo)
+        tp_c1 = levels.get("40", levels["38.2"])  # Case 1: TP en 40%
+        tp_c2 = levels.get("45", levels["50"])    # Case 2: TP en 45%
+        tp_c3 = levels.get("62", levels["61.8"])  # Case 3: TP en 62%
+        tp_c4 = levels.get("70", levels["69"])    # Case 4: TP en 70%
+        # SLs configurados por caso (según análisis óptimo)
+        sl_c1 = levels.get("110", levels["100"] * 1.10)  # Case 1 & 1++: SL en 110%
+        sl_c2 = levels.get("110", levels["100"] * 1.10)  # Case 2: SL en 110%
+        sl_c3 = levels.get("94", levels["90"])           # Case 3: SL en 94%
+        sl_c4 = levels.get("93", levels["90"])           # Case 4: SL en 93%
         level_618 = levels["61.8"]
         level_786 = levels["78.6"]
         
         print(f"\n🎯 CASO {case} detectado | Precio: ${current_price:.4f}")
-        print(f"   Niveles: 50%=${tp_50:.4f} | 61.8%=${level_618:.4f} | 78.6%=${level_786:.4f}")
+        print(f"   Niveles: 61.8%=${level_618:.4f} | 78.6%=${level_786:.4f}")
         
         if case == 1:
             # Precio < 61.8%: Órdenes límite en 61.8% y 78.6%
@@ -134,7 +143,8 @@ class FibonacciTradingBot:
                 side=OrderSide.SELL,
                 price=level_618,
                 margin=MARGIN_PER_TRADE,
-                take_profit=tp_50
+                take_profit=tp_c1,  # TP en 40%
+                stop_loss=sl_c1     # SL en 110%
             )
             
             if order1:
@@ -143,7 +153,8 @@ class FibonacciTradingBot:
                     side=OrderSide.SELL,
                     price=level_786,
                     margin=MARGIN_PER_TRADE,
-                    take_profit=tp_50,
+                    take_profit=tp_c1,   # TP en 40%
+                    stop_loss=sl_c1,     # SL en 110%
                     linked_order_id=order1.id  # Vincular para cancelar si TP de order1 se ejecuta
                 )
             
@@ -156,7 +167,8 @@ class FibonacciTradingBot:
                 side=OrderSide.SELL,
                 current_price=current_price,
                 margin=MARGIN_PER_TRADE,
-                take_profit=tp_50
+                take_profit=tp_c2,  # TP en 45%
+                stop_loss=sl_c2     # SL en 110%
             )
             
             if position:
@@ -165,20 +177,22 @@ class FibonacciTradingBot:
                     side=OrderSide.SELL,
                     price=level_786,
                     margin=MARGIN_PER_TRADE,
-                    take_profit=tp_50,
+                    take_profit=tp_c2,   # TP en 45%
+                    stop_loss=sl_c2,     # SL en 110%
                     linked_order_id=position.order_id
                 )
             
             self.last_case_executed = 2
         
         elif case == 3:
-            # Precio >= 78.6%: Mercado con TP en 61.8%
+            # Precio >= 78.6%: Mercado con TP en 62% y SL en 94%
             self.account.place_market_order(
                 symbol=self.symbol,
                 side=OrderSide.SELL,
                 current_price=current_price,
                 margin=MARGIN_PER_TRADE,
-                take_profit=level_618
+                take_profit=tp_c3,  # TP en 62%
+                stop_loss=sl_c3     # SL en 94%
             )
             
             self.last_case_executed = 3

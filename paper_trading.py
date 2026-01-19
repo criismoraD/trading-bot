@@ -91,7 +91,15 @@ class Position:
     current_price: float = 0.0  # Precio actual para calcular PnL
     linked_order_id: Optional[str] = None  # ID de orden vinculada para cerrar juntas
     min_pnl: float = 0.0  # Máximo drawdown registrado (valor negativo mas bajo)
+    min_pnl_time: Optional[str] = None  # Timestamp del máximo drawdown
     max_pnl: float = 0.0  # Máximo beneficio alcanzado
+    max_pnl_time: Optional[str] = None  # Timestamp del máximo beneficio
+    # Precios extremos durante la operación (pre-close)
+    max_price_pre_close: Optional[float] = None  # Precio máximo durante la operación
+    max_price_pre_close_time: Optional[str] = None
+    min_price_pre_close: Optional[float] = None  # Precio mínimo durante la operación
+    min_price_pre_close_time: Optional[str] = None
+    price_pivots_pre_close: List[dict] = field(default_factory=list)  # Array de pivotes pre-close [{type, price, time}]
     strategy_case: int = 0  # Caso de trading (1-4)
     fib_high: Optional[float] = None  # Precio del High (100%) del swing
     fib_low: Optional[float] = None   # Precio del Low (0%) del swing
@@ -100,7 +108,10 @@ class Position:
     executions: List[dict] = field(default_factory=list)  # [{price, qty, time, order_num}]
     
     def calculate_pnl(self, current_price: float) -> float:
-        """Calcular PnL no realizado y actualizar min_pnl/max_pnl"""
+        """Calcular PnL no realizado y actualizar min_pnl/max_pnl y precios extremos"""
+        from datetime import datetime
+        current_time = datetime.now().isoformat()
+        
         self.current_price = current_price  # Guardar precio actual
         if self.side == PositionSide.SHORT:
             # Para SHORT: ganamos si el precio baja
@@ -110,13 +121,38 @@ class Position:
             pnl = (current_price - self.entry_price) * self.quantity
         self.unrealized_pnl = pnl
         
-        # Actualizar Max Drawdown (menor PnL registrado)
+        # Actualizar Max Drawdown (menor PnL registrado) con timestamp
         if pnl < self.min_pnl:
             self.min_pnl = pnl
+            self.min_pnl_time = current_time
 
-        # Actualizar Max Profit (mayor PnL registrado)
+        # Actualizar Max Profit (mayor PnL registrado) con timestamp
         if pnl > self.max_pnl:
             self.max_pnl = pnl
+            self.max_pnl_time = current_time
+        
+        # Actualizar precios extremos durante la operación y registrar pivotes
+        if self.max_price_pre_close is None or current_price > self.max_price_pre_close:
+            # Registrar pivote HIGH pre-close
+            if self.max_price_pre_close is not None:  # No registrar el primero
+                self.price_pivots_pre_close.append({
+                    "type": "high",
+                    "price": current_price,
+                    "time": current_time
+                })
+            self.max_price_pre_close = current_price
+            self.max_price_pre_close_time = current_time
+        
+        if self.min_price_pre_close is None or current_price < self.min_price_pre_close:
+            # Registrar pivote LOW pre-close
+            if self.min_price_pre_close is not None:  # No registrar el primero
+                self.price_pivots_pre_close.append({
+                    "type": "low",
+                    "price": current_price,
+                    "time": current_time
+                })
+            self.min_price_pre_close = current_price
+            self.min_price_pre_close_time = current_time
             
         return pnl
     
@@ -216,7 +252,14 @@ class PaperTradingAccount:
             "current_price": pos.current_price,
             "linked_order_id": pos.linked_order_id,
             "min_pnl": pos.min_pnl,
+            "min_pnl_time": pos.min_pnl_time,
             "max_pnl": pos.max_pnl,
+            "max_pnl_time": pos.max_pnl_time,
+            "max_price_pre_close": pos.max_price_pre_close,
+            "max_price_pre_close_time": pos.max_price_pre_close_time,
+            "min_price_pre_close": pos.min_price_pre_close,
+            "min_price_pre_close_time": pos.min_price_pre_close_time,
+            "price_pivots_pre_close": pos.price_pivots_pre_close,  # Pivotes durante operación
             "strategy_case": pos.strategy_case,
             "fib_high": pos.fib_high,
             "fib_low": pos.fib_low,
@@ -351,10 +394,13 @@ class PaperTradingAccount:
         position_side = PositionSide.SHORT if side == OrderSide.SELL else PositionSide.LONG
         
         # BUSCAR POSICIÓN EXISTENTE PARA FUSIONAR (Averaging)
+        # SOLO fusionar si es el MISMO strategy_case para mantener datos limpios de análisis
         existing_pos_id = None
         for pid, pos in self.open_positions.items():
             if pos.symbol == symbol and pos.side == position_side:
-                existing_pos_id = pid
+                # Solo fusionar si el strategy_case es igual
+                if pos.strategy_case == strategy_case:
+                    existing_pos_id = pid
                 break
         
         position = None
@@ -462,17 +508,24 @@ class PaperTradingAccount:
                 print(f"🔄 TP DINÁMICO: {order.symbol} TP actualizado de ${old_tp:.4f} → ${new_tp:.4f}")
         
         # BUSCAR POSICIÓN EXISTENTE PARA FUSIONAR
+        # SOLO fusionar si es el MISMO strategy_case para mantener datos limpios de análisis
         position_side = PositionSide.SHORT if order.side == OrderSide.SELL else PositionSide.LONG
         existing_pos_id = None
         
-        # Primero intentar por vinculación explícita
+        # Primero intentar por vinculación explícita (órdenes del mismo case)
         if order.linked_order_id and order.linked_order_id in self.open_positions:
-            existing_pos_id = order.linked_order_id
-        else:
-            # Buscar por símbolo y lado
+            linked_pos = self.open_positions[order.linked_order_id]
+            # Solo vincular si es el mismo strategy_case
+            if linked_pos.strategy_case == order.strategy_case:
+                existing_pos_id = order.linked_order_id
+        
+        if not existing_pos_id:
+            # Buscar por símbolo, lado Y strategy_case
             for pid, pos in self.open_positions.items():
                 if pos.symbol == order.symbol and pos.side == position_side:
-                    existing_pos_id = pid
+                    # Solo fusionar si el strategy_case es igual
+                    if pos.strategy_case == order.strategy_case:
+                        existing_pos_id = pid
                     break
         
         if existing_pos_id:
@@ -566,6 +619,7 @@ class PaperTradingAccount:
     def _update_closed_positions_price(self, symbol: str, current_price: float):
         """Actualizar precios de posiciones cerradas que siguen en monitoreo"""
         save_needed = False
+        current_time = datetime.now().isoformat()
         
         for order_id, monitor_data in list(self.closed_positions_monitoring.items()):
             if monitor_data["symbol"] != symbol:
@@ -576,20 +630,44 @@ class PaperTradingAccount:
             if history_index < len(self.trade_history):
                 trade_record = self.trade_history[history_index]
                 
-                # Actualizar min/max price post-close
+                # Inicializar pivots si no existe
+                if "price_pivots_post_close" not in trade_record:
+                    trade_record["price_pivots_post_close"] = []
+                
+                # Actualizar min/max price post-close con timestamps y añadir pivotes
                 current_min = trade_record.get("min_price_post_close", current_price)
                 current_max = trade_record.get("max_price_post_close", current_price)
+                pivots = trade_record.get("price_pivots_post_close", [])
                 
-                if current_price < current_min:
-                    trade_record["min_price_post_close"] = current_price
-                    save_needed = True
+                # Detectar nuevo máximo (pivote high)
                 if current_price > current_max:
                     trade_record["max_price_post_close"] = current_price
+                    trade_record["max_price_post_close_time"] = current_time
+                    # Añadir pivote high al array
+                    pivots.append({
+                        "type": "high",
+                        "price": current_price,
+                        "time": current_time
+                    })
+                    trade_record["price_pivots_post_close"] = pivots
+                    save_needed = True
+                
+                # Detectar nuevo mínimo (pivote low)
+                if current_price < current_min:
+                    trade_record["min_price_post_close"] = current_price
+                    trade_record["min_price_post_close_time"] = current_time
+                    # Añadir pivote low al array
+                    pivots.append({
+                        "type": "low",
+                        "price": current_price,
+                        "time": current_time
+                    })
+                    trade_record["price_pivots_post_close"] = pivots
                     save_needed = True
                 
                 # Guardar último precio tomado
                 trade_record["last_price_post_close"] = current_price
-                trade_record["last_price_time"] = datetime.now().isoformat()
+                trade_record["last_price_time"] = current_time
                 save_needed = True
         
         # Guardar si hubo cambios
@@ -672,7 +750,15 @@ class PaperTradingAccount:
             "margin": position.margin,
             "pnl": pnl,
             "min_pnl": position.min_pnl,  # Max Drawdown
+            "min_pnl_time": position.min_pnl_time,  # Timestamp del max drawdown
             "max_pnl": position.max_pnl,  # Max Profit alcanzado
+            "max_pnl_time": position.max_pnl_time,  # Timestamp del max profit
+            # Precios extremos DURANTE la operación (pre-close)
+            "max_price_pre_close": position.max_price_pre_close,
+            "max_price_pre_close_time": position.max_price_pre_close_time,
+            "min_price_pre_close": position.min_price_pre_close,
+            "min_price_pre_close_time": position.min_price_pre_close_time,
+            "price_pivots_pre_close": position.price_pivots_pre_close,  # Pivotes durante operación
             "potential_profit_usdt": round(potential_profit_usdt, 4),  # Ganancia potencial al TP
             "potential_loss_usdt": round(potential_loss_usdt, 4),      # Pérdida potencial al SL
             "strategy_case": position.strategy_case,
@@ -683,8 +769,12 @@ class PaperTradingAccount:
             "take_profit": position.take_profit,
             "executions": position.executions,  # Historial de ejecuciones (precio de cada orden)
             "closed_at": datetime.now().isoformat(),
+            # Precios extremos DESPUÉS del cierre (post-close) - se actualizan continuamente
             "min_price_post_close": close_price,  # Precio mínimo alcanzado después del cierre
+            "min_price_post_close_time": datetime.now().isoformat(),  # Tiempo del nuevo mínimo post-cierre
             "max_price_post_close": close_price,  # Precio máximo alcanzado después del cierre
+            "max_price_post_close_time": datetime.now().isoformat(),  # Tiempo del nuevo máximo post-cierre
+            "price_pivots_post_close": [],  # Array de pivotes post-close [{type, price, time}]
             "last_price_post_close": close_price, # Último precio tomado después del cierre
             "last_price_time": datetime.now().isoformat()  # Tiempo del último precio
         }

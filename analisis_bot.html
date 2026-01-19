@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador Pro V2 - Separación Realizado/Flotante</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8fafc;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 16px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .input-dense {
+            padding: 4px 8px;
+            font-size: 0.9rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            width: 100%;
+            transition: all 0.2s;
+        }
+
+        .input-dense:focus {
+            border-color: #3b82f6;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+
+        .badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.70rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .bg-win {
+            background-color: #dcfce7;
+            color: #15803d;
+        }
+
+        .bg-loss {
+            background-color: #fee2e2;
+            color: #b91c1c;
+        }
+
+        .bg-run {
+            background-color: #e0f2fe;
+            color: #0369a1;
+        }
+
+        .bg-neutral {
+            background-color: #f3f4f6;
+            color: #4b5563;
+        }
+        
+        .bg-ignored {
+            background-color: #fef3c7;
+            color: #92400e;
+        }
+
+        /* Headers para separar secciones */
+        .section-header {
+            font-size: 0.75rem;
+            font-weight: 800;
+            color: #64748b;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        /* Estilos para sliders */
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .slider-value {
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: #3b82f6;
+            text-align: right;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e2e8f0;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            border: none;
+        }
+        /* Toggle Switch */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 36px;
+            height: 18px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #cbd5e1;
+            transition: 0.3s;
+            border-radius: 18px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #ef4444;
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(18px);
+        }
+        .sl-disabled {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+        /* Botón reset individual */
+        .reset-btn {
+            font-size: 10px;
+            color: #94a3b8;
+            cursor: pointer;
+            padding: 0 2px;
+            border-radius: 2px;
+            transition: all 0.2s;
+        }
+        .reset-btn:hover {
+            color: #3b82f6;
+            background: #e2e8f0;
+        }
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        /* Botones de precisión < > */
+        .precision-controls {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 2px;
+        }
+        .precision-btn {
+            width: 20px;
+            height: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #64748b;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .precision-btn:hover {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        .precision-btn:active {
+            transform: scale(0.95);
+        }
+        .slider-with-controls {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .slider-with-controls input[type="range"] {
+            flex: 1;
+        }
+    </style>
+</head>
+
+<body class="p-4 text-slate-800">
+    <div class="max-w-screen-2xl mx-auto space-y-4">
+
+        <!-- Header -->
+        <div
+            class="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+            <div>
+                <h1 class="text-xl font-bold text-slate-800">🧪 Simulador Trading Bot <span
+                        class="text-blue-600">V2</span></h1>
+                <p class="text-xs text-slate-500">Análisis con separación estricta de PnL Realizado vs Flotante</p>
+            </div>
+            <div class="mt-2 md:mt-0">
+                <input type="file" id="fileInput" accept=".json"
+                    class="text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" />
+            </div>
+        </div>
+
+        <div id="dashboard" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+            <!-- CONTROLES (Izquierda) -->
+            <div class="lg:col-span-3 space-y-4">
+
+                <div class="card border-t-4 border-blue-600">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="section-header mb-0">Configuración por Caso</h3>
+                        <button onclick="resetDefaults()" class="text-xs text-blue-500 hover:underline">Restablecer</button>
+                    </div>
+
+                    <!-- Loop generation for inputs could be done via JS, but static is clearer for editing -->
+                    <div class="space-y-4">
+                        <!-- C1 -->
+                        <div class="p-2 bg-slate-50 rounded border border-slate-100">
+                            <div class="flex justify-between items-center mb-1">
+                                <div class="font-bold text-xs text-blue-700">CASO 1 & 1+</div>
+                                <div class="toggle-container">
+                                    <span class="text-[9px] text-slate-400">SL</span>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="sl_enabled_c1" onchange="toggleSL(1); runSimulation();" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="slider-container">
+                                    <div class="slider-header">
+                                        <label class="text-[10px] text-slate-500">TP Fib % <span class="text-red-400">(máx 61.8)</span></label>
+                                        <button onclick="resetSlider('tp_c1', 40)" class="reset-btn" title="Restablecer">↺</button>
+                                    </div>
+                                    <div class="slider-with-controls">
+                                        <button onclick="adjustSlider('tp_c1', -1)" class="precision-btn">&lt;</button>
+                                        <input type="range" id="tp_c1" value="40" min="0" max="61.8" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <button onclick="adjustSlider('tp_c1', 1)" class="precision-btn">&gt;</button>
+                                    </div>
+                                    <span class="slider-value" id="tp_c1_val">40</span>
+                                </div>
+                                <div class="slider-container" id="sl_container_c1">
+                                    <div class="slider-header">
+                                        <label class="text-[10px] text-slate-500">SL Fib % <span class="text-red-400">(mín 62)</span></label>
+                                        <button onclick="resetSlider('sl_c1', 110)" class="reset-btn" title="Restablecer">↺</button>
+                                    </div>
+                                    <div class="slider-with-controls">
+                                        <button onclick="adjustSlider('sl_c1', -1)" class="precision-btn">&lt;</button>
+                                        <input type="range" id="sl_c1" value="110" min="62" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <button onclick="adjustSlider('sl_c1', 1)" class="precision-btn">&gt;</button>
+                                    </div>
+                                    <span class="slider-value" id="sl_c1_val">110</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- C2 -->
+                        <div class="p-2 bg-slate-50 rounded border border-slate-100">
+                            <div class="flex justify-between items-center mb-1">
+                                <div class="font-bold text-xs text-yellow-600">CASO 2</div>
+                                <div class="toggle-container">
+                                    <span class="text-[9px] text-slate-400">SL</span>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="sl_enabled_c2" onchange="toggleSL(2); runSimulation();" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="slider-container">
+                                    <div class="slider-header">
+                                        <label class="text-[10px] text-slate-500">TP Fib % <span class="text-red-400">(máx 61.8)</span></label>
+                                        <button onclick="resetSlider('tp_c2', 45)" class="reset-btn" title="Restablecer">↺</button>
+                                    </div>
+                                    <div class="slider-with-controls">
+                                        <button onclick="adjustSlider('tp_c2', -1)" class="precision-btn">&lt;</button>
+                                        <input type="range" id="tp_c2" value="45" min="0" max="61.8" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <button onclick="adjustSlider('tp_c2', 1)" class="precision-btn">&gt;</button>
+                                    </div>
+                                    <span class="slider-value" id="tp_c2_val">45</span>
+                                </div>
+                                <div class="slider-container" id="sl_container_c2">
+                                    <div class="slider-header">
+                                        <label class="text-[10px] text-slate-500">SL Fib % <span class="text-red-400">(mín 69)</span></label>
+                                        <button onclick="resetSlider('sl_c2', 110)" class="reset-btn" title="Restablecer">↺</button>
+                                    </div>
+                                    <div class="slider-with-controls">
+                                        <button onclick="adjustSlider('sl_c2', -1)" class="precision-btn">&lt;</button>
+                                        <input type="range" id="sl_c2" value="110" min="69" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <button onclick="adjustSlider('sl_c2', 1)" class="precision-btn">&gt;</button>
+                                    </div>
+                                    <span class="slider-value" id="sl_c2_val">110</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- C3 -->
+                        <div class="p-2 bg-slate-50 rounded border border-slate-100">
+                            <div class="flex justify-between items-center mb-1">
+                                <div class="font-bold text-xs text-orange-600">CASO 3</div>
+                                <div class="toggle-container">
+                                    <span class="text-[9px] text-slate-400">SL</span>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="sl_enabled_c3" onchange="toggleSL(3); runSimulation();" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="slider-container">
+                                    <div class="slider-header">
+                                        <label class="text-[10px] text-slate-500">TP Fib % <span class="text-red-400">(máx 78.6)</span></label>
+                                        <button onclick="resetSlider('tp_c3', 62)" class="reset-btn" title="Restablecer">↺</button>
+                                    </div>
+                                    <div class="slider-with-controls">
+                                        <button onclick="adjustSlider('tp_c3', -1)" class="precision-btn">&lt;</button>
+                                        <input type="range" id="tp_c3" value="62" min="0" max="78.6" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <button onclick="adjustSlider('tp_c3', 1)" class="precision-btn">&gt;</button>
+                                    </div>
+                                    <span class="slider-value" id="tp_c3_val">62</span>
+                                </div>
+                                <div class="slider-container" id="sl_container_c3">
+                                    <div class="slider-header">
+                                        <label class="text-[10px] text-slate-500">SL Fib % <span class="text-red-400">(mín 79)</span></label>
+                                        <button onclick="resetSlider('sl_c3', 94)" class="reset-btn" title="Restablecer">↺</button>
+                                    </div>
+                                    <div class="slider-with-controls">
+                                        <button onclick="adjustSlider('sl_c3', -1)" class="precision-btn">&lt;</button>
+                                        <input type="range" id="sl_c3" value="94" min="79" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <button onclick="adjustSlider('sl_c3', 1)" class="precision-btn">&gt;</button>
+                                    </div>
+                                    <span class="slider-value" id="sl_c3_val">94</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- C4 -->
+                        <div class="p-2 bg-slate-50 rounded border border-slate-100">
+                            <div class="flex justify-between items-center mb-1">
+                                <div class="font-bold text-xs text-red-600">CASO 4</div>
+                                <div class="toggle-container">
+                                    <span class="text-[9px] text-slate-400">SL</span>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="sl_enabled_c4" onchange="toggleSL(4); runSimulation();" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="slider-container">
+                                    <div class="slider-header">
+                                        <label class="text-[10px] text-slate-500">TP Fib % <span class="text-red-400">(máx 75)</span></label>
+                                        <button onclick="resetSlider('tp_c4', 70)" class="reset-btn" title="Restablecer">↺</button>
+                                    </div>
+                                    <div class="slider-with-controls">
+                                        <button onclick="adjustSlider('tp_c4', -1)" class="precision-btn">&lt;</button>
+                                        <input type="range" id="tp_c4" value="70" min="0" max="75" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <button onclick="adjustSlider('tp_c4', 1)" class="precision-btn">&gt;</button>
+                                    </div>
+                                    <span class="slider-value" id="tp_c4_val">70</span>
+                                </div>
+                                <div class="slider-container" id="sl_container_c4">
+                                    <div class="slider-header">
+                                        <label class="text-[10px] text-slate-500">SL Fib % <span class="text-red-400">(mín 90)</span></label>
+                                        <button onclick="resetSlider('sl_c4', 93)" class="reset-btn" title="Restablecer">↺</button>
+                                    </div>
+                                    <div class="slider-with-controls">
+                                        <button onclick="adjustSlider('sl_c4', -1)" class="precision-btn">&lt;</button>
+                                        <input type="range" id="sl_c4" value="93" min="90" max="200" step="1" oninput="updateSliderValue(this); runSimulation();">
+                                        <button onclick="adjustSlider('sl_c4', 1)" class="precision-btn">&gt;</button>
+                                    </div>
+                                    <span class="slider-value" id="sl_c4_val">93</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-t-4 border-green-600">
+                    <h3 class="section-header">Filtros de Ganancia ($)</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="slider-container">
+                            <div class="slider-header">
+                                <label class="text-[10px] text-slate-500">Mínima (Excluir &lt; X)</label>
+                                <button onclick="resetSlider('filter_min_profit', 0)" class="reset-btn" title="Restablecer">↺</button>
+                            </div>
+                            <div class="slider-with-controls">
+                                <button onclick="adjustSlider('filter_min_profit', -1)" class="precision-btn">&lt;</button>
+                                <input type="range" id="filter_min_profit" value="0" min="0" max="5" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                <button onclick="adjustSlider('filter_min_profit', 1)" class="precision-btn">&gt;</button>
+                            </div>
+                            <span class="slider-value" id="filter_min_profit_val">0</span>
+                        </div>
+                        <div class="slider-container">
+                            <div class="slider-header">
+                                <label class="text-[10px] text-slate-500">Máxima (Excluir &gt; X)</label>
+                                <button onclick="resetSlider('filter_max_profit', 0)" class="reset-btn" title="Restablecer">↺</button>
+                            </div>
+                            <div class="slider-with-controls">
+                                <button onclick="adjustSlider('filter_max_profit', -1)" class="precision-btn">&lt;</button>
+                                <input type="range" id="filter_max_profit" value="0" min="0" max="5" step="0.1" oninput="updateSliderValue(this); runSimulation();">
+                                <button onclick="adjustSlider('filter_max_profit', 1)" class="precision-btn">&gt;</button>
+                            </div>
+                            <span class="slider-value" id="filter_max_profit_val">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RESULTADOS (Derecha) -->
+            <div class="lg:col-span-9 space-y-4">
+
+                <!-- KPIs Globales -->
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <!-- Realized -->
+                    <div class="card bg-white text-center border-b-4 border-blue-500">
+                        <div class="text-[10px] text-slate-400 font-bold uppercase">PnL Realizado (Cerradas)</div>
+                        <div class="text-2xl font-black mt-1" id="kpi_realized_pnl">$0.00</div>
+                        <div class="text-[10px] text-slate-400">TP Hits + SL Hits + Manual</div>
+                    </div>
+
+                    <!-- Floating -->
+                    <div class="card bg-white text-center border-b-4 border-slate-400">
+                        <div class="text-[10px] text-slate-400 font-bold uppercase">PnL Flotante (Abiertas)</div>
+                        <div class="text-2xl font-black mt-1 text-slate-600" id="kpi_floating_pnl">$0.00</div>
+                        <div class="text-[10px] text-slate-400">Operaciones corriendo</div>
+                    </div>
+
+                    <!-- Total -->
+                    <div class="card bg-white text-center border-b-4 border-purple-500">
+                        <div class="text-[10px] text-slate-400 font-bold uppercase">Total (Real + Flot)</div>
+                        <div class="text-2xl font-black mt-1" id="kpi_total_pnl">$0.00</div>
+                    </div>
+
+                    <!-- Win Rate -->
+                    <div class="card bg-white text-center">
+                        <div class="text-[10px] text-slate-400 font-bold uppercase">Win Rate (Cerradas)</div>
+                        <div class="text-2xl font-black mt-1 text-blue-600" id="kpi_winrate">0%</div>
+                        <div class="text-[10px] text-slate-400" id="kpi_trades_info">0/0</div>
+                    </div>
+
+                    <!-- Profit Factor -->
+                    <div class="card bg-white text-center">
+                        <div class="text-[10px] text-slate-400 font-bold uppercase">Profit Factor (Cerradas)</div>
+                        <div class="text-2xl font-black mt-1 text-emerald-600" id="kpi_pf">0.00</div>
+                    </div>
+                </div>
+
+                <!-- Tabla de Rendimiento por Caso -->
+                <div class="card overflow-x-auto p-0">
+                    <div class="p-4 border-b border-slate-100 bg-slate-50">
+                        <h3 class="font-bold text-slate-700 text-sm">📊 Rendimiento por Caso (Separado)</h3>
+                    </div>
+                    <table class="min-w-full text-sm text-left">
+                        <thead class="bg-white text-slate-500 text-xs uppercase font-bold border-b">
+                            <tr>
+                                <th class="p-3">Caso</th>
+                                <th class="p-3 text-center">Cerradas / Total</th>
+                                <th class="p-3 text-center">Win Rate (Cerradas)</th>
+                                <th class="p-3 text-center">PF Promedio</th>
+                                <th class="p-3 text-right">PnL Realizado</th>
+                                <th class="p-3 text-right">PnL Flotante</th>
+                                <th class="p-3 text-right">PnL Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="casesTableBody" class="divide-y divide-slate-100">
+                            <!-- JS populated -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Tabla Detallada -->
+                <div class="card overflow-x-auto p-0">
+                    <div class="p-4 border-b border-slate-100 bg-slate-50 flex flex-wrap justify-between items-center gap-2">
+                        <h3 class="font-bold text-slate-700 text-sm">📜 Lista de Operaciones Detallada</h3>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-[10px] text-slate-500">Filtrar:</span>
+                            <button onclick="setCasePriority(0)" id="btnCaseAll" class="case-btn text-xs px-2 py-1 rounded border border-slate-300 bg-slate-800 text-white">Todos</button>
+                            <button onclick="setCasePriority(1)" id="btnCase1" class="case-btn text-xs px-2 py-1 rounded border border-blue-300 bg-white text-blue-700 hover:bg-blue-50">C1</button>
+                            <button onclick="setCasePriority(11)" id="btnCase11" class="case-btn text-xs px-2 py-1 rounded border border-blue-300 bg-white text-blue-700 hover:bg-blue-50">C1++</button>
+                            <button onclick="setCasePriority(2)" id="btnCase2" class="case-btn text-xs px-2 py-1 rounded border border-yellow-300 bg-white text-yellow-700 hover:bg-yellow-50">C2</button>
+                            <button onclick="setCasePriority(3)" id="btnCase3" class="case-btn text-xs px-2 py-1 rounded border border-orange-300 bg-white text-orange-700 hover:bg-orange-50">C3</button>
+                            <button onclick="setCasePriority(4)" id="btnCase4" class="case-btn text-xs px-2 py-1 rounded border border-red-300 bg-white text-red-700 hover:bg-red-50">C4</button>
+                            <span class="mx-1 text-slate-300">|</span>
+                            <span class="text-[10px] text-slate-500">Ordenar:</span>
+                            <button onclick="setSortMode('none')" id="btnSortNone" class="sort-btn text-xs px-2 py-1 rounded border border-slate-300 bg-slate-800 text-white">Por defecto</button>
+                            <button onclick="setSortMode('pnl_real')" id="btnSortPnlReal" class="sort-btn text-xs px-2 py-1 rounded border border-green-300 bg-white text-green-700 hover:bg-green-50">PnL Real</button>
+                            <button onclick="setSortMode('pnl_float')" id="btnSortPnlFloat" class="sort-btn text-xs px-2 py-1 rounded border border-blue-300 bg-white text-blue-700 hover:bg-blue-50">PnL Flot</button>
+                        </div>
+                    </div>
+                    <div class="px-4 py-2 bg-slate-100 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs text-slate-500" id="filter_stats_text"></span>
+                        </div>
+                        <div class="flex items-center gap-4 flex-wrap">
+                            <span class="text-[10px] text-slate-500">Ignorar caso:</span>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="ignoreC1" onchange="runSimulation()" class="w-3 h-3 rounded">
+                                <span class="text-xs text-blue-600">C1</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="ignoreC11" onchange="runSimulation()" class="w-3 h-3 rounded">
+                                <span class="text-xs text-blue-600">C1++</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="ignoreC2" onchange="runSimulation()" class="w-3 h-3 rounded">
+                                <span class="text-xs text-yellow-600">C2</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="ignoreC3" onchange="runSimulation()" class="w-3 h-3 rounded">
+                                <span class="text-xs text-orange-600">C3</span>
+                            </label>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="ignoreC4" onchange="runSimulation()" class="w-3 h-3 rounded">
+                                <span class="text-xs text-red-600">C4</span>
+                            </label>
+                            <span class="mx-1 text-slate-300">|</span>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="showIgnored" onchange="runSimulation()" class="w-4 h-4 rounded border-slate-300">
+                                <span class="text-xs text-slate-600">Ver ignorados</span>
+                            </label>
+                        </div>
+                    </div>
+                    <table class="min-w-full text-xs text-left whitespace-nowrap">
+                        <thead class="bg-slate-800 text-slate-200">
+                            <tr>
+                                <th class="p-3">Origen</th>
+                                <th class="p-3">Par</th>
+                                <th class="p-3">Caso</th>
+                                <th class="p-3">Entrada</th>
+                                <th class="p-3 text-center">New TP / SL</th>
+                                <th class="p-3 text-center">Estado Simulado</th>
+                                <th class="p-3 text-center">R:R</th>
+                                <th class="p-3 text-center">PF Trade</th>
+                                <th class="p-3 text-right">PnL Realizado</th>
+                                <th class="p-3 text-right">PnL Flotante</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradesTableBody" class="divide-y divide-slate-100 bg-white">
+                            <!-- JS populated -->
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let rawData = null;
+
+        // Función para ajustar slider con precisión
+        function adjustSlider(sliderId, delta) {
+            const slider = document.getElementById(sliderId);
+            if (slider && !slider.disabled) {
+                const min = parseFloat(slider.min);
+                const max = parseFloat(slider.max);
+                const step = parseFloat(slider.step) || 1;
+                let newValue = parseFloat(slider.value) + (delta * step);
+                newValue = Math.max(min, Math.min(max, newValue));
+                slider.value = newValue;
+                updateSliderValue(slider);
+                runSimulation();
+            }
+        }
+
+        // Función para restablecer un slider individual
+        function resetSlider(sliderId, defaultValue) {
+            const slider = document.getElementById(sliderId);
+            if (slider) {
+                slider.value = defaultValue;
+                updateSliderValue(slider);
+                runSimulation();
+            }
+        }
+
+        // Función para actualizar el valor mostrado del slider
+        function updateSliderValue(slider) {
+            const valSpan = document.getElementById(slider.id + '_val');
+            if (valSpan) {
+                valSpan.textContent = slider.value;
+            }
+        }
+
+        // Función para activar/desactivar SL por caso
+        function toggleSL(caseNum) {
+            const checkbox = document.getElementById(`sl_enabled_c${caseNum}`);
+            const slider = document.getElementById(`sl_c${caseNum}`);
+            const valSpan = document.getElementById(`sl_c${caseNum}_val`);
+            const container = document.getElementById(`sl_container_c${caseNum}`);
+            
+            if (checkbox.checked) {
+                // Activar SL
+                slider.disabled = false;
+                slider.classList.remove('sl-disabled');
+                container.querySelectorAll('label, span, button').forEach(el => el.classList.remove('sl-disabled'));
+                valSpan.textContent = slider.value;
+            } else {
+                // Desactivar SL
+                slider.disabled = true;
+                slider.classList.add('sl-disabled');
+                container.querySelectorAll('label, span, button').forEach(el => el.classList.add('sl-disabled'));
+                valSpan.textContent = 'OFF';
+            }
+        }
+
+        // Variable para almacenar el caso prioritario
+        let casePriority = 0; // 0 = todos, 1, 11, 2, 3, 4
+
+        // Variable para almacenar el modo de ordenamiento
+        let sortMode = 'none'; // 'none', 'pnl_real', 'pnl_float'
+
+        // Función para establecer modo de ordenamiento
+        function setSortMode(mode) {
+            sortMode = mode;
+            // Actualizar estilos de botones de ordenamiento
+            document.querySelectorAll('.sort-btn').forEach(btn => {
+                btn.classList.remove('bg-slate-800', 'text-white');
+                btn.classList.add('bg-white');
+            });
+            const btnId = mode === 'none' ? 'btnSortNone' : (mode === 'pnl_real' ? 'btnSortPnlReal' : 'btnSortPnlFloat');
+            const activeBtn = document.getElementById(btnId);
+            if (activeBtn) {
+                activeBtn.classList.remove('bg-white');
+                activeBtn.classList.add('bg-slate-800', 'text-white');
+            }
+            runSimulation();
+        }
+
+        // Función para establecer prioridad de caso
+        function setCasePriority(caseNum) {
+            casePriority = caseNum;
+            // Actualizar estilos de botones
+            document.querySelectorAll('.case-btn').forEach(btn => {
+                btn.classList.remove('bg-slate-800', 'text-white');
+                btn.classList.add('bg-white');
+            });
+            const btnId = caseNum === 0 ? 'btnCaseAll' : `btnCase${caseNum}`;
+            const activeBtn = document.getElementById(btnId);
+            if (activeBtn) {
+                activeBtn.classList.remove('bg-white');
+                activeBtn.classList.add('bg-slate-800', 'text-white');
+            }
+            runSimulation();
+        }
+
+        // Función para restablecer valores por defecto
+        function resetDefaults() {
+            // Activar todos los SL por defecto
+            [1, 2, 3, 4].forEach(c => {
+                document.getElementById(`sl_enabled_c${c}`).checked = true;
+                toggleSL(c);
+            });
+            // TP Defaults
+            document.getElementById('tp_c1').value = 40;
+            document.getElementById('tp_c2').value = 45;
+            document.getElementById('tp_c3').value = 62;
+            document.getElementById('tp_c4').value = 70;
+            // SL Defaults (valores óptimos de la imagen)
+            document.getElementById('sl_c1').value = 110;
+            document.getElementById('sl_c2').value = 110;
+            document.getElementById('sl_c3').value = 94;
+            document.getElementById('sl_c4').value = 93;
+            // Filters
+            document.getElementById('filter_min_profit').value = 0;
+            document.getElementById('filter_max_profit').value = 0;
+            // Prioridad de caso
+            setCasePriority(0);
+            setSortMode('none');
+            document.getElementById('showIgnored').checked = false;
+            // Desmarcar checkboxes de ignorar casos
+            document.getElementById('ignoreC1').checked = false;
+            document.getElementById('ignoreC11').checked = false;
+            document.getElementById('ignoreC2').checked = false;
+            document.getElementById('ignoreC3').checked = false;
+            document.getElementById('ignoreC4').checked = false;
+            // Actualizar valores mostrados
+            document.querySelectorAll('input[type="range"]').forEach(s => updateSliderValue(s));
+            runSimulation();
+        }
+
+        // Inicializar valores de sliders al cargar
+        document.addEventListener('DOMContentLoaded', function() {
+            const sliders = document.querySelectorAll('input[type="range"]');
+            sliders.forEach(slider => updateSliderValue(slider));
+            
+            // Auto-cargar trades.json si estamos en servidor web
+            autoLoadTradesJson();
+        });
+
+        // Variable para indicar si estamos en modo servidor web
+        let isWebServer = false;
+
+        async function autoLoadTradesJson() {
+            // Intentar cargar trades.json automáticamente
+            try {
+                const response = await fetch('/trades.json?t=' + Date.now());
+                if (response.ok) {
+                    rawData = await response.json();
+                    document.getElementById('dashboard').classList.remove('hidden');
+                    runSimulation();
+                    console.log('✅ trades.json cargado');
+                    isWebServer = true;
+                    
+                    // Mostrar botón de refresh manual
+                    showRefreshButton();
+                }
+            } catch (e) {
+                console.log('ℹ️ No se pudo auto-cargar trades.json, usa el selector de archivo');
+            }
+        }
+
+        function showRefreshButton() {
+            // Crear botón de refresh manual si no existe
+            if (!document.getElementById('refreshBtn')) {
+                const fileInput = document.getElementById('fileInput').parentElement;
+                const btn = document.createElement('button');
+                btn.id = 'refreshBtn';
+                btn.className = 'ml-2 px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600';
+                btn.innerHTML = '🔄 Actualizar';
+                btn.onclick = manualRefresh;
+                fileInput.appendChild(btn);
+            }
+        }
+
+        async function manualRefresh() {
+            const btn = document.getElementById('refreshBtn');
+            btn.innerHTML = '⏳ Cargando...';
+            btn.disabled = true;
+            
+            await autoLoadTradesJson();
+            
+            btn.innerHTML = '🔄 Actualizar';
+            btn.disabled = false;
+        }
+
+        document.getElementById('fileInput').addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    rawData = JSON.parse(e.target.result);
+                    document.getElementById('dashboard').classList.remove('hidden');
+                    runSimulation();
+                } catch (err) { alert("Error al leer el archivo JSON."); }
+            };
+            reader.readAsText(file);
+        });
+
+        function getCaseSettings(caseId) {
+            let c = (caseId == 11) ? 1 : caseId;
+            if (![1, 2, 3, 4].includes(c)) c = 1;
+
+            let tp = (parseFloat(document.getElementById(`tp_c${c}`).value) || 0) / 100;
+            
+            // Verificar si SL está habilitado
+            const slEnabled = document.getElementById(`sl_enabled_c${c}`).checked;
+            let sl = slEnabled ? (parseFloat(document.getElementById(`sl_c${c}`).value) || 0) / 100 : 0;
+
+            // Aplicar límites según caso
+            const limits = {
+                1: { tpMax: 0.618, slMin: 0.62 },   // C1 y C1+: TP máx 61.8%, SL mín 62%
+                2: { tpMax: 0.618, slMin: 0.69 },   // C2: TP máx 61.8%, SL mín 69%
+                3: { tpMax: 0.786, slMin: 0.79 },   // C3: TP máx 78.6%, SL mín 79%
+                4: { tpMax: 0.75, slMin: 0.90 }     // C4: TP máx 75%, SL mín 90%
+            };
+
+            const limit = limits[c] || limits[1];
+
+            // Validar TP no exceda el máximo
+            if (tp > limit.tpMax) tp = limit.tpMax;
+
+            // Validar SL no sea menor que el mínimo (si SL > 0)
+            if (sl > 0 && sl < limit.slMin) sl = limit.slMin;
+
+            return { tp, sl, tpMax: limit.tpMax, slMin: limit.slMin };
+        }
+
+        function runSimulation() {
+            if (!rawData) return;
+
+            const minProfitReq = parseFloat(document.getElementById('filter_min_profit').value) || 0;
+            const maxProfitReq = parseFloat(document.getElementById('filter_max_profit').value) || 0;
+            const showIgnored = document.getElementById('showIgnored').checked;
+            
+            // Obtener casos ignorados
+            const ignoredCases = {
+                1: document.getElementById('ignoreC1').checked,
+                11: document.getElementById('ignoreC11').checked,
+                2: document.getElementById('ignoreC2').checked,
+                3: document.getElementById('ignoreC3').checked,
+                4: document.getElementById('ignoreC4').checked
+            };
+
+            // Estructura de Datos
+            let stats = {
+                realized: 0, floating: 0,
+                wins: 0, losses: 0, closedTrades: 0, openTrades: 0,
+                grossWin: 0, grossLoss: 0, ignored: 0, totalTrades: 0, ignoredByCase: 0,
+                pfSum: 0, pfCount: 0  // Para promedio de PF
+            };
+
+            let caseStats = {};
+            [1, 11, 2, 3, 4].forEach(i => {
+                caseStats[i] = {
+                    total: 0, closed: 0, open: 0,
+                    wins: 0, losses: 0,
+                    realizedPnl: 0, floatingPnl: 0,
+                    grossWin: 0, grossLoss: 0,
+                    pfSum: 0, pfCount: 0  // Para promedio de PF por caso
+                };
+            });
+
+            const tbody = document.getElementById('tradesTableBody');
+            tbody.innerHTML = '';
+
+            // 1. Unificar Trades
+            let allTrades = [];
+            // Historial
+            if (rawData.history) rawData.history.forEach(t => {
+                t._src = 'HIST';
+                // Para HIST: calcular el precio máximo DURANTE la operación usando min_pnl
+                // min_pnl negativo significa pérdida (precio subió en SHORT)
+                let impliedMaxDuring = t.entry_price;
+                if (t.min_pnl !== undefined && t.min_pnl < 0) {
+                    impliedMaxDuring = t.entry_price - (t.min_pnl / t.quantity);
+                }
+                // Para SL: usar SOLO el precio máximo DURANTE la operación
+                t._max = impliedMaxDuring;
+                
+                // Para TP: usar el precio mínimo DURANTE y POST operación
+                // Esto permite simular TPs más bajos que el original
+                let impliedMinDuring = t.entry_price;
+                if (t.max_pnl !== undefined && t.max_pnl > 0) {
+                    impliedMinDuring = t.entry_price - (t.max_pnl / t.quantity);
+                }
+                // Combinar el mínimo durante operación con el mínimo post-close
+                let minPostClose = t.min_price_post_close || t.close_price;
+                t._min = Math.min(impliedMinDuring, t.close_price, minPostClose);
+                
+                allTrades.push(t);
+            });
+            // Abiertas
+            if (rawData.open_positions) Object.values(rawData.open_positions).forEach(t => {
+                t._src = 'OPEN';
+                // Calcular riesgo maximo basado en drawdown
+                let impliedMax = t.entry_price;
+                if (t.min_pnl !== undefined && t.min_pnl < 0) {
+                    impliedMax = t.entry_price - (t.min_pnl / t.quantity); // Short logic
+                }
+                t._max = Math.max(impliedMax, t.current_price);
+
+                let impliedMin = t.entry_price;
+                if (t.max_pnl !== undefined && t.max_pnl > 0) {
+                    impliedMin = t.entry_price - (t.max_pnl / t.quantity);
+                }
+                t._min = Math.min(impliedMin, t.current_price);
+
+                if (!t.fib_high) t.fib_high = t.entry_price * 1.05;
+                if (!t.fib_low) t.fib_low = t.entry_price * 0.95;
+                allTrades.push(t);
+            });
+
+            // 2. Procesar trades y almacenar datos para renderizado
+            let processedTrades = [];
+            let ignoredTrades = [];
+            
+            allTrades.forEach(t => {
+                stats.totalTrades++;
+                let cID = t.strategy_case || 1;
+                // Mantener case 11 separado, no mapear a 1
+                if (!caseStats[cID]) cID = 1;
+                
+                // Verificar si el caso está ignorado
+                if (ignoredCases[cID]) {
+                    stats.ignoredByCase++;
+                    if (showIgnored) {
+                        const s = getCaseSettings(cID);
+                        const range = t.fib_high - t.fib_low;
+                        const tpPrice = t.fib_low + (range * s.tp);
+                        let slPrice = Infinity;
+                        if (s.sl > 0) slPrice = t.fib_low + (range * s.sl);
+                        
+                        ignoredTrades.push({
+                            t, cID, s, tpPrice, slPrice, slIsValid: true,
+                            status: "CASO IGNORADO 🚫", 
+                            rPnl: 0, fPnl: 0, 
+                            css: "bg-ignored", 
+                            tradePF: '-', pfDisplay: '-', 
+                            rrDisplay: '-', rrValue: 0,
+                            potProfit: 0,
+                            isIgnored: true
+                        });
+                    }
+                    return;
+                }
+
+                const s = getCaseSettings(cID);
+                const range = t.fib_high - t.fib_low;
+
+                const tpPrice = t.fib_low + (range * s.tp);
+                let slPrice = Infinity;
+                if (s.sl > 0) slPrice = t.fib_low + (range * s.sl);
+
+                // Check Filtros (Ganancia Potencial al TP)
+                const potProfit = (t.entry_price - tpPrice) * t.quantity;
+                const isIgnored = potProfit < minProfitReq || (maxProfitReq > 0 && potProfit > maxProfitReq);
+                
+                if (isIgnored) {
+                    stats.ignored++;
+                    if (showIgnored) {
+                        ignoredTrades.push({
+                            t, cID, s, tpPrice, slPrice, slIsValid: true,
+                            status: "IGNORADO 🚫", 
+                            rPnl: 0, fPnl: 0, 
+                            css: "bg-ignored", 
+                            tradePF: '-', pfDisplay: '-', 
+                            rrDisplay: '-', rrValue: 0,
+                            potProfit: potProfit,
+                            isIgnored: true
+                        });
+                    }
+                    return;
+                }
+
+                // Lógica Simulación
+                let status = "", rPnl = 0, fPnl = 0, css = "";
+                let isClosed = false;
+                let tradePF = 0;  // Profit Factor por operación
+
+                // Prioridad: 1. SL Hit (Pesimista), 2. TP Hit, 3. Manual/Running
+                // VALIDAR SL: Para SHORT, SL debe estar ARRIBA del entry (slPrice > entry_price)
+                // Si SL está debajo del entry, es inválido y se ignora
+                const slIsValid = slPrice > t.entry_price;
+                const hitSL = (s.sl > 0) && slIsValid && (t._max >= slPrice);
+                const hitTP = t._min <= tpPrice;
+
+                // Calcular pérdida potencial al SL para PF (solo si SL es válido)
+                const potLoss = (s.sl > 0 && slIsValid) ? Math.abs((slPrice - t.entry_price) * t.quantity) : 0;
+
+                if (hitSL) {
+                    // Cierra por SL (Realized Loss)
+                    status = "SL HIT ❌";
+                    rPnl = (t.entry_price - slPrice) * t.quantity;
+                    isClosed = true;
+                    css = "bg-loss";
+                    tradePF = 0;  // Pérdida = PF 0
+                } else if (hitTP) {
+                    // Cierra por TP (Realized Win)
+                    status = "TP HIT ✅";
+                    rPnl = potProfit;
+                    isClosed = true;
+                    css = "bg-win";
+                    // PF = Ganancia / Riesgo (pérdida potencial al SL)
+                    tradePF = potLoss > 0 ? (potProfit / potLoss) : (potProfit > 0 ? Infinity : 0);
+                } else {
+                    // No tocó limites nuevos
+                    if (t._src === 'HIST') {
+                        // Ya cerró manualmente en historial
+                        status = "MANUAL CLOSED";
+                        rPnl = t.pnl; // PnL original
+                        isClosed = true;
+                        css = "bg-neutral";
+                        tradePF = potLoss > 0 ? (Math.abs(rPnl) / potLoss) : 0;
+                        if (rPnl < 0) tradePF = 0;  // Si fue pérdida, PF = 0
+                    } else {
+                        // Sigue abierta
+                        status = "RUNNING ⏳";
+                        fPnl = (t.entry_price - t.current_price) * t.quantity; // Flotante actual
+                        isClosed = false;
+                        css = "bg-run";
+                        tradePF = '-';  // No cerrada, sin PF
+                    }
+                }
+
+                // Acumuladores
+                caseStats[cID].total++;
+                if (isClosed) {
+                    stats.closedTrades++;
+                    stats.realized += rPnl;
+
+                    caseStats[cID].closed++;
+                    caseStats[cID].realizedPnl += rPnl;
+
+                    if (rPnl > 0) {
+                        stats.wins++; stats.grossWin += rPnl;
+                        caseStats[cID].wins++; caseStats[cID].grossWin += rPnl;
+                        // Sumar PF para promedios (solo ganadores con PF finito)
+                        if (typeof tradePF === 'number' && isFinite(tradePF)) {
+                            stats.pfSum += tradePF;
+                            stats.pfCount++;
+                            caseStats[cID].pfSum += tradePF;
+                            caseStats[cID].pfCount++;
+                        }
+                    } else {
+                        stats.losses++; stats.grossLoss += Math.abs(rPnl);
+                        caseStats[cID].losses++; caseStats[cID].grossLoss += Math.abs(rPnl);
+                    }
+                } else {
+                    stats.openTrades++;
+                    stats.floating += fPnl;
+
+                    caseStats[cID].open++;
+                    caseStats[cID].floatingPnl += fPnl;
+                }
+
+                // Formatear PF para mostrar
+                let pfDisplay = '-';
+                if (typeof tradePF === 'number') {
+                    pfDisplay = isFinite(tradePF) ? tradePF.toFixed(2) : '∞';
+                }
+
+                // Calcular R:R (Risk:Reward) - Riesgo (distancia a SL) vs Beneficio (distancia a TP)
+                // Solo calcular si SL es válido (arriba del entry para SHORT)
+                const riskDistance = (s.sl > 0 && slIsValid) ? Math.abs(slPrice - t.entry_price) : 0;
+                const rewardDistance = Math.abs(t.entry_price - tpPrice);
+                let rrDisplay = '-';
+                let rrValue = 0;
+                if (riskDistance > 0 && rewardDistance > 0) {
+                    rrValue = rewardDistance / riskDistance;
+                    rrDisplay = `1:${rrValue.toFixed(2)}`;
+                } else if (rewardDistance > 0) {
+                    rrDisplay = '1:∞';
+                    rrValue = Infinity;
+                }
+
+                // Almacenar datos procesados para ordenamiento
+                processedTrades.push({
+                    t, cID, s, tpPrice, slPrice, slIsValid, status, rPnl, fPnl, css, tradePF, pfDisplay, rrDisplay, rrValue, isIgnored: false
+                });
+            });
+
+            // 3. Ordenar según prioridad de caso o por PnL
+            if (sortMode === 'pnl_real') {
+                // Ordenar por PnL Realizado (mayor a menor)
+                processedTrades.sort((a, b) => b.rPnl - a.rPnl);
+            } else if (sortMode === 'pnl_float') {
+                // Ordenar por PnL Flotante (mayor a menor)
+                processedTrades.sort((a, b) => b.fPnl - a.fPnl);
+            } else if (casePriority !== 0) {
+                // Mostrar primero el caso seleccionado
+                processedTrades.sort((a, b) => {
+                    const aIsPriority = a.cID === casePriority ? 0 : 1;
+                    const bIsPriority = b.cID === casePriority ? 0 : 1;
+                    return aIsPriority - bIsPriority;
+                });
+            }
+
+            // Añadir trades ignorados al final si showIgnored está activo
+            if (showIgnored && ignoredTrades.length > 0) {
+                processedTrades = processedTrades.concat(ignoredTrades);
+            }
+
+            // 4. Renderizar tabla
+            processedTrades.forEach(({ t, cID, s, tpPrice, slPrice, slIsValid, status, rPnl, fPnl, css, tradePF, pfDisplay, rrDisplay, rrValue, isIgnored, potProfit }) => {
+                const caseDisplay = t.strategy_case == 11 ? 'C1++' : `C${t.strategy_case}`;
+                const rowClass = isIgnored ? 'bg-amber-50 opacity-60' : 'hover:bg-slate-50';
+                // Mostrar SL con indicador si es inválido (SL debajo del entry)
+                const slDisplay = s.sl > 0 
+                    ? (slIsValid !== false ? slPrice.toFixed(4) : `${slPrice.toFixed(4)} ⚠️`) 
+                    : '∞';
+                tbody.innerHTML += `
+                    <tr class="${rowClass} border-b border-slate-100">
+                        <td class="p-2"><span class="badge ${t._src === 'OPEN' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}">${t._src}</span></td>
+                        <td class="p-2 font-bold">${t.symbol}</td>
+                        <td class="p-2 text-center"><span class="badge bg-slate-200 text-slate-700">${caseDisplay}</span></td>
+                        <td class="p-2 text-slate-500">${t.entry_price.toFixed(5)}</td>
+                        <td class="p-2 text-center text-[10px]">
+                            <div class="text-green-600">TP: ${tpPrice.toFixed(4)}</div>
+                            <div class="text-red-400">SL: ${slDisplay}</div>
+                        </td>
+                        <td class="p-2 text-center"><span class="badge ${css}">${status}${isIgnored ? ` ($${potProfit.toFixed(2)})` : ''}</span></td>
+                        <td class="p-2 text-center font-mono font-bold ${rrValue >= 1 ? 'text-green-600' : 'text-amber-600'}">${rrDisplay}</td>
+                        <td class="p-2 text-center font-mono font-bold ${typeof tradePF === 'number' && tradePF > 1 ? 'text-green-600' : 'text-slate-500'}">${pfDisplay}</td>
+                        <td class="p-2 text-right font-mono font-bold ${rPnl === 0 ? 'text-slate-300' : (rPnl > 0 ? 'text-green-600' : 'text-red-600')}">${rPnl !== 0 ? rPnl.toFixed(2) : '-'}</td>
+                        <td class="p-2 text-right font-mono font-bold ${fPnl === 0 ? 'text-slate-300' : (fPnl > 0 ? 'text-blue-600' : 'text-orange-500')}">${fPnl !== 0 ? fPnl.toFixed(2) : '-'}</td>
+                    </tr>
+                `;
+            });
+
+            // 5. Renderizar Tabla por Caso - Incluyendo C1++ (caso 11) separado
+            const caseBody = document.getElementById('casesTableBody');
+            caseBody.innerHTML = '';
+            const caseOrder = [1, 11, 2, 3, 4];  // Orden de casos incluyendo C1++ (11)
+            const caseNames = { 1: 'Caso 1', 11: 'Caso 1++', 2: 'Caso 2', 3: 'Caso 3', 4: 'Caso 4' };
+
+            caseOrder.forEach(i => {
+                const s = caseStats[i];
+                if (s.total === 0) return;
+
+                const wr = s.closed > 0 ? ((s.wins / s.closed) * 100).toFixed(1) + '%' : '-';
+                // PF promedio por caso (solo de trades ganadores)
+                const pfAvg = s.pfCount > 0 ? (s.pfSum / s.pfCount).toFixed(2) : '-';
+                const totalC = s.realizedPnl + s.floatingPnl;
+
+                caseBody.innerHTML += `
+                    <tr>
+                        <td class="p-3 font-bold text-slate-700">${caseNames[i]}</td>
+                        <td class="p-3 text-center text-slate-600">${s.closed} <span class="text-slate-400 text-xs">/ ${s.total}</span></td>
+                        <td class="p-3 text-center font-bold text-blue-600">${wr}</td>
+                        <td class="p-3 text-center font-mono font-bold text-purple-600">${pfAvg}</td>
+                        <td class="p-3 text-right font-bold ${s.realizedPnl >= 0 ? 'text-green-600' : 'text-red-600'}">$${s.realizedPnl.toFixed(2)}</td>
+                        <td class="p-3 text-right font-bold ${s.floatingPnl >= 0 ? 'text-blue-600' : 'text-orange-500'}">$${s.floatingPnl.toFixed(2)}</td>
+                        <td class="p-3 text-right font-black ${totalC >= 0 ? 'text-slate-800' : 'text-red-600'}">$${totalC.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+
+            // Fila de TOTAL/PROMEDIO GENERAL
+            const totalRealizedAll = Object.values(caseStats).reduce((sum, s) => sum + s.realizedPnl, 0);
+            const totalFloatingAll = Object.values(caseStats).reduce((sum, s) => sum + s.floatingPnl, 0);
+            const totalAll = totalRealizedAll + totalFloatingAll;
+            const pfAvgGeneral = stats.pfCount > 0 ? (stats.pfSum / stats.pfCount).toFixed(2) : '-';
+
+            caseBody.innerHTML += `
+                <tr class="bg-slate-100 font-bold">
+                    <td class="p-3 text-slate-800">📊 TOTAL</td>
+                    <td class="p-3 text-center text-slate-700">${stats.closedTrades} <span class="text-slate-400 text-xs">/ ${stats.closedTrades + stats.openTrades}</span></td>
+                    <td class="p-3 text-center text-blue-700">${stats.closedTrades > 0 ? ((stats.wins / stats.closedTrades) * 100).toFixed(1) : 0}%</td>
+                    <td class="p-3 text-center font-mono text-purple-700">${pfAvgGeneral}</td>
+                    <td class="p-3 text-right ${totalRealizedAll >= 0 ? 'text-green-700' : 'text-red-700'}">$${totalRealizedAll.toFixed(2)}</td>
+                    <td class="p-3 text-right ${totalFloatingAll >= 0 ? 'text-blue-700' : 'text-orange-600'}">$${totalFloatingAll.toFixed(2)}</td>
+                    <td class="p-3 text-right ${totalAll >= 0 ? 'text-slate-900' : 'text-red-700'}">$${totalAll.toFixed(2)}</td>
+                </tr>
+            `;
+
+            // 4. KPIs Globales
+            const gWR = stats.closedTrades > 0 ? ((stats.wins / stats.closedTrades) * 100).toFixed(1) + '%' : '0%';
+            const gPF = stats.grossLoss > 0 ? (stats.grossWin / stats.grossLoss).toFixed(2) : (stats.grossWin > 0 ? '∞' : '0.00');
+            const gTotal = stats.realized + stats.floating;
+
+            document.getElementById('kpi_realized_pnl').innerText = `$${stats.realized.toFixed(2)}`;
+            document.getElementById('kpi_realized_pnl').className = `text-2xl font-black mt-1 ${stats.realized >= 0 ? 'text-green-600' : 'text-red-600'}`;
+
+            document.getElementById('kpi_floating_pnl').innerText = `$${stats.floating.toFixed(2)}`;
+            document.getElementById('kpi_floating_pnl').className = `text-2xl font-black mt-1 ${stats.floating >= 0 ? 'text-blue-600' : 'text-orange-500'}`;
+
+            document.getElementById('kpi_total_pnl').innerText = `$${gTotal.toFixed(2)}`;
+            document.getElementById('kpi_total_pnl').className = `text-2xl font-black mt-1 ${gTotal >= 0 ? 'text-slate-800' : 'text-red-600'}`;
+
+            document.getElementById('kpi_winrate').innerText = gWR;
+            document.getElementById('kpi_trades_info').innerText = `${stats.closedTrades} Cerradas / ${stats.totalTrades || stats.closedTrades + stats.openTrades}`;
+
+            document.getElementById('kpi_pf').innerText = gPF;
+            const totalIgnored = stats.ignored + stats.ignoredByCase;
+            let ignoredDetails = [];
+            if (stats.ignoredByCase > 0) ignoredDetails.push(`${stats.ignoredByCase} caso`);
+            if (stats.ignored > 0) ignoredDetails.push(`${stats.ignored} filtro`);
+            document.getElementById('filter_stats_text').innerText = `Ignoradas: ${totalIgnored} de ${stats.totalTrades}${ignoredDetails.length ? ' (' + ignoredDetails.join(', ') + ')' : ''}`;
+        }
+    </script>
+</body>
+
+</html>

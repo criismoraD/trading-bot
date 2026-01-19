@@ -114,6 +114,25 @@ class TelegramBot:
             logger.error(f"Error en send_document: {e}")
             return False
     
+    async def get_ngrok_url(self) -> Optional[str]:
+        """Obtener URL pública de ngrok si está activo"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                # ngrok expone su API local en el puerto 4040
+                async with session.get("http://127.0.0.1:4040/api/tunnels", timeout=2) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        tunnels = data.get("tunnels", [])
+                        for tunnel in tunnels:
+                            if tunnel.get("proto") == "https":
+                                return tunnel.get("public_url")
+                        # Si no hay HTTPS, usar HTTP
+                        if tunnels:
+                            return tunnels[0].get("public_url")
+        except Exception as e:
+            logger.debug(f"ngrok no disponible: {e}")
+        return None
+    
     async def broadcast_message(self, text: str):
         """Enviar mensaje a todos los chats autorizados"""
         if not AUTHORIZED_CHATS:
@@ -144,12 +163,15 @@ class TelegramBot:
         pnl_emoji = "🟢" if status['total_unrealized_pnl'] >= 0 else "🔴"
         balance_emoji = "📈" if self.account.balance >= self.account.initial_balance else "📉"
         
-        # Por caso (stats)
-        cases = {1: [], 2: [], 3: [], 4: []}
+        # Por caso (stats) - incluir caso 11 (C1++) separado
+        cases = {1: [], 2: [], 3: [], 4: [], 11: []}
         for t in history:
             case = t.get('strategy_case', 0)
             if case in cases:
                 cases[case].append(t.get('pnl', 0))
+        
+        # Balance de Margin = balance - PnL no realizado
+        margin_balance = status['balance'] - status['total_unrealized_pnl']
         
         report = f"""
 <b>📊 REPORTE COMPLETO</b>
@@ -159,6 +181,7 @@ class TelegramBot:
 <b>💰 CUENTA</b>
 ├ Balance: <code>${status['balance']:.2f}</code> {balance_emoji}
 ├ PnL Flotante: <code>${status['total_unrealized_pnl']:.4f}</code> {pnl_emoji}
+├ Balance Margin: <code>${margin_balance:.2f}</code>
 └ Margen Disp.: <code>${status['available_margin']:.2f}</code>
 
 <b>📈 RENDIMIENTO</b>
@@ -169,6 +192,7 @@ class TelegramBot:
 
 <b>🎯 POR CASO</b>
 ├ C1: {len(cases[1])} trades | ${sum(cases[1]):.2f}
+├ C1++: {len(cases[11])} trades | ${sum(cases[11]):.2f}
 ├ C2: {len(cases[2])} trades | ${sum(cases[2]):.2f}
 ├ C3: {len(cases[3])} trades | ${sum(cases[3]):.2f}
 └ C4: {len(cases[4])} trades | ${sum(cases[4]):.2f}
@@ -185,7 +209,7 @@ class TelegramBot:
                 current = self.price_cache.get(pos.symbol, pos.current_price)
                 pnl_pos = pos.unrealized_pnl
                 emoji = "🟢" if pnl_pos >= 0 else "🔴"
-                case_str = f"C{pos.strategy_case}" if hasattr(pos, 'strategy_case') else "?"
+                case_str = self._format_case(pos.strategy_case) if hasattr(pos, 'strategy_case') else "?"
                 report += (
                     f"├ {pos.symbol} ({case_str}) {emoji} <code>${pnl_pos:.2f}</code>\n"
                     f"   Entry: <code>${pos.entry_price:.4f}</code> → Actual: <code>${current:.4f}</code>\n"
@@ -195,7 +219,7 @@ class TelegramBot:
         if self.account.pending_orders:
             report += "\n<b>📋 ÓRDENES PENDIENTES:</b>\n"
             for order_id, order in self.account.pending_orders.items():
-                case_str = f"C{order.strategy_case}" if hasattr(order, 'strategy_case') else "?"
+                case_str = self._format_case(order.strategy_case) if hasattr(order, 'strategy_case') else "?"
                 report += (
                     f"├ {order.symbol} ({case_str}) {order.side.value}\n"
                     f"   Precio: <code>${order.price:.4f}</code> → TP: <code>${order.take_profit:.4f}</code>\n"
@@ -210,7 +234,7 @@ class TelegramBot:
                 emoji = "🟢" if pnl >= 0 else "🔴"
                 reason = t.get('reason', '?')
                 reason_emoji = "✅" if reason == 'TP' else "❌"
-                case_str = f"C{t.get('strategy_case', '?')}"
+                case_str = self._format_case(t.get('strategy_case', 0))
                 report += f"├ {t.get('symbol', '?')} ({case_str}) {reason_emoji} {emoji} <code>${pnl:.4f}</code>\n"
                 
         report += "\n💡 /download para bajar el historial completo"
@@ -243,6 +267,12 @@ class TelegramBot:
             except:
                 pass
         return count
+    
+    def _format_case(self, case: int) -> str:
+        """Formatear número de caso para mostrar (11 -> C1++)"""
+        if case == 11:
+            return "C1++"
+        return f"C{case}" if case else "?"
     
     def format_balance(self) -> str:
         """Formato corto solo con balance"""
@@ -303,8 +333,8 @@ class TelegramBot:
         # Max drawdown
         max_dd = min((t.get('min_pnl', 0) for t in history), default=0)
         
-        # Por caso
-        cases = {1: [], 2: [], 3: [], 4: []}
+        # Por caso - incluir caso 11 (C1++) separado
+        cases = {1: [], 2: [], 3: [], 4: [], 11: []}
         for t in history:
             case = t.get('strategy_case', 0)
             if case in cases:
@@ -329,6 +359,7 @@ class TelegramBot:
 
 <b>🎯 POR CASO</b>
 ├ Caso 1: {len(cases[1])} trades | ${sum(cases[1]):.4f}
+├ Caso 1++: {len(cases[11])} trades | ${sum(cases[11]):.4f}
 ├ Caso 2: {len(cases[2])} trades | ${sum(cases[2]):.4f}
 ├ Caso 3: {len(cases[3])} trades | ${sum(cases[3]):.4f}
 └ Caso 4: {len(cases[4])} trades | ${sum(cases[4]):.4f}
@@ -365,7 +396,7 @@ class TelegramBot:
             reason = t.get('reason', '?')
             reason_emoji = "✅" if reason == 'TP' else "❌"
             
-            lines.append(f"{emoji} <b>{t.get('symbol', '?')}</b> (C{t.get('strategy_case', '?')})")
+            lines.append(f"{emoji} <b>{t.get('symbol', '?')}</b> ({self._format_case(t.get('strategy_case', 0))})")
             lines.append(f"   {reason_emoji} {reason} | PnL: <code>${pnl:.4f}</code>")
             lines.append(f"   📊 Entry: ${t.get('entry_price', 0):.4f} → Close: ${t.get('close_price', 0):.4f}")
             lines.append(f"   🎯 TP: ${t.get('take_profit', 0):.4f} | SL: ${t.get('stop_loss', 0):.4f}")
@@ -404,6 +435,7 @@ class TelegramBot:
 <b>Comandos disponibles:</b>
 /report - Reporte completo (cuenta, stats, posiciones, historial)
 /download - Descargar historial (JSON)
+/analyzer - Link al analizador web (requiere ngrok)
 
 Tu chat ha sido registrado para recibir notificaciones.
 """)
@@ -421,6 +453,34 @@ Tu chat ha sido registrado para recibir notificaciones.
         elif command == "/download":
             path = os.path.join(os.getcwd(), 'trades.json')
             await self.send_document(chat_id, path, caption="📂 Historial de Trades (trades.json)")
+        
+        elif command == "/analyzer":
+            # Obtener URL de ngrok si está activo
+            ngrok_url = await self.get_ngrok_url()
+            if ngrok_url:
+                await self.send_message(chat_id, f"""
+<b>📊 Analizador de Trades</b>
+
+🔗 <a href="{ngrok_url}">{ngrok_url}</a>
+
+<b>Funciones:</b>
+• Simular TP/SL por caso
+• Ver estadísticas en tiempo real
+• Activar auto-refresh para datos en vivo
+
+💡 Haz click en el botón "🔄 Auto (OFF)" para activar actualización automática cada 2 segundos.
+""")
+            else:
+                await self.send_message(chat_id, """
+<b>📊 Analizador de Trades</b>
+
+⚠️ El servidor web no está activo o ngrok no está corriendo.
+
+<b>Para activar:</b>
+1. Ejecuta: <code>python web_server.py</code>
+2. En otra terminal: <code>ngrok http 8080</code>
+3. Usa /analyzer de nuevo para obtener el link
+""")
             
         elif command == "/help":
             await self.send_message(chat_id, """
@@ -429,11 +489,17 @@ Tu chat ha sido registrado para recibir notificaciones.
 <b>Comandos:</b>
 /report - Reporte completo (cuenta, posiciones, historial, stats)
 /download - Descargar archivo trades.json
+/analyzer - Link al analizador web (requiere ngrok)
 
 <b>Notificaciones automáticas:</b>
 • Reportes cada 40 minutos
 • Alertas cuando se abre/cierra una posición
 • Alertas cuando se ejecuta una orden límite
+
+<b>Configurar analizador web:</b>
+1. <code>python web_server.py</code>
+2. <code>ngrok http 8080</code>
+3. Usa /analyzer para obtener link
 """)
         else:
             await self.send_message(chat_id, "❓ Comando no reconocido. Usa /report o /download")
