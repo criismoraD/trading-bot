@@ -1,5 +1,5 @@
 """
-Servidor web para servir analisis_bot.html y trades.json
+Servidor web para servir analisis_bot_v3.html y trades.json
 Con actualización en tiempo real y soporte para ngrok
 """
 import http.server
@@ -34,9 +34,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         
-        # Redirigir raíz a analisis_bot.html
+        # Redirigir raíz a analisis_bot_v3.html
         if path == '/' or path == '':
-            self.path = '/analisis_bot.html'
+            self.path = '/analisis_bot_v3.html'
             return super().do_GET()
         
         # API endpoint para ZigZag
@@ -158,7 +158,7 @@ class WebServer:
             self.thread.start()
             self.running = True
             print(f"🌐 Servidor web iniciado en http://localhost:{self.port}")
-            print(f"📊 Accede a: http://localhost:{self.port}/analisis_bot.html")
+            print(f"📊 Accede a: http://localhost:{self.port}/analisis_bot_v3.html")
         except OSError as e:
             print(f"❌ Error iniciando servidor: {e}")
             print(f"   Probablemente el puerto {self.port} está en uso")
@@ -172,7 +172,7 @@ class WebServer:
     
     def get_local_url(self):
         """Obtener URL local"""
-        return f"http://localhost:{self.port}/analisis_bot.html"
+        return f"http://localhost:{self.port}/analisis_bot_v3.html"
 
 # Instancia global del servidor
 _web_server = None
