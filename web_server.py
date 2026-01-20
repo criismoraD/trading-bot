@@ -9,10 +9,19 @@ import json
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
+import requests
+
+# Importar funciones de fibonacci.py
+from fibonacci import calculate_zigzag, calculate_fibonacci_levels, ZigZagPoint
 
 # Configuración
 PORT = 8080
 DIRECTORY = Path(__file__).parent
+
+# Cache para datos de velas
+_candle_cache = {}
+_cache_timeout = 60  # segundos
 
 class CustomHandler(http.server.SimpleHTTPRequestHandler):
     """Handler personalizado que sirve archivos desde el directorio del bot"""
@@ -22,12 +31,20 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     
     def do_GET(self):
         """Manejar peticiones GET con headers CORS y sin cache para JSON"""
+        parsed = urlparse(self.path)
+        path = parsed.path
+        
         # Redirigir raíz a analisis_bot.html
-        if self.path == '/' or self.path == '':
+        if path == '/' or path == '':
             self.path = '/analisis_bot.html'
+            return super().do_GET()
+        
+        # API endpoint para ZigZag
+        if path == '/api/zigzag':
+            return self._handle_zigzag_api(parse_qs(parsed.query))
         
         # Headers para permitir CORS y evitar cache en JSON
-        if self.path.endswith('.json'):
+        if path.endswith('.json'):
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
@@ -37,7 +54,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             
             # Leer y enviar archivo JSON
-            file_path = DIRECTORY / self.path.lstrip('/')
+            file_path = DIRECTORY / path.lstrip('/')
             if file_path.exists():
                 with open(file_path, 'r', encoding='utf-8') as f:
                     self.wfile.write(f.read().encode('utf-8'))
@@ -47,6 +64,73 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         
         # Para otros archivos, usar handler normal
         return super().do_GET()
+    
+    def _handle_zigzag_api(self, params):
+        """Calcular ZigZag usando fibonacci.py y devolver JSON"""
+        try:
+            symbol = params.get('symbol', ['BTCUSDT'])[0]
+            timeframe = params.get('timeframe', ['1h'])[0]
+            limit = int(params.get('limit', ['200'])[0])
+            
+            # Convertir timeframe al formato de Bybit
+            tf_map = {'1': '1', '5': '5', '15': '15', '60': '60', '240': '240',
+                      '1m': '1', '5m': '5', '15m': '15', '1h': '60', '4h': '240'}
+            bybit_tf = tf_map.get(timeframe, '60')
+            
+            # Obtener datos de velas de Bybit
+            url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval={bybit_tf}&limit={limit}"
+            response = requests.get(url, timeout=10)
+            data = response.json()
+            
+            if data.get('retCode') != 0 or not data.get('result', {}).get('list'):
+                raise ValueError(f"Error de Bybit: {data.get('retMsg', 'Sin datos')}")
+            
+            # Convertir a formato esperado por calculate_zigzag
+            candles = []
+            for c in reversed(data['result']['list']):
+                candles.append({
+                    'time': int(c[0]) // 1000,  # Convertir ms a segundos
+                    'open': float(c[1]),
+                    'high': float(c[2]),
+                    'low': float(c[3]),
+                    'close': float(c[4])
+                })
+            
+            # Calcular ZigZag usando la misma lógica que el bot
+            zigzag_points = calculate_zigzag(candles, timeframe)
+            
+            # Convertir ZigZagPoint a dict para JSON
+            result = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'candles_count': len(candles),
+                'points': [
+                    {
+                        'index': p.index,
+                        'time': p.time,
+                        'price': p.price,
+                        'type': p.type
+                    }
+                    for p in zigzag_points
+                ]
+            }
+            
+            # Enviar respuesta JSON
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-cache')
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode('utf-8'))
+            
+        except Exception as e:
+            # Error response
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            error_response = {'error': str(e)}
+            self.wfile.write(json.dumps(error_response).encode('utf-8'))
     
     def log_message(self, format, *args):
         """Suprimir logs para reducir ruido"""

@@ -396,71 +396,33 @@ class PaperTradingAccount:
         order_id = self._generate_order_id()
         position_side = PositionSide.SHORT if side == OrderSide.SELL else PositionSide.LONG
         
-        # BUSCAR POSICIÓN EXISTENTE PARA FUSIONAR (Averaging)
-        # SOLO fusionar si es el MISMO strategy_case para mantener datos limpios de análisis
-        existing_pos_id = None
-        for pid, pos in self.open_positions.items():
-            if pos.symbol == symbol and pos.side == position_side:
-                # Solo fusionar si el strategy_case es igual
-                if pos.strategy_case == strategy_case:
-                    existing_pos_id = pid
-                break
+        # Detener monitoreo de posiciones cerradas del mismo par
+        self._stop_monitoring_symbol(symbol)
         
-        position = None
-        if existing_pos_id:
-            # Fusionar con posición existente
-            pos = self.open_positions[existing_pos_id]
-            total_qty = pos.quantity + quantity
-            # Precio promedio ponderado
-            avg_price = ((pos.entry_price * pos.quantity) + (current_price * quantity)) / total_qty
-            
-            pos.entry_price = avg_price
-            pos.quantity = total_qty
-            pos.margin += margin
-            pos.current_price = current_price # Actualizar precio actual
-            # Mantener el strategy_case original o actualizar? Mantener original.
-            # Mantener fib_high/fib_low originales
-            
-            # Registrar ejecución en historial
-            exec_num = len(pos.executions) + 1
-            pos.executions.append({
-                "order_num": exec_num,
+        # Crear nueva posición (sin fusión - cada trade es independiente)
+        position = Position(
+            symbol=symbol,
+            side=position_side,
+            entry_price=current_price,
+            quantity=quantity,
+            margin=margin,
+            leverage=self.leverage,
+            take_profit=take_profit,
+            stop_loss=stop_loss,
+            order_id=order_id,
+            strategy_case=strategy_case,
+            fib_high=fib_high,
+            fib_low=fib_low,
+            entry_fib_level=entry_fib_level,
+            executions=[{
+                "order_num": 1,
                 "price": current_price,
                 "quantity": quantity,
                 "type": "MARKET",
                 "time": datetime.now().isoformat()
-            })
-            
-            print(f"🔄 Posición promediada: {symbol} Entrada ${avg_price:.4f} Qty {total_qty:.4f}")
-            position = pos
-        else:
-            # Detener monitoreo de posiciones cerradas del mismo par
-            self._stop_monitoring_symbol(symbol)
-            
-            # Crear nueva posición
-            position = Position(
-                symbol=symbol,
-                side=position_side,
-                entry_price=current_price,
-                quantity=quantity,
-                margin=margin,
-                leverage=self.leverage,
-                take_profit=take_profit,
-                stop_loss=stop_loss,
-                order_id=order_id,
-                strategy_case=strategy_case,
-                fib_high=fib_high,
-                fib_low=fib_low,
-                entry_fib_level=entry_fib_level,
-                executions=[{
-                    "order_num": 1,
-                    "price": current_price,
-                    "quantity": quantity,
-                    "type": "MARKET",
-                    "time": datetime.now().isoformat()
-                }]
-            )
-            self.open_positions[order_id] = position
+            }]
+        )
+        self.open_positions[order_id] = position
             
         self._save_trades()
         
@@ -494,104 +456,37 @@ class PaperTradingAccount:
         order.filled_at = datetime.now().isoformat()
         order.price = fill_price  # Precio real de ejecución
         
-        # ===== TP DINÁMICO: Si esta orden está vinculada, actualizar TP de posición principal a 50% =====
-        if order.linked_order_id:
-            # Esta es una orden secundaria vinculada a una posición existente
-            # Actualizar TP de la posición principal al nivel 50%
-            if order.linked_order_id in self.open_positions:
-                main_position = self.open_positions[order.linked_order_id]
-                # Calcular nuevo TP (50% del rango)
-                # Asumiendo SHORT: el 50% está más arriba que el 45%
-                # Usamos la diferencia para calcular el nuevo nivel
-                old_tp = main_position.take_profit
-                # Mover TP de nivel 45% a nivel 50% (subir un 5% del rango)
-                range_estimate = abs(main_position.entry_price - old_tp) / 0.05  # Estimación del rango
-                new_tp = old_tp + (range_estimate * 0.05)  # Nuevo TP en 50%
-                main_position.take_profit = new_tp
-                print(f"🔄 TP DINÁMICO: {order.symbol} TP actualizado de ${old_tp:.4f} → ${new_tp:.4f}")
-        
-        # BUSCAR POSICIÓN EXISTENTE PARA FUSIONAR
-        # SOLO fusionar si es el MISMO strategy_case para mantener datos limpios de análisis
         position_side = PositionSide.SHORT if order.side == OrderSide.SELL else PositionSide.LONG
-        existing_pos_id = None
         
-        # Primero intentar por vinculación explícita (órdenes del mismo case)
-        if order.linked_order_id and order.linked_order_id in self.open_positions:
-            linked_pos = self.open_positions[order.linked_order_id]
-            # Solo vincular si es el mismo strategy_case
-            if linked_pos.strategy_case == order.strategy_case:
-                existing_pos_id = order.linked_order_id
-        
-        if not existing_pos_id:
-            # Buscar por símbolo, lado Y strategy_case
-            for pid, pos in self.open_positions.items():
-                if pos.symbol == order.symbol and pos.side == position_side:
-                    # Solo fusionar si el strategy_case es igual
-                    if pos.strategy_case == order.strategy_case:
-                        existing_pos_id = pid
-                    break
-        
-        if existing_pos_id:
-            # FUSIONAR (Averaging)
-            pos = self.open_positions[existing_pos_id]
-            total_qty = pos.quantity + order.quantity
-            # Nuevo precio promedio
-            avg_price = ((pos.entry_price * pos.quantity) + (fill_price * order.quantity)) / total_qty
-            
-            print(f"🔄 FUSIONANDO ejecucion Limit en {order.symbol}:")
-            print(f"   Antiguo: Entry ${pos.entry_price:.4f}, Qty {pos.quantity:.4f}")
-            print(f"   Nuevo:   Entry ${avg_price:.4f}, Qty {total_qty:.4f}")
-            
-            pos.entry_price = avg_price
-            pos.quantity = total_qty
-            pos.margin += order.margin
-            pos.current_price = fill_price
-            
-            # Registrar ejecución en historial
-            exec_num = len(pos.executions) + 1
-            pos.executions.append({
-                "order_num": exec_num,
+        # Crear nueva posición (sin fusión - cada C1++ es independiente)
+        position = Position(
+            symbol=order.symbol,
+            side=position_side,
+            entry_price=fill_price,
+            quantity=order.quantity,
+            margin=order.margin,
+            leverage=order.leverage,
+            take_profit=order.take_profit,
+            stop_loss=order.stop_loss,
+            order_id=order_id,
+            strategy_case=order.strategy_case,
+            fib_high=order.fib_high,
+            fib_low=order.fib_low,
+            entry_fib_level=order.entry_fib_level,
+            executions=[{
+                "order_num": 1,
                 "price": fill_price,
                 "quantity": order.quantity,
                 "type": "LIMIT",
                 "time": datetime.now().isoformat()
-            })
-            
-            # El TP ya se actualizó dinámicamente arriba si estaba vinculado
-            
-        else:
-            # Crear nueva posición
-            # Usar linked_order_id como ID si queremos que futuras órdenes se vinculen a esta? 
-            # Mejor usar el ID de esta orden como key nueva
-            
-            position = Position(
-                symbol=order.symbol,
-                side=position_side,
-                entry_price=fill_price,
-                quantity=order.quantity,
-                margin=order.margin,
-                leverage=order.leverage,
-                take_profit=order.take_profit,
-                stop_loss=order.stop_loss,
-                order_id=order_id,
-                strategy_case=order.strategy_case,
-                fib_high=order.fib_high,
-                fib_low=order.fib_low,
-                entry_fib_level=order.entry_fib_level,
-                executions=[{
-                    "order_num": 1,
-                    "price": fill_price,
-                    "quantity": order.quantity,
-                    "type": "LIMIT",
-                    "time": datetime.now().isoformat()
-                }]
-            )
-            
-            # Guardar linked_order_id para referencias futuras
-            if order.linked_order_id:
-                position.linked_order_id = order.linked_order_id
-            
-            self.open_positions[order_id] = position
+            }]
+        )
+        
+        # Guardar linked_order_id para referencias futuras (C1++ vinculado a C2/C3/C4)
+        if order.linked_order_id:
+            position.linked_order_id = order.linked_order_id
+        
+        self.open_positions[order_id] = position
             
         self.update_max_simultaneous()  # Track máximo simultáneo
         self._save_trades()

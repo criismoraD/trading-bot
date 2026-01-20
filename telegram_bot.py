@@ -170,8 +170,8 @@ class TelegramBot:
             if case in cases:
                 cases[case].append(t.get('pnl', 0))
         
-        # Balance de Margin = balance - PnL no realizado
-        margin_balance = status['balance'] - status['total_unrealized_pnl']
+        # Balance Margin (Equity) = balance + PnL flotante
+        margin_balance = status['balance'] + status['total_unrealized_pnl']
         
         report = f"""
 <b>📊 REPORTE COMPLETO</b>

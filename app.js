@@ -339,7 +339,7 @@ async function fetchHistoricalData() {
         chart.timeScale().fitContent();
 
         // Draw ZigZag and Fibonacci levels
-        drawZigZag();
+        await drawZigZag();
 
         showLoading(false);
 
@@ -1379,7 +1379,29 @@ function clearFibonacciLines() {
     fibonacciLines = [];
 }
 
-function drawZigZag() {
+// Función para obtener ZigZag desde el backend (usa la misma lógica que el bot)
+async function fetchZigZagFromAPI(symbol, timeframe) {
+    try {
+        const response = await fetch(`/api/zigzag?symbol=${symbol}&timeframe=${timeframe}&limit=200`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+        
+        // Convertir a formato esperado por el frontend
+        return data.points.map(p => ({
+            index: p.index,
+            time: p.time,
+            price: p.price,
+            type: p.type
+        }));
+    } catch (error) {
+        console.warn('⚠️ API ZigZag no disponible, usando cálculo local:', error.message);
+        return null; // Fallback a cálculo local
+    }
+}
+
+async function drawZigZag() {
     try {
         // Remove existing zigzag line
         if (zigzagLineSeries) {
@@ -1410,9 +1432,21 @@ function drawZigZag() {
             return;
         }
 
-        // Calculate ZigZag points
-        zigzagPoints = calculateZigZag(candleData);
-        console.log(`ZigZag calculated: ${zigzagPoints.length} points`);
+        // Intentar obtener ZigZag desde la API del backend (misma lógica que el bot)
+        let apiPoints = null;
+        if (currentSymbol) {
+            apiPoints = await fetchZigZagFromAPI(currentSymbol, currentInterval);
+        }
+        
+        if (apiPoints && apiPoints.length >= 2) {
+            // Usar puntos de la API (garantiza consistencia con el bot)
+            zigzagPoints = apiPoints;
+            console.log(`✅ ZigZag from API: ${zigzagPoints.length} points`);
+        } else {
+            // Fallback: calcular localmente si la API no está disponible
+            zigzagPoints = calculateZigZag(candleData);
+            console.log(`⚠️ ZigZag local fallback: ${zigzagPoints.length} points`);
+        }
 
         if (zigzagPoints.length < 2) return;
 
@@ -3035,9 +3069,786 @@ function rgbaToHex(rgba) {
 // Hacer función global para onclick
 window.selectAnalysisTrade = selectAnalysisTrade;
 
+// ========== ANALYZER MODULE (Simulador de Trading) ==========
+// Datos del analizador
+let analyzerRawData = null;
+let analyzerProcessedTrades = [];
+let analyzerCurrentFilter = 'all';
+let analyzerSortMode = 'default';
+let analyzerSelectedIndex = -1;
+
+// ===== Mode Switch (Analizador / Visor) =====
+function setupModeSwitch() {
+    const modeSwitch = document.getElementById('modeSwitch');
+    const analyzerPanel = document.getElementById('analyzerPanel');
+    const tradesPanel = document.getElementById('tradesPanel');
+    const labelAnalyzer = document.getElementById('modeLabelAnalyzer');
+    const labelVisor = document.getElementById('modeLabelVisor');
+    
+    if (!modeSwitch) return;
+    
+    // Modo Analizador por defecto (switch OFF)
+    modeSwitch.checked = false;
+    if (labelAnalyzer) labelAnalyzer.classList.add('active');
+    
+    modeSwitch.addEventListener('change', () => {
+        const isVisorMode = modeSwitch.checked;
+        
+        if (analyzerPanel) analyzerPanel.style.display = isVisorMode ? 'none' : 'flex';
+        if (tradesPanel) tradesPanel.style.display = isVisorMode ? 'flex' : 'none';
+        
+        if (labelAnalyzer) labelAnalyzer.classList.toggle('active', !isVisorMode);
+        if (labelVisor) labelVisor.classList.toggle('active', isVisorMode);
+        
+        if (isVisorMode) {
+            // Modo Visor - reanudar polling de trades
+            if (window.resumeTradesPolling) window.resumeTradesPolling();
+            clearAnalysisLines();
+        } else {
+            // Modo Analizador - pausar polling
+            if (window.pauseTradesPolling) window.pauseTradesPolling();
+        }
+    });
+}
+
+// ===== Analyzer Setup =====
+function setupAnalyzer() {
+    // File input
+    const fileInput = document.getElementById('analyzerFileInput');
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleAnalyzerFile(e.target.files[0]);
+            }
+        });
+    }
+    
+    // Load from VM button
+    const loadVMBtn = document.getElementById('loadFromVMBtn');
+    if (loadVMBtn) {
+        loadVMBtn.addEventListener('click', loadAnalyzerDataFromVM);
+    }
+    
+    // Refresh button
+    const refreshBtn = document.getElementById('refreshDataBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', loadAnalyzerDataFromVM);
+    }
+    
+    // Filter buttons
+    document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            analyzerCurrentFilter = btn.dataset.filter;
+            runAnalyzerSimulation();
+        });
+    });
+    
+    // Sort buttons
+    document.querySelectorAll('.sort-btn[data-sort]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.sort-btn[data-sort]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            analyzerSortMode = btn.dataset.sort;
+            runAnalyzerSimulation();
+        });
+    });
+    
+    // Ignore checkboxes
+    ['C1', 'C1pp', 'C2', 'C3', 'C4', 'C5'].forEach(c => {
+        const checkbox = document.getElementById(`ignore${c}`);
+        if (checkbox) {
+            checkbox.addEventListener('change', runAnalyzerSimulation);
+        }
+    });
+    
+    // Ignore all / Unignore all buttons
+    const ignoreAllBtn = document.getElementById('ignoreAllBtn');
+    const unignoreAllBtn = document.getElementById('unignoreAllBtn');
+    
+    if (ignoreAllBtn) {
+        ignoreAllBtn.addEventListener('click', () => {
+            ['C1', 'C1pp', 'C2', 'C3', 'C4', 'C5'].forEach(c => {
+                const cb = document.getElementById(`ignore${c}`);
+                if (cb) cb.checked = true;
+            });
+            runAnalyzerSimulation();
+        });
+    }
+    
+    if (unignoreAllBtn) {
+        unignoreAllBtn.addEventListener('click', () => {
+            ['C1', 'C1pp', 'C2', 'C3', 'C4', 'C5'].forEach(c => {
+                const cb = document.getElementById(`ignore${c}`);
+                if (cb) cb.checked = false;
+            });
+            runAnalyzerSimulation();
+        });
+    }
+    
+    // Setup sliders
+    setupAnalyzerSliders();
+    
+    // Reset defaults button
+    const resetBtn = document.getElementById('resetDefaultsBtn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', resetAnalyzerDefaults);
+    }
+    
+    // C5 toggle (off by default)
+    const c5Toggle = document.getElementById('enableC5Averaging');
+    if (c5Toggle) {
+        c5Toggle.checked = false; // OFF por defecto
+        c5Toggle.addEventListener('change', runAnalyzerSimulation);
+    }
+    
+    // Auto-load trades.json
+    loadAnalyzerDataFromVM();
+}
+
+function setupAnalyzerSliders() {
+    // Sliders for each case including separate C1 and C1+
+    const sliderConfigs = [
+        { id: 'tpC1', valId: 'tpC1Val' },
+        { id: 'slC1', valId: 'slC1Val', groupId: 'slGroupC1', enabledId: 'slEnabledC1' },
+        { id: 'tpC1pp', valId: 'tpC1ppVal' },
+        { id: 'slC1pp', valId: 'slC1ppVal', groupId: 'slGroupC1pp', enabledId: 'slEnabledC1pp' },
+        { id: 'tpC2', valId: 'tpC2Val' },
+        { id: 'slC2', valId: 'slC2Val', groupId: 'slGroupC2', enabledId: 'slEnabledC2' },
+        { id: 'tpC3', valId: 'tpC3Val' },
+        { id: 'slC3', valId: 'slC3Val', groupId: 'slGroupC3', enabledId: 'slEnabledC3' },
+        { id: 'tpC4', valId: 'tpC4Val' },
+        { id: 'slC4', valId: 'slC4Val', groupId: 'slGroupC4', enabledId: 'slEnabledC4' },
+        { id: 'tpC5', valId: 'tpC5Val' },
+        { id: 'slC5', valId: 'slC5Val', groupId: 'slGroupC5', enabledId: 'slEnabledC5' },
+    ];
+    
+    sliderConfigs.forEach(config => {
+        const slider = document.getElementById(config.id);
+        const valEl = document.getElementById(config.valId);
+        
+        if (slider && valEl) {
+            slider.addEventListener('input', () => {
+                valEl.textContent = slider.value;
+                runAnalyzerSimulation();
+            });
+        }
+        
+        // SL enabled toggle
+        if (config.enabledId) {
+            const enabledCb = document.getElementById(config.enabledId);
+            const group = document.getElementById(config.groupId);
+            if (enabledCb && group) {
+                enabledCb.addEventListener('change', () => {
+                    group.classList.toggle('disabled', !enabledCb.checked);
+                    runAnalyzerSimulation();
+                });
+            }
+        }
+    });
+}
+
+async function loadAnalyzerDataFromVM() {
+    const filesToTry = ['/2trades.json', '/trades.json'];
+    const refreshBtn = document.getElementById('refreshDataBtn');
+    
+    for (const fileName of filesToTry) {
+        try {
+            const cacheBuster = Date.now() + '-' + Math.random();
+            const response = await fetch(fileName + '?nocache=' + cacheBuster, {
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache' }
+            });
+            
+            if (response.ok) {
+                analyzerRawData = await response.json();
+                console.log('✅ Analyzer: ' + fileName + ' cargado');
+                
+                if (refreshBtn) refreshBtn.style.display = 'inline-flex';
+                
+                runAnalyzerSimulation();
+                showToast(`Datos cargados: ${fileName}`);
+                return;
+            }
+        } catch (e) {
+            console.log('ℹ️ No se pudo cargar ' + fileName);
+        }
+    }
+    console.log('ℹ️ No se encontró ningún archivo JSON');
+}
+
+async function handleAnalyzerFile(file) {
+    try {
+        const text = await file.text();
+        analyzerRawData = JSON.parse(text);
+        console.log('📂 Analyzer: Archivo cargado:', file.name);
+        
+        runAnalyzerSimulation();
+        showToast(`Archivo cargado: ${file.name}`);
+    } catch (error) {
+        console.error('Error procesando archivo:', error);
+        showToast('Error al leer archivo JSON', 'error');
+    }
+}
+
+function getAnalyzerCaseSettings(caseId) {
+    // C5 tiene su propia configuración
+    if (caseId == 5) {
+        let tp = (parseFloat(document.getElementById('tpC5')?.value) || 45) / 100;
+        const slEnabled = document.getElementById('slEnabledC5')?.checked ?? true;
+        let sl = slEnabled ? (parseFloat(document.getElementById('slC5')?.value) || 110) / 100 : 0;
+        if (tp > 0.618) tp = 0.618;
+        if (sl > 0 && sl < 0.62) sl = 0.62;
+        return { tp, sl, tpMax: 0.618, slMin: 0.62 };
+    }
+    
+    // C1+ tiene configuración independiente
+    if (caseId == 11) {
+        let tp = (parseFloat(document.getElementById('tpC1pp')?.value) || 40) / 100;
+        const slEnabled = document.getElementById('slEnabledC1pp')?.checked ?? true;
+        let sl = slEnabled ? (parseFloat(document.getElementById('slC1pp')?.value) || 80) / 100 : 0;
+        if (tp > 0.61) tp = 0.61;
+        if (sl > 0 && sl < 0.62) sl = 0.62;
+        return { tp, sl, tpMax: 0.61, slMin: 0.62 };
+    }
+    
+    // Límites por caso
+    const limits = {
+        1: { tpMax: 0.61, slMin: 0.62, tpDefault: 40, slDefault: 80 },
+        2: { tpMax: 0.61, slMin: 0.69, tpDefault: 45, slDefault: 85 },
+        3: { tpMax: 0.78, slMin: 0.79, tpDefault: 62, slDefault: 94 },
+        4: { tpMax: 0.90, slMin: 0.90, tpDefault: 70, slDefault: 93 }
+    };
+    
+    const c = [1, 2, 3, 4].includes(caseId) ? caseId : 1;
+    const limit = limits[c];
+    
+    let tp = (parseFloat(document.getElementById(`tpC${c}`)?.value) || limit.tpDefault) / 100;
+    const slEnabled = document.getElementById(`slEnabledC${c}`)?.checked ?? true;
+    let sl = slEnabled ? (parseFloat(document.getElementById(`slC${c}`)?.value) || limit.slDefault) / 100 : 0;
+    
+    if (tp > limit.tpMax) tp = limit.tpMax;
+    if (sl > 0 && sl < limit.slMin) sl = limit.slMin;
+    
+    return { tp, sl, tpMax: limit.tpMax, slMin: limit.slMin };
+}
+
+function runAnalyzerSimulation() {
+    if (!analyzerRawData) {
+        updateAnalyzerUI([]);
+        return;
+    }
+    
+    // Get ignored cases
+    const ignoredCases = {
+        1: document.getElementById('ignoreC1')?.checked || false,
+        11: document.getElementById('ignoreC1pp')?.checked || false,
+        2: document.getElementById('ignoreC2')?.checked || false,
+        3: document.getElementById('ignoreC3')?.checked || false,
+        4: document.getElementById('ignoreC4')?.checked || false,
+        5: document.getElementById('ignoreC5')?.checked || false
+    };
+    
+    const enableC5 = document.getElementById('enableC5Averaging')?.checked || false;
+    
+    // Stats
+    let stats = {
+        realized: 0, floating: 0,
+        wins: 0, losses: 0, closedTrades: 0, openTrades: 0,
+        grossWin: 0, grossLoss: 0,
+        pfSum: 0, pfCount: 0
+    };
+    
+    // 1. Unificar Trades
+    let allTrades = [];
+    
+    // History
+    if (analyzerRawData.history) {
+        analyzerRawData.history.forEach(t => {
+            t._src = 'HIST';
+            let impliedMaxDuring = t.max_price_pre_close || t.entry_price;
+            t._max = impliedMaxDuring;
+            let impliedMinDuring = t.min_price_pre_close || t.entry_price;
+            let minPostClose = t.min_price_post_close || t.close_price;
+            t._min = Math.min(impliedMinDuring, t.close_price, minPostClose);
+            allTrades.push(t);
+        });
+    }
+    
+    // Open positions
+    if (analyzerRawData.open_positions) {
+        Object.values(analyzerRawData.open_positions).forEach(t => {
+            t._src = 'OPEN';
+            const effectivePrice = (t.current_price && t.current_price > 0) ? t.current_price : t.entry_price;
+            let impliedMax = t.max_price_pre_close || t.entry_price;
+            t._max = Math.max(impliedMax, effectivePrice);
+            let impliedMin = t.min_price_pre_close || t.entry_price;
+            t._min = Math.min(impliedMin, effectivePrice);
+            if (!t.fib_high) t.fib_high = t.entry_price * 1.05;
+            if (!t.fib_low) t.fib_low = t.entry_price * 0.95;
+            allTrades.push(t);
+        });
+    }
+    
+    // C5 Detection (if enabled)
+    let c5Trades = [];
+    let tradesConvertedToC5 = new Set();
+    
+    if (enableC5) {
+        let tradesBySymbol = {};
+        allTrades.forEach(t => {
+            const sym = t.symbol;
+            if (!tradesBySymbol[sym]) tradesBySymbol[sym] = [];
+            tradesBySymbol[sym].push(t);
+        });
+        
+        for (const symbol in tradesBySymbol) {
+            const symTrades = tradesBySymbol[symbol];
+            const mainTrades = symTrades.filter(t => [2, 3, 4].includes(t.strategy_case));
+            const c1ppTrades = symTrades.filter(t => t.strategy_case === 11);
+            
+            if (mainTrades.length === 0 || c1ppTrades.length === 0) continue;
+            
+            mainTrades.forEach(mainTrade => {
+                c1ppTrades.forEach(c1ppTrade => {
+                    const c1ppRange = c1ppTrade.fib_high - c1ppTrade.fib_low;
+                    const c1ppEntry = c1ppTrade.fib_low + (c1ppRange * 0.618);
+                    const mainCaseSettings = getAnalyzerCaseSettings(mainTrade.strategy_case);
+                    const mainRange = mainTrade.fib_high - mainTrade.fib_low;
+                    const mainSL = mainTrade.fib_low + (mainRange * mainCaseSettings.sl);
+                    
+                    if (mainSL < c1ppEntry) return;
+                    
+                    const mainTP = mainTrade.fib_low + (mainRange * mainCaseSettings.tp);
+                    const mainHitTP = mainTrade._min <= mainTP;
+                    if (mainHitTP) return;
+                    
+                    const c1ppExecuted = mainTrade._max >= c1ppEntry;
+                    if (!c1ppExecuted) return;
+                    
+                    const mainQty = mainTrade.quantity || 1;
+                    const c1ppQty = c1ppTrade.quantity || 1;
+                    const avgEntry = (mainTrade.entry_price * mainQty + c1ppEntry * c1ppQty) / (mainQty + c1ppQty);
+                    
+                    const c5Trade = {
+                        ...c1ppTrade,
+                        symbol: symbol,
+                        strategy_case: 5,
+                        entry_price: avgEntry,
+                        quantity: mainQty + c1ppQty,
+                        margin: (mainTrade.margin || 2) + (c1ppTrade.margin || 2),
+                        _src: mainTrade._src,
+                        _max: Math.max(mainTrade._max, c1ppTrade._max || 0),
+                        _min: Math.min(mainTrade._min, c1ppTrade._min || Infinity),
+                        _avgExplanation: `Avg: $${mainTrade.entry_price.toFixed(4)} + $${c1ppEntry.toFixed(4)}`
+                    };
+                    
+                    c5Trades.push(c5Trade);
+                    tradesConvertedToC5.add(mainTrade.order_id);
+                    tradesConvertedToC5.add(c1ppTrade.order_id);
+                });
+            });
+        }
+        
+        allTrades = allTrades.filter(t => !tradesConvertedToC5.has(t.order_id));
+        allTrades = allTrades.concat(c5Trades);
+    }
+    
+    // Update C5 count
+    const c5CountEl = document.getElementById('c5Count');
+    if (c5CountEl) c5CountEl.textContent = c5Trades.length;
+    
+    // 2. Process trades
+    let processedTrades = [];
+    
+    allTrades.forEach(t => {
+        let cID = t.strategy_case || 1;
+        const isIgnored = ignoredCases[cID] || false;
+        
+        const s = getAnalyzerCaseSettings(cID);
+        const range = t.fib_high - t.fib_low;
+        const tpPrice = t.fib_low + (range * s.tp);
+        let slPrice = Infinity;
+        if (s.sl > 0) slPrice = t.fib_low + (range * s.sl);
+        
+        // Simulation logic
+        let status = "", rPnl = 0, fPnl = 0, statusClass = "";
+        let isClosed = false;
+        
+        const slIsValid = slPrice > t.entry_price;
+        const hitSL = (s.sl > 0) && slIsValid && (t._max >= slPrice);
+        
+        const originalReason = (t.reason || '').toUpperCase();
+        const originalClosedBySL = t._src === 'HIST' && originalReason === 'SL';
+        let effectiveMinForTP = t._min;
+        if (originalClosedBySL && !hitSL) {
+            effectiveMinForTP = t.min_price_pre_close || t.entry_price;
+        }
+        const hitTP = effectiveMinForTP <= tpPrice;
+        const potProfit = (t.entry_price - tpPrice) * t.quantity;
+        const potLoss = (s.sl > 0 && slIsValid) ? Math.abs((slPrice - t.entry_price) * t.quantity) : 0;
+        
+        if (hitSL) {
+            status = "SL HIT ❌";
+            rPnl = (t.entry_price - slPrice) * t.quantity;
+            isClosed = true;
+            statusClass = "loss";
+        } else if (hitTP) {
+            status = "TP HIT ✅";
+            rPnl = potProfit;
+            isClosed = true;
+            statusClass = "win";
+        } else {
+            if (t._src === 'HIST') {
+                if (originalReason === 'TP') {
+                    status = "TP HIT ✅";
+                    rPnl = t.pnl;
+                    statusClass = "win";
+                    isClosed = true;
+                } else if (originalReason === 'SL' && !hitSL) {
+                    const effectiveCurrentPrice = t.close_price || t.entry_price;
+                    status = "RUNNING ⏳";
+                    fPnl = (t.entry_price - effectiveCurrentPrice) * t.quantity;
+                    statusClass = "running";
+                    isClosed = false;
+                } else if (originalReason === 'SL') {
+                    status = "SL HIT ❌";
+                    rPnl = t.pnl;
+                    statusClass = "loss";
+                    isClosed = true;
+                } else {
+                    status = `CLOSED`;
+                    rPnl = t.pnl;
+                    statusClass = t.pnl >= 0 ? "win" : "loss";
+                    isClosed = true;
+                }
+            } else {
+                status = "RUNNING ⏳";
+                fPnl = (t.entry_price - t.current_price) * t.quantity;
+                statusClass = "running";
+                isClosed = false;
+            }
+        }
+        
+        // Stats (only if not ignored)
+        if (!isIgnored) {
+            if (isClosed) {
+                stats.closedTrades++;
+                stats.realized += rPnl;
+                if (rPnl > 0) {
+                    stats.wins++;
+                    stats.grossWin += rPnl;
+                } else {
+                    stats.losses++;
+                    stats.grossLoss += Math.abs(rPnl);
+                }
+            } else {
+                stats.openTrades++;
+                stats.floating += fPnl;
+            }
+        }
+        
+        processedTrades.push({
+            trade: t,
+            caseId: cID,
+            settings: s,
+            tpPrice,
+            slPrice,
+            status,
+            statusClass,
+            rPnl,
+            fPnl,
+            isIgnored,
+            isClosed
+        });
+    });
+    
+    // 3. Apply visual filter (doesn't affect calculations)
+    let displayTrades = processedTrades;
+    if (analyzerCurrentFilter !== 'all') {
+        const filterCase = parseInt(analyzerCurrentFilter);
+        displayTrades = processedTrades.filter(t => t.caseId === filterCase);
+    }
+    
+    // 4. Sort
+    switch (analyzerSortMode) {
+        case 'pnl_real_desc':
+            displayTrades.sort((a, b) => b.rPnl - a.rPnl);
+            break;
+        case 'pnl_real_asc':
+            displayTrades.sort((a, b) => a.rPnl - b.rPnl);
+            break;
+        case 'pnl_float_desc':
+            displayTrades.sort((a, b) => b.fPnl - a.fPnl);
+            break;
+        case 'pnl_float_asc':
+            displayTrades.sort((a, b) => a.fPnl - b.fPnl);
+            break;
+        default:
+            // Keep original order
+            break;
+    }
+    
+    analyzerProcessedTrades = displayTrades;
+    
+    // Update UI
+    updateAnalyzerKPIs(stats);
+    updateAnalyzerTradesList(displayTrades);
+}
+
+function updateAnalyzerKPIs(stats) {
+    const realizedEl = document.getElementById('kpiRealizedPnl');
+    const floatingEl = document.getElementById('kpiFloatingPnl');
+    const winRateEl = document.getElementById('kpiWinRate');
+    const pfEl = document.getElementById('kpiPF');
+    
+    if (realizedEl) {
+        realizedEl.textContent = `$${stats.realized.toFixed(2)}`;
+        realizedEl.className = 'kpi-value ' + (stats.realized >= 0 ? 'positive' : 'negative');
+    }
+    
+    if (floatingEl) {
+        floatingEl.textContent = `$${stats.floating.toFixed(2)}`;
+        floatingEl.className = 'kpi-value ' + (stats.floating >= 0 ? 'positive' : 'negative');
+    }
+    
+    if (winRateEl) {
+        const winRate = stats.closedTrades > 0 ? ((stats.wins / stats.closedTrades) * 100).toFixed(1) : '0';
+        winRateEl.textContent = `${winRate}%`;
+    }
+    
+    if (pfEl) {
+        const pf = stats.grossLoss > 0 ? (stats.grossWin / stats.grossLoss).toFixed(2) : (stats.grossWin > 0 ? '∞' : '0.00');
+        pfEl.textContent = pf;
+    }
+}
+
+function updateAnalyzerTradesList(trades) {
+    const list = document.getElementById('analyzerTradesList');
+    if (!list) return;
+    
+    if (trades.length === 0) {
+        list.innerHTML = '<div class="no-trades-msg">No hay trades para mostrar</div>';
+        return;
+    }
+    
+    let html = '';
+    trades.forEach((item, index) => {
+        const t = item.trade;
+        const caseClass = `case-${item.caseId === 11 ? '11' : item.caseId}`;
+        const selectedClass = index === analyzerSelectedIndex ? 'selected' : '';
+        const ignoredClass = item.isIgnored ? 'ignored' : '';
+        const caseLabel = item.caseId === 11 ? 'C1+' : (item.caseId === 5 ? 'C5' : `C${item.caseId}`);
+        
+        html += `
+        <div class="analyzer-trade-item ${caseClass} ${selectedClass} ${ignoredClass}" 
+             data-index="${index}" onclick="selectAnalyzerTrade(${index})">
+            <div class="trade-item-row">
+                <span class="trade-symbol">${t.symbol}</span>
+                <span class="trade-case-badge">${caseLabel}</span>
+                <span class="trade-status-badge ${item.statusClass}">${item.status}</span>
+            </div>
+            <div class="trade-item-row">
+                <span style="font-size:10px;color:var(--text-tertiary)">Entry: $${t.entry_price.toFixed(4)}</span>
+                <div class="trade-pnl-info">
+                    <span class="trade-pnl-real ${item.rPnl >= 0 ? 'positive' : 'negative'}">
+                        ${item.rPnl !== 0 ? '$' + item.rPnl.toFixed(2) : '-'}
+                    </span>
+                    <span class="trade-pnl-float ${item.fPnl >= 0 ? 'positive' : 'negative'}">
+                        ${item.fPnl !== 0 ? '$' + item.fPnl.toFixed(2) : '-'}
+                    </span>
+                </div>
+            </div>
+        </div>
+        `;
+    });
+    
+    list.innerHTML = html;
+}
+
+function updateAnalyzerUI(trades) {
+    updateAnalyzerTradesList(trades);
+}
+
+// Select trade and show on chart
+window.selectAnalyzerTrade = async function(index) {
+    analyzerSelectedIndex = index;
+    
+    // Update visual selection
+    document.querySelectorAll('.analyzer-trade-item').forEach((el, i) => {
+        el.classList.toggle('selected', i === index);
+    });
+    
+    // Show trade on chart
+    const item = analyzerProcessedTrades[index];
+    if (item) {
+        await showAnalyzerTradeOnChart(item);
+    }
+};
+
+async function showAnalyzerTradeOnChart(item) {
+    const t = item.trade;
+    
+    // Change symbol if different
+    if (t.symbol !== currentSymbol) {
+        await changeSymbol(t.symbol);
+    }
+    
+    // Clear previous analysis lines
+    clearAnalysisLines();
+    
+    // Draw trade lines
+    if (t.entry_price && candleSeries) {
+        const entryLine = candleSeries.createPriceLine({
+            price: t.entry_price,
+            color: '#ff9800',
+            lineWidth: 2,
+            lineStyle: 0,
+            axisLabelVisible: true,
+            title: 'ENTRY'
+        });
+        analysisLines.push(entryLine);
+    }
+    
+    // Close price (for closed trades)
+    if (t.close_price && candleSeries) {
+        const closeLine = candleSeries.createPriceLine({
+            price: t.close_price,
+            color: '#00bcd4',
+            lineWidth: 2,
+            lineStyle: 0,
+            axisLabelVisible: true,
+            title: 'CLOSE'
+        });
+        analysisLines.push(closeLine);
+    }
+    
+    // TP line
+    if (item.tpPrice && candleSeries) {
+        const tpLine = candleSeries.createPriceLine({
+            price: item.tpPrice,
+            color: '#4caf50',
+            lineWidth: 2,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'TP'
+        });
+        analysisLines.push(tpLine);
+    }
+    
+    // SL line
+    if (item.slPrice && item.slPrice !== Infinity && candleSeries) {
+        const slLine = candleSeries.createPriceLine({
+            price: item.slPrice,
+            color: '#f44336',
+            lineWidth: 2,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'SL'
+        });
+        analysisLines.push(slLine);
+    }
+    
+    // Fibonacci levels
+    if (t.fib_high && t.fib_low && candleSeries) {
+        const fibRange = t.fib_high - t.fib_low;
+        
+        // 0% Low
+        const fibLowLine = candleSeries.createPriceLine({
+            price: t.fib_low,
+            color: 'rgba(76, 175, 80, 0.9)',
+            lineWidth: 1,
+            lineStyle: 0,
+            axisLabelVisible: true,
+            title: '0%'
+        });
+        analysisLines.push(fibLowLine);
+        
+        // 100% High
+        const fibHighLine = candleSeries.createPriceLine({
+            price: t.fib_high,
+            color: 'rgba(244, 67, 54, 0.9)',
+            lineWidth: 1,
+            lineStyle: 0,
+            axisLabelVisible: true,
+            title: '100%'
+        });
+        analysisLines.push(fibHighLine);
+        
+        // Draw visible Fibonacci levels
+        getVisibleFibonacciLevels().forEach(fib => {
+            const fibPrice = t.fib_low + (fibRange * fib.level);
+            const fibLine = candleSeries.createPriceLine({
+                price: fibPrice,
+                color: fib.color,
+                lineWidth: 1,
+                lineStyle: 2,
+                axisLabelVisible: true,
+                title: fib.label
+            });
+            analysisLines.push(fibLine);
+        });
+    }
+    
+    console.log(`📈 Mostrando trade: ${t.symbol} C${item.caseId}`);
+}
+
+function resetAnalyzerDefaults() {
+    // Reset sliders to default values
+    const defaults = {
+        'tpC1': 40, 'slC1': 80,
+        'tpC1pp': 40, 'slC1pp': 80,
+        'tpC2': 45, 'slC2': 85,
+        'tpC3': 62, 'slC3': 94,
+        'tpC4': 70, 'slC4': 93,
+        'tpC5': 45, 'slC5': 110
+    };
+    
+    Object.entries(defaults).forEach(([id, value]) => {
+        const slider = document.getElementById(id);
+        const valEl = document.getElementById(id + 'Val');
+        if (slider) slider.value = value;
+        if (valEl) valEl.textContent = value;
+    });
+    
+    // Enable all SLs
+    ['C1', 'C1pp', 'C2', 'C3', 'C4', 'C5'].forEach(c => {
+        const cb = document.getElementById(`slEnabled${c}`);
+        const group = document.getElementById(`slGroup${c}`);
+        if (cb) cb.checked = true;
+        if (group) group.classList.remove('disabled');
+    });
+    
+    // Disable C5 averaging
+    const c5Toggle = document.getElementById('enableC5Averaging');
+    if (c5Toggle) c5Toggle.checked = false;
+    
+    // Unignore all
+    ['C1', 'C1pp', 'C2', 'C3', 'C4', 'C5'].forEach(c => {
+        const cb = document.getElementById(`ignore${c}`);
+        if (cb) cb.checked = false;
+    });
+    
+    // Reset filter and sort
+    analyzerCurrentFilter = 'all';
+    analyzerSortMode = 'default';
+    document.querySelectorAll('.filter-btn[data-filter]').forEach(b => {
+        b.classList.toggle('active', b.dataset.filter === 'all');
+    });
+    document.querySelectorAll('.sort-btn[data-sort]').forEach(b => {
+        b.classList.toggle('active', b.dataset.sort === 'default');
+    });
+    
+    runAnalyzerSimulation();
+    showToast('Valores restablecidos');
+}
+
 // Start the application
 document.addEventListener('DOMContentLoaded', () => {
     init();
     setupAnalysisMode();
     setupFibonacciEditor();
+    setupModeSwitch();
+    setupAnalyzer();
 });
