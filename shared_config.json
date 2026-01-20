@@ -14,6 +14,13 @@
         "leverage": 10,
         "max_simultaneous_operations": 9999
     },
+    "strategies": {
+        "c1": { "tp": 0.51, "sl": 0.67 },
+        "c1pp": { "tp": 0.45, "sl": 0.78 },
+        "c2": { "tp": 0.50, "sl": 0.82 },
+        "c3": { "tp": 0.50, "sl": 1.05 },
+        "c4": { "tp": 0.50, "sl": 1.05 }
+    },
     "fibonacci": {
         "levels": {
             "0": 0.0,

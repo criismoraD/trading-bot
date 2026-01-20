@@ -121,16 +121,41 @@ class FibonacciTradingBot:
             return
         
         levels = self.current_swing.levels
-        # TPs configurados por caso (según análisis óptimo)
-        tp_c1 = levels.get("40", levels["38.2"])  # Case 1: TP en 40%
-        tp_c2 = levels.get("45", levels["50"])    # Case 2: TP en 45%
-        tp_c3 = levels.get("62", levels["61.8"])  # Case 3: TP en 62%
-        tp_c4 = levels.get("70", levels["69"])    # Case 4: TP en 70%
-        # SLs configurados por caso (según análisis óptimo)
-        sl_c1 = levels.get("80", levels["78.6"])         # Case 1 & 1++: SL en 80%
-        sl_c2 = levels.get("85", levels["78.6"] * 1.08)  # Case 2: SL en 85%
-        sl_c3 = levels.get("94", levels["90"])           # Case 3: SL en 94%
-        sl_c4 = levels.get("93", levels["90"])           # Case 4: SL en 93%
+        
+        # Cargar TPs y SLs desde shared_config.json
+        try:
+            with open('shared_config.json', 'r') as f:
+                shared_cfg = json.load(f)
+                strategies = shared_cfg.get('strategies', {})
+                c1_cfg = strategies.get('c1', {'tp': 0.51, 'sl': 0.67})
+                c1pp_cfg = strategies.get('c1pp', {'tp': 0.45, 'sl': 0.78})
+                c2_cfg = strategies.get('c2', {'tp': 0.50, 'sl': 0.82})
+                c3_cfg = strategies.get('c3', {'tp': 0.50, 'sl': 1.05})
+                c4_cfg = strategies.get('c4', {'tp': 0.50, 'sl': 1.05})
+        except Exception:
+            # Valores por defecto si no se puede leer el archivo
+            c1_cfg = {'tp': 0.51, 'sl': 0.67}
+            c1pp_cfg = {'tp': 0.45, 'sl': 0.78}
+            c2_cfg = {'tp': 0.50, 'sl': 0.82}
+            c3_cfg = {'tp': 0.50, 'sl': 1.05}
+            c4_cfg = {'tp': 0.50, 'sl': 1.05}
+        
+        fib_range = self.current_swing.high - self.current_swing.low
+        fib_low = self.current_swing.low
+        
+        # Calcular precios de TP/SL desde niveles Fibonacci
+        tp_c1 = fib_low + (fib_range * c1_cfg['tp'])
+        tp_c1pp = fib_low + (fib_range * c1pp_cfg['tp'])
+        tp_c2 = fib_low + (fib_range * c2_cfg['tp'])
+        tp_c3 = fib_low + (fib_range * c3_cfg['tp'])
+        tp_c4 = fib_low + (fib_range * c4_cfg['tp'])
+        
+        sl_c1 = fib_low + (fib_range * c1_cfg['sl'])
+        sl_c1pp = fib_low + (fib_range * c1pp_cfg['sl'])
+        sl_c2 = fib_low + (fib_range * c2_cfg['sl'])
+        sl_c3 = fib_low + (fib_range * c3_cfg['sl'])
+        sl_c4 = fib_low + (fib_range * c4_cfg['sl'])
+        
         level_618 = levels["61.8"]
         level_786 = levels["78.6"]
         
@@ -144,8 +169,8 @@ class FibonacciTradingBot:
                 side=OrderSide.SELL,
                 price=level_618,
                 margin=MARGIN_PER_TRADE,
-                take_profit=tp_c1,  # TP en 40%
-                stop_loss=sl_c1     # SL en 80%
+                take_profit=tp_c1,  # TP desde shared_config
+                stop_loss=sl_c1     # SL desde shared_config
             )
             
             if order1:
@@ -154,8 +179,8 @@ class FibonacciTradingBot:
                     side=OrderSide.SELL,
                     price=level_786,
                     margin=MARGIN_PER_TRADE,
-                    take_profit=tp_c1,   # TP en 40%
-                    stop_loss=sl_c1,     # SL en 80%
+                    take_profit=tp_c1,   # TP desde shared_config
+                    stop_loss=sl_c1,     # SL desde shared_config
                     linked_order_id=order1.id  # Vincular para cancelar si TP de order1 se ejecuta
                 )
             
@@ -168,8 +193,8 @@ class FibonacciTradingBot:
                 side=OrderSide.SELL,
                 current_price=current_price,
                 margin=MARGIN_PER_TRADE,
-                take_profit=tp_c2,  # TP en 45%
-                stop_loss=sl_c2     # SL en 85%
+                take_profit=tp_c2,  # TP desde shared_config
+                stop_loss=sl_c2     # SL desde shared_config
             )
             
             if position:
@@ -178,22 +203,22 @@ class FibonacciTradingBot:
                     side=OrderSide.SELL,
                     price=level_786,
                     margin=MARGIN_PER_TRADE,
-                    take_profit=tp_c2,   # TP en 45%
-                    stop_loss=sl_c2,     # SL en 85%
+                    take_profit=tp_c2,   # TP desde shared_config
+                    stop_loss=sl_c2,     # SL desde shared_config
                     linked_order_id=position.order_id
                 )
             
             self.last_case_executed = 2
         
         elif case == 3:
-            # Precio >= 78.6%: Mercado con TP en 62% y SL en 94%
+            # Precio >= 78.6%: Mercado con TP/SL desde shared_config
             self.account.place_market_order(
                 symbol=self.symbol,
                 side=OrderSide.SELL,
                 current_price=current_price,
                 margin=MARGIN_PER_TRADE,
-                take_profit=tp_c3,  # TP en 62%
-                stop_loss=sl_c3     # SL en 94%
+                take_profit=tp_c3,  # TP desde shared_config
+                stop_loss=sl_c3     # SL desde shared_config
             )
             
             self.last_case_executed = 3

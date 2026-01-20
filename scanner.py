@@ -25,6 +25,23 @@ def get_max_simultaneous_operations() -> int:
     except:
         return 20  # Valor por defecto
 
+# Cargar configuración de TP/SL por estrategia
+def get_strategy_config() -> dict:
+    """Obtiene la configuración de TP/SL por caso desde shared_config.json"""
+    defaults = {
+        "c1": {"tp": 0.51, "sl": 0.67},
+        "c1pp": {"tp": 0.45, "sl": 0.78},
+        "c2": {"tp": 0.50, "sl": 0.82},
+        "c3": {"tp": 0.50, "sl": 1.05},
+        "c4": {"tp": 0.50, "sl": 1.05}
+    }
+    try:
+        with open('shared_config.json', 'r') as f:
+            config = json.load(f)
+            return config.get('strategies', defaults)
+    except:
+        return defaults
+
 
 @dataclass
 class ScanResult:
@@ -481,8 +498,11 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
     """Helper para colocar una orden según el caso"""
     order_placed = False
     
+    # Obtener configuración de estrategias
+    strategies = get_strategy_config()
+    
     if case_num == 4:
-        # Caso 4: MARKET, TP 70%
+        # Caso 4: MARKET
         fresh_price = await scanner.get_current_price(result.symbol)
         if not fresh_price:
             return False
@@ -494,7 +514,11 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C4")
             return False
         
-        tp_price = result.fib_levels['70']
+        # TP y SL desde configuración
+        c4_config = strategies.get('c4', {'tp': 0.70, 'sl': 0.93})
+        tp_price = result.fib_levels.get('low', 0) + fib_range * c4_config['tp']
+        sl_price = result.fib_levels.get('low', 0) + fib_range * c4_config['sl'] if c4_config.get('sl') else None
+        
         position = account.place_market_order(
             symbol=result.symbol,
             side=OrderSide.SELL,
@@ -507,13 +531,19 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             fib_low=result.fib_levels.get('low')
         )
         if position:
-            print(f"   🔴 CASO 4 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}")
+            sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
+            print(f"   🔴 CASO 4 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
     
     elif case_num == 3:
-        # Caso 3: LIMIT 78.6%, TP 62%
+        # Caso 3: LIMIT 78.6%
         limit_price = result.fib_levels['786']
-        tp_price = result.fib_levels['62']
+        
+        # TP y SL desde configuración
+        c3_config = strategies.get('c3', {'tp': 0.62, 'sl': 0.94})
+        tp_price = result.fib_levels.get('low', 0) + fib_range * c3_config['tp']
+        sl_price = result.fib_levels.get('low', 0) + fib_range * c3_config['sl'] if c3_config.get('sl') else None
+        
         order = account.place_limit_order(
             symbol=result.symbol,
             side=OrderSide.SELL,
@@ -526,11 +556,12 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             fib_low=result.fib_levels.get('low')
         )
         if order:
-            print(f"   🟠 CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}")
+            sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
+            print(f"   🟠 CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
     
     elif case_num == 2:
-        # Caso 2: MARKET, TP 45%
+        # Caso 2: MARKET
         fresh_price = await scanner.get_current_price(result.symbol)
         if not fresh_price:
             return False
@@ -542,7 +573,11 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C2")
             return False
         
-        tp_price = result.fib_levels['45']
+        # TP y SL desde configuración
+        c2_config = strategies.get('c2', {'tp': 0.45, 'sl': 0.85})
+        tp_price = result.fib_levels.get('low', 0) + fib_range * c2_config['tp']
+        sl_price = result.fib_levels.get('low', 0) + fib_range * c2_config['sl'] if c2_config.get('sl') else None
+        
         position = account.place_market_order(
             symbol=result.symbol,
             side=OrderSide.SELL,
@@ -555,15 +590,20 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             fib_low=result.fib_levels.get('low')
         )
         if position:
-            print(f"   🟡 CASO 2 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}")
+            sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
+            print(f"   🟡 CASO 2 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
     
     elif case_num == 1:
-        # Caso 1 / Caso 1++: LIMIT 61.8%, TP 40%
+        # Caso 1 / Caso 1++: LIMIT 61.8%
         case_label = "CASO 1++" if result.path == 2 else "CASO 1"
         strategy_case_value = 11 if result.path == 2 else 1
+        config_key = 'c1pp' if result.path == 2 else 'c1'
         
-        tp_price = result.fib_levels['40']
+        # TP y SL desde configuración
+        c1_config = strategies.get(config_key, {'tp': 0.40, 'sl': 0.80})
+        tp_price = result.fib_levels.get('low', 0) + fib_range * c1_config['tp']
+        sl_price = result.fib_levels.get('low', 0) + fib_range * c1_config['sl'] if c1_config.get('sl') else None
         limit_price = result.fib_levels['618']
         
         order = account.place_limit_order(
@@ -578,7 +618,8 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             fib_low=result.fib_levels.get('low')
         )
         if order:
-            print(f"   🟢 {case_label} | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}")
+            sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
+            print(f"   🟢 {case_label} | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
     
     return order_placed
@@ -721,8 +762,21 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
             print(f"      ✅ C1++ {symbol}: Encontrado swing válido - High ${alt_high.price:.4f}")
             
             alt_levels = calculate_fibonacci_levels(alt_high.price, lowest_price)
-            tp_price = alt_levels['45']
+            alt_fib_range = alt_high.price - lowest_price
+            
+            # TP y SL desde configuración
+            strategies = get_strategy_config()
+            c1pp_config = strategies.get('c1pp', {'tp': 0.40, 'sl': 0.80})
+            tp_price = lowest_price + alt_fib_range * c1pp_config['tp']
             limit_price = alt_levels['618']
+            c1pp_sl_price = lowest_price + alt_fib_range * c1pp_config['sl'] if c1pp_config.get('sl') else None
+            
+            # REGLA C: Si el SL está después del entry de C1++ (61.8%), no poner C1++
+            # Para SHORT: SL está "después" si es mayor que el limit_price (61.8%)
+            if c1pp_sl_price is not None and c1pp_sl_price > limit_price:
+                scanner_logger.info(f"C1++ {symbol}: ❌ SL (${c1pp_sl_price:.4f}) está después del entry C1++ (${limit_price:.4f}) - NO se coloca C1++")
+                print(f"      ⚠️ C1++ {symbol}: SL > Entry C1++ (Regla C) - No se coloca orden")
+                return
             
             # Verificar que no exista ya esta combinación
             existing = False
@@ -744,14 +798,15 @@ async def _search_and_place_c1pp(scanner, account, symbol, current_high, current
                 price=limit_price,
                 margin=margin_per_trade,
                 take_profit=tp_price,
-                stop_loss=sl_price,
+                stop_loss=c1pp_sl_price,
                 strategy_case=11,  # Caso 1++
                 fib_high=alt_high.price,
                 fib_low=lowest_price
             )
             
             if order:
-                print(f"   🟣 CASO 1++ | {symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f} (High: ${alt_high.price:.4f})")
+                sl_str = f" | SL ${c1pp_sl_price:.4f}" if c1pp_sl_price else ""
+                print(f"   🟣 CASO 1++ | {symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}{sl_str} (High: ${alt_high.price:.4f})")
             
             return  # Solo colocar 1 C1++ por par
             
