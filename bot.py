@@ -128,14 +128,12 @@ class FibonacciTradingBot:
                 shared_cfg = json.load(f)
                 strategies = shared_cfg.get('strategies', {})
                 c1_cfg = strategies.get('c1', {'tp': 0.51, 'sl': 0.67})
-                c1pp_cfg = strategies.get('c1pp', {'tp': 0.45, 'sl': 0.78})
                 c2_cfg = strategies.get('c2', {'tp': 0.50, 'sl': 0.82})
                 c3_cfg = strategies.get('c3', {'tp': 0.50, 'sl': 1.05})
                 c4_cfg = strategies.get('c4', {'tp': 0.50, 'sl': 1.05})
         except Exception:
             # Valores por defecto si no se puede leer el archivo
             c1_cfg = {'tp': 0.51, 'sl': 0.67}
-            c1pp_cfg = {'tp': 0.45, 'sl': 0.78}
             c2_cfg = {'tp': 0.50, 'sl': 0.82}
             c3_cfg = {'tp': 0.50, 'sl': 1.05}
             c4_cfg = {'tp': 0.50, 'sl': 1.05}
@@ -145,13 +143,11 @@ class FibonacciTradingBot:
         
         # Calcular precios de TP/SL desde niveles Fibonacci
         tp_c1 = fib_low + (fib_range * c1_cfg['tp'])
-        tp_c1pp = fib_low + (fib_range * c1pp_cfg['tp'])
         tp_c2 = fib_low + (fib_range * c2_cfg['tp'])
         tp_c3 = fib_low + (fib_range * c3_cfg['tp'])
         tp_c4 = fib_low + (fib_range * c4_cfg['tp'])
         
         sl_c1 = fib_low + (fib_range * c1_cfg['sl'])
-        sl_c1pp = fib_low + (fib_range * c1pp_cfg['sl'])
         sl_c2 = fib_low + (fib_range * c2_cfg['sl'])
         sl_c3 = fib_low + (fib_range * c3_cfg['sl'])
         sl_c4 = fib_low + (fib_range * c4_cfg['sl'])
@@ -682,7 +678,7 @@ async def main():
                 pnl_color_pos = C_GREEN if pos.unrealized_pnl >= 0 else C_RED
                 current = price_cache.get(pos.symbol, pos.current_price)
                 side_color = C_RED if pos.side.value == 'SHORT' else C_GREEN
-                case_str = "C1++" if pos.strategy_case == 11 else f"C{pos.strategy_case}" if pos.strategy_case else "??"
+                case_str = f"C{pos.strategy_case}" if pos.strategy_case else "??"
                 
                 # Línea 1: Symbol, Case, Side, Qty
                 print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{pos.symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}{pos.side.value:<5}{C_RESET} │ Qty: {C_WHITE}{pos.quantity:.3f}{C_RESET}{' '*25}{C_CYAN}│{C_RESET}")
@@ -701,7 +697,7 @@ async def main():
             print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
             for order_id, order in account.pending_orders.items():
                 side_color = C_RED if order.side.value == 'SELL' else C_GREEN
-                case_str = "C1++" if order.strategy_case == 11 else f"C{order.strategy_case}" if order.strategy_case else "??"
+                case_str = f"C{order.strategy_case}" if order.strategy_case else "??"
                 
                 # Línea 1
                 print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{order.symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}LIMIT {order.side.value}{C_RESET} │ Qty: {C_WHITE}{order.quantity:.2f}{C_RESET}{' '*21}{C_CYAN}│{C_RESET}")

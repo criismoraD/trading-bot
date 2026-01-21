@@ -163,8 +163,8 @@ class TelegramBot:
         pnl_emoji = "🟢" if status['total_unrealized_pnl'] >= 0 else "🔴"
         balance_emoji = "📈" if self.account.balance >= self.account.initial_balance else "📉"
         
-        # Por caso (stats) - incluir caso 11 (C1++) separado
-        cases = {1: [], 2: [], 3: [], 4: [], 11: []}
+        # Por caso (stats)
+        cases = {1: [], 2: [], 3: [], 4: []}
         for t in history:
             case = t.get('strategy_case', 0)
             if case in cases:
@@ -192,7 +192,6 @@ class TelegramBot:
 
 <b>🎯 POR CASO</b>
 ├ C1: {len(cases[1])} trades | ${sum(cases[1]):.2f}
-├ C1++: {len(cases[11])} trades | ${sum(cases[11]):.2f}
 ├ C2: {len(cases[2])} trades | ${sum(cases[2]):.2f}
 ├ C3: {len(cases[3])} trades | ${sum(cases[3]):.2f}
 └ C4: {len(cases[4])} trades | ${sum(cases[4]):.2f}
@@ -269,9 +268,7 @@ class TelegramBot:
         return count
     
     def _format_case(self, case: int) -> str:
-        """Formatear número de caso para mostrar (11 -> C1++)"""
-        if case == 11:
-            return "C1++"
+        """Formatear número de caso para mostrar"""
         return f"C{case}" if case else "?"
     
     def format_balance(self) -> str:
@@ -333,8 +330,8 @@ class TelegramBot:
         # Max drawdown
         max_dd = min((t.get('min_pnl', 0) for t in history), default=0)
         
-        # Por caso - incluir caso 11 (C1++) separado
-        cases = {1: [], 2: [], 3: [], 4: [], 11: []}
+        # Por caso
+        cases = {1: [], 2: [], 3: [], 4: []}
         for t in history:
             case = t.get('strategy_case', 0)
             if case in cases:
@@ -359,7 +356,6 @@ class TelegramBot:
 
 <b>🎯 POR CASO</b>
 ├ Caso 1: {len(cases[1])} trades | ${sum(cases[1]):.4f}
-├ Caso 1++: {len(cases[11])} trades | ${sum(cases[11]):.4f}
 ├ Caso 2: {len(cases[2])} trades | ${sum(cases[2]):.4f}
 ├ Caso 3: {len(cases[3])} trades | ${sum(cases[3]):.4f}
 └ Caso 4: {len(cases[4])} trades | ${sum(cases[4]):.4f}

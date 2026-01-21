@@ -30,7 +30,6 @@ def get_strategy_config() -> dict:
     """Obtiene la configuración de TP/SL por caso desde shared_config.json"""
     defaults = {
         "c1": {"tp": 0.51, "sl": 0.67},
-        "c1pp": {"tp": 0.45, "sl": 0.78},
         "c2": {"tp": 0.50, "sl": 0.82},
         "c3": {"tp": 0.50, "sl": 1.05},
         "c4": {"tp": 0.50, "sl": 1.05}
@@ -401,7 +400,12 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
     from paper_trading import OrderSide
     
     # Obtener límite de operaciones simultáneas
-    max_ops = get_max_simultaneous_operations()
+    try:
+        with open('shared_config.json', 'r') as f:
+            config = json.load(f)
+            max_ops = config.get('trading', {}).get('max_simultaneous_operations', 20)
+    except:
+        max_ops = 20
     
     # Usar cache si está definido, sino hacer fetch
     if scanner.pairs_cache:
@@ -456,12 +460,10 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                     current_ops = len(account.open_positions) + len(account.pending_orders)
                     if current_ops >= max_ops:
                         break
-                    
+
                     case_num = result.case
-                    strategy_case_value = 11 if result.path == 2 else case_num
                     
-                    # Verificar duplicados - Solo 1 operación por símbolo (excepto C1++ que es complementaria)
-                    # Si ya hay posición/orden del mismo símbolo (cualquier case), saltar
+                    # Verificar duplicados - Solo 1 operación por símbolo
                     existing = any(p.symbol == result.symbol for p in account.open_positions.values())
                     existing = existing or any(o.symbol == result.symbol for o in account.pending_orders.values())
                     if existing:
@@ -471,21 +473,14 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                     sl_price = None
                     
                     # Colocar orden INMEDIATAMENTE
-                    order_placed = await _place_order_for_case(
+                    order_placed, order_id, primary_sl = await _place_order_for_case(
                         scanner, account, result, case_num, 
                         margin_per_trade, fib_range, sl_price, OrderSide, session
                     )
                     
                     if order_placed:
                         orders_placed += 1
-                        # Si C2/C3/C4, buscar C1++
-                        if case_num in [2, 3, 4]:
-                            await _search_and_place_c1pp(
-                                scanner, account, result.symbol,
-                                result.fib_levels.get('high', 0),
-                                result.fib_levels.get('low', 0),
-                                margin_per_trade, sl_price, OrderSide, session
-                            )
+
             
             # Pausa mínima entre batches
             await asyncio.sleep(0.1)
@@ -495,8 +490,10 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
 
 
 async def _place_order_for_case(scanner, account, result, case_num, margin_per_trade, fib_range, sl_price, OrderSide, session=None):
-    """Helper para colocar una orden según el caso"""
+    """Helper para colocar una orden según el caso. Retorna (success, order_id, sl_price)"""
     order_placed = False
+    order_id = None
+    final_sl = None
     
     # Obtener configuración de estrategias
     strategies = get_strategy_config()
@@ -505,14 +502,14 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
         # Caso 4: MARKET
         fresh_price = await scanner.get_current_price(result.symbol)
         if not fresh_price:
-            return False
+            return False, None, None
         
         level_case4_min = result.fib_levels.get('low', 0) + fib_range * 0.75
         level_case4_max = result.fib_levels.get('low', 0) + fib_range * 0.90
         
         if fresh_price < level_case4_min or fresh_price >= level_case4_max:
             print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C4")
-            return False
+            return False, None, None
         
         # TP y SL desde configuración
         c4_config = strategies.get('c4', {'tp': 0.70, 'sl': 0.93})
@@ -534,6 +531,8 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
             print(f"   🔴 CASO 4 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
+            order_id = position.order_id
+            final_sl = sl_price
     
     elif case_num == 3:
         # Caso 3: LIMIT 78.6%
@@ -559,19 +558,21 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
             print(f"   🟠 CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
+            order_id = order.id
+            final_sl = sl_price
     
     elif case_num == 2:
         # Caso 2: MARKET
         fresh_price = await scanner.get_current_price(result.symbol)
         if not fresh_price:
-            return False
+            return False, None, None
         
         level_case2_min = result.fib_levels.get('low', 0) + fib_range * 0.618
         level_case2_max = result.fib_levels.get('low', 0) + fib_range * 0.69
         
         if fresh_price < level_case2_min or fresh_price >= level_case2_max:
             print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C2")
-            return False
+            return False, None, None
         
         # TP y SL desde configuración
         c2_config = strategies.get('c2', {'tp': 0.45, 'sl': 0.85})
@@ -593,15 +594,14 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
             print(f"   🟡 CASO 2 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
+            order_id = position.order_id
+            final_sl = sl_price
     
     elif case_num == 1:
-        # Caso 1 / Caso 1++: LIMIT 61.8%
-        case_label = "CASO 1++" if result.path == 2 else "CASO 1"
-        strategy_case_value = 11 if result.path == 2 else 1
-        config_key = 'c1pp' if result.path == 2 else 'c1'
+        # Caso 1: LIMIT 61.8%
         
         # TP y SL desde configuración
-        c1_config = strategies.get(config_key, {'tp': 0.40, 'sl': 0.80})
+        c1_config = strategies.get('c1', {'tp': 0.51, 'sl': 0.67})
         tp_price = result.fib_levels.get('low', 0) + fib_range * c1_config['tp']
         sl_price = result.fib_levels.get('low', 0) + fib_range * c1_config['sl'] if c1_config.get('sl') else None
         limit_price = result.fib_levels['618']
@@ -613,202 +613,19 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             margin=margin_per_trade,
             take_profit=tp_price,
             stop_loss=sl_price,
-            strategy_case=strategy_case_value,
+
+            strategy_case=1,
             fib_high=result.fib_levels.get('high'),
             fib_low=result.fib_levels.get('low')
         )
         if order:
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
-            print(f"   🟢 {case_label} | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}{sl_str}")
+            print(f"   🟢 CASO 1 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
+            order_id = order.id
+            final_sl = sl_price
     
-    return order_placed
+    return order_placed, order_id, final_sl
 
 
-async def _search_and_place_c1pp(scanner, account, symbol, current_high, current_low, margin_per_trade, sl_price, OrderSide, session):
-    """
-    Buscar el siguiente High MÁS ALTO a la izquierda (más antiguo) y su Low para C1++
-    La zona válida para C1++ es 0%-61.8%
-    Si 61.8% ya fue tocado, busca el siguiente High más alto a la izquierda
-    """
-    from fibonacci import calculate_zigzag, calculate_fibonacci_levels
-    from config import TIMEFRAME
-    
-    try:
-        scanner_logger.info(f"🔍 C1++ {symbol}: Iniciando búsqueda (High actual: ${current_high:.4f})")
-        print(f"      🔍 Buscando C1++ para {symbol}...")
-        
-        # Obtener velas del par (2000 para historial completo)
-        candle_data = await scanner.fetch_klines(session, symbol, TIMEFRAME, limit=2000)
-        
-        if not candle_data or len(candle_data) < 50:
-            scanner_logger.warning(f"C1++ {symbol}: No hay suficientes velas ({len(candle_data) if candle_data else 0})")
-            print(f"      ❌ C1++ {symbol}: No hay suficientes velas")
-            return
-        
-        # Obtener pivotes ZigZag
-        zigzag_pivots = calculate_zigzag(candle_data, TIMEFRAME)
-        
-        if not zigzag_pivots or len(zigzag_pivots) < 2:
-            scanner_logger.warning(f"C1++ {symbol}: No hay suficientes pivotes ZigZag")
-            print(f"      ❌ C1++ {symbol}: No hay suficientes pivotes ZigZag")
-            return
-        
-        # Encontrar el índice del High actual del C2/C3/C4
-        current_high_pivot = None
-        for p in zigzag_pivots:
-            if p.type == 'high' and abs(p.price - current_high) < current_high * 0.001:  # Tolerancia 0.1%
-                current_high_pivot = p
-                break
-        
-        if not current_high_pivot:
-            scanner_logger.warning(f"C1++ {symbol}: No se encontró High actual ${current_high:.4f} en pivotes")
-            print(f"      ❌ C1++ {symbol}: No se encontró el High actual en los pivotes")
-            return
-        
-        scanner_logger.info(f"C1++ {symbol}: High actual encontrado en índice {current_high_pivot.index}")
-        
-        # Buscar Highs MÁS ALTOS que estén A LA IZQUIERDA (índice menor) del High actual
-        left_higher_highs = [p for p in zigzag_pivots 
-                            if p.type == 'high' 
-                            and p.index < current_high_pivot.index 
-                            and p.price > current_high]
-        
-        if not left_higher_highs:
-            # Debug: mostrar todos los Highs a la izquierda
-            all_left_highs = [p for p in zigzag_pivots 
-                              if p.type == 'high' and p.index < current_high_pivot.index]
-            if all_left_highs:
-                max_left = max(all_left_highs, key=lambda x: x.price)
-                scanner_logger.warning(f"C1++ {symbol}: No hay Highs más altos a la izquierda (Actual: ${current_high:.4f}, Max izq: ${max_left.price:.4f})")
-                print(f"      ❌ C1++ {symbol}: No hay Highs más altos a la izquierda (High actual: ${current_high:.4f}, Max izq: ${max_left.price:.4f})")
-            else:
-                scanner_logger.warning(f"C1++ {symbol}: No hay Highs a la izquierda")
-                print(f"      ❌ C1++ {symbol}: No hay Highs a la izquierda del pivote actual")
-            return
-        
-        # Ordenar por índice descendente (el más cercano/reciente primero, no el más alto)
-        # Así tomamos el "siguiente" High más alto inmediato, no el máximo global
-        left_higher_highs.sort(key=lambda x: x.index, reverse=True)
-        
-        current_price = candle_data[-1]['close']
-        last_candle_index = len(candle_data) - 1
-        
-        scanner_logger.info(f"C1++ {symbol}: Encontrados {len(left_higher_highs)} Highs más altos a la izquierda")
-        for i, h in enumerate(left_higher_highs[:5]):  # Log primeros 5
-            scanner_logger.debug(f"  High #{i+1}: ${h.price:.4f} (idx: {h.index})")
-        
-        print(f"      📊 C1++ {symbol}: Encontrados {len(left_higher_highs)} Highs más altos a la izquierda")
-        
-        # Iterar por cada High más alto a la izquierda hasta encontrar C1++ válido
-        for idx, alt_high in enumerate(left_higher_highs):
-            alt_high_idx = alt_high.index
-            
-            # Buscar el Low más bajo entre este High y la vela actual
-            candles_after_high = candle_data[alt_high_idx + 1:]
-            if not candles_after_high:
-                continue
-            
-            lowest_candle = min(candles_after_high, key=lambda x: x['low'])
-            lowest_price = lowest_candle['low']
-            lowest_idx = candle_data.index(lowest_candle)
-            
-            # Calcular rango y niveles Fib
-            alt_range = alt_high.price - lowest_price
-            if alt_range <= 0:
-                continue
-            
-            fib_618 = lowest_price + (alt_range * 0.618)
-            fib_90 = lowest_price + (alt_range * 0.90)
-            
-            scanner_logger.debug(f"C1++ {symbol} High #{idx+1}: High=${alt_high.price:.4f}, Low=${lowest_price:.4f}, 61.8%=${fib_618:.4f}, 90%=${fib_90:.4f}")
-            
-            # Verificar que 90% NO haya sido tocado
-            touched_90 = False
-            touched_90_candle_idx = None
-            for k in range(lowest_idx + 1, last_candle_index + 1):
-                if candle_data[k]['high'] >= fib_90:
-                    touched_90 = True
-                    touched_90_candle_idx = k
-                    break
-            
-            if touched_90:
-                scanner_logger.info(f"C1++ {symbol}: ❌ 90% tocado para High #{idx+1} (High=${alt_high.price:.4f}) en vela idx={touched_90_candle_idx}")
-                print(f"      ⚠️ C1++ {symbol}: 90% tocado para High #{idx+1} (${alt_high.price:.4f}), probando siguiente...")
-                continue
-            
-            # Verificar que 61.8% NO haya sido tocado
-            touched_618 = False
-            touched_618_candle_idx = None
-            for k in range(lowest_idx + 1, last_candle_index + 1):
-                if candle_data[k]['high'] >= fib_618:
-                    touched_618 = True
-                    touched_618_candle_idx = k
-                    break
-            
-            if touched_618:
-                scanner_logger.info(f"C1++ {symbol}: ❌ 61.8% (${fib_618:.4f}) tocado para High #{idx+1} en vela idx={touched_618_candle_idx}")
-                print(f"      ⚠️ C1++ {symbol}: 61.8% ya tocado para High #{idx+1} (${alt_high.price:.4f}), probando siguiente...")
-                continue
-            
-            # Precio debe estar en zona 0%-61.8% para C1++ válido
-            if current_price >= fib_618:
-                scanner_logger.info(f"C1++ {symbol}: ❌ Precio actual ${current_price:.4f} >= 61.8% ${fib_618:.4f} para High #{idx+1}")
-                print(f"      ⚠️ C1++ {symbol}: Precio actual encima de 61.8% para High #{idx+1}, probando siguiente...")
-                continue
-            
-            # ¡Encontramos C1++ válido!
-            scanner_logger.info(f"C1++ {symbol}: ✅ VÁLIDO! High=${alt_high.price:.4f}, Low=${lowest_price:.4f}, Entry=${fib_618:.4f}")
-            print(f"      ✅ C1++ {symbol}: Encontrado swing válido - High ${alt_high.price:.4f}")
-            
-            alt_levels = calculate_fibonacci_levels(alt_high.price, lowest_price)
-            alt_fib_range = alt_high.price - lowest_price
-            
-            # TP y SL desde configuración
-            strategies = get_strategy_config()
-            c1pp_config = strategies.get('c1pp', {'tp': 0.40, 'sl': 0.80})
-            tp_price = lowest_price + alt_fib_range * c1pp_config['tp']
-            limit_price = alt_levels['618']
-            c1pp_sl_price = lowest_price + alt_fib_range * c1pp_config['sl'] if c1pp_config.get('sl') else None
-            
-            # REGLA C: Si el SL está después del entry de C1++ (61.8%), no poner C1++
-            # Para SHORT: SL está "después" si es mayor que el limit_price (61.8%)
-            if c1pp_sl_price is not None and c1pp_sl_price > limit_price:
-                scanner_logger.info(f"C1++ {symbol}: ❌ SL (${c1pp_sl_price:.4f}) está después del entry C1++ (${limit_price:.4f}) - NO se coloca C1++")
-                print(f"      ⚠️ C1++ {symbol}: SL > Entry C1++ (Regla C) - No se coloca orden")
-                return
-            
-            # Verificar que no exista ya esta combinación
-            existing = False
-            for o in account.pending_orders.values():
-                if o.symbol == symbol and o.strategy_case == 11:
-                    existing = True
-                    break
-            for p in account.open_positions.values():
-                if p.symbol == symbol and p.strategy_case == 11:
-                    existing = True
-                    break
-            
-            if existing:
-                return
-            
-            order = account.place_limit_order(
-                symbol=symbol,
-                side=OrderSide.SELL,
-                price=limit_price,
-                margin=margin_per_trade,
-                take_profit=tp_price,
-                stop_loss=c1pp_sl_price,
-                strategy_case=11,  # Caso 1++
-                fib_high=alt_high.price,
-                fib_low=lowest_price
-            )
-            
-            if order:
-                sl_str = f" | SL ${c1pp_sl_price:.4f}" if c1pp_sl_price else ""
-                print(f"   🟣 CASO 1++ | {symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}{sl_str} (High: ${alt_high.price:.4f})")
-            
-            return  # Solo colocar 1 C1++ por par
-            
-    except Exception as e:
-        print(f"      ❌ Error buscando C1++ para {symbol}: {e}")
+
