@@ -1763,7 +1763,7 @@
         }
 
         async function autoLoadTradesJson() {
-            const filesToTry = ['/2trades.json', '/trades.json'];
+            const filesToTry = ['/trades.json'];
             for (const fileName of filesToTry) {
                 try {
                     const response = await fetch(fileName + '?nocache=' + Date.now(), { cache: 'no-store' });
@@ -1775,7 +1775,7 @@
                         console.log('✅ Cargado:', fileName);
                         return;
                     }
-                } catch (e) { }
+                } catch (e) { console.error("Error loading/processing " + fileName, e); }
             }
         }
 
@@ -1861,10 +1861,18 @@
             if (rawData.history) rawData.history.forEach(t => {
                 t._src = 'HIST';
                 // Combinar pre y post close para análisis completo de "qué hubiera pasado"
-                const preMax = t.max_price_pre_close || t.entry_price;
-                const postMax = t.max_price_post_close || preMax;
+                let preMax = t.max_price_pre_close || t.entry_price;
+                let postMax = t.max_price_post_close || preMax;
                 const preMin = t.min_price_pre_close || t.entry_price;
                 const postMin = t.min_price_post_close || preMin;
+
+                // FILTRO ANTI-spike: Si max_post es > 200% mayor que min_post (3x), es data corrupta
+                if (postMax > postMin * 3.0) {
+                    console.warn(`Spike detectado en ${t.symbol}: PostMax ${postMax} vs PostMin ${postMin}. Ignorando PostMax.`);
+                    postMax = preMax;
+                    t.isCorrected = true;
+                }
+
                 t._max = Math.max(preMax, postMax);
                 t._min = Math.min(preMin, postMin, t.close_price || t.entry_price);
                 allTrades.push(t);
@@ -1888,6 +1896,7 @@
 
                 // Determinar si está ignorado por checkbox
                 let isIgnored = ignoredCases[cID] || false;
+                if (t.isCorrected) isIgnored = true;
 
                 const s = getCaseSettings(cID);
                 const range = t.fib_high - t.fib_low;
@@ -1947,7 +1956,7 @@
                         if (originalReason === 'TP' && !hitTP) {
                             // El TP real fue diferente al configurado, seguiría corriendo
                             status = "RUN ⏳"; fPnl = (t.entry_price - (t.close_price || t.entry_price)) * t.quantity; css = "bg-run";
-                        } else if (originalReason === 'SL' && !hitSL) {
+                        } else if ((originalReason === 'SL' || originalReason === 'STOP_LOSS') && !hitSL) {
                             status = "RUN ⏳"; fPnl = (t.entry_price - (t.close_price || t.entry_price)) * t.quantity; css = "bg-run";
                         } else {
                             status = "CLOSED"; rPnl = t.pnl; css = t.pnl >= 0 ? "bg-win" : "bg-loss"; isClosed = true;
@@ -1959,7 +1968,7 @@
 
                 // NO calcular stats aquí - se hará después de los filtros
 
-                processedTrades.push({ t, cID, s, tpPrice, slPrice, status, css, rPnl, fPnl, isIgnored, isClosed, fibEntryLevel });
+                processedTrades.push({ t, cID, s, tpPrice, slPrice, status, css, rPnl, fPnl, isIgnored, isClosed, fibEntryLevel, hitSL, originalReason });
             });
 
             // Filter by case (selección múltiple)
@@ -2050,7 +2059,7 @@
             activeTrades.forEach((item) => {
                 // Obtener índice real en processedTradesGlobal
                 const idx = processedTradesGlobal.indexOf(item);
-                const { t, cID, status, css, rPnl, fPnl, tpPrice, slPrice } = item;
+                const { t, cID, status, css, rPnl, fPnl, tpPrice, slPrice, hitSL, originalReason } = item;
                 const caseDisplay = `C${cID}`;
                 const rowClass = `row-c${cID}`;
                 const selectedClass = idx === selectedTradeIndex ? 'selected' : '';
@@ -2072,10 +2081,24 @@
                     }
                 }
 
+                // Debug info for tooltip
+                let rowTitle = '';
+                try {
+                    const localRange = (t.fib_high && t.fib_low) ? (t.fib_high - t.fib_low) : 0;
+                    const maxFib = localRange > 0 ? ((t._max - t.fib_low) / localRange * 100).toFixed(1) + '%' : '-';
+                    rowTitle = `Max Reached: $${(t._max || 0).toFixed(4)} (${maxFib})
+SL Trigger: $${slPrice !== Infinity ? slPrice.toFixed(4) : '∞'}
+Status: ${status} (HitSL: ${hitSL})
+Original Reason: '${originalReason}'`;
+                } catch (e) { console.error("Tooltip calc error", e); }
+
                 tbody.innerHTML += `
-                    <tr class="${rowClass} ${selectedClass}" onclick="selectTrade(${idx})" data-idx="${idx}">
+                    <tr class="${rowClass} ${selectedClass}" onclick="selectTrade(${idx})" data-idx="${idx}" title="${rowTitle}">
                         <td class="py-1 px-2">
-                            <div class="font-bold text-xs">${t.symbol}</div>
+                            <div class="font-bold text-xs flex items-center gap-1">
+                                ${t.symbol} 
+                                ${t.isCorrected ? '<span title="Data Corrupta Corregida (Spike ignorado)">⚠️</span>' : ''}
+                            </div>
                             <div class="text-[9px] text-slate-400 font-normal leading-tight">
                                 ${(() => {
                         // Fecha
@@ -2128,8 +2151,11 @@
                     const fPnlColor = fPnl >= 0 ? 'var(--accent-blue)' : 'var(--accent-orange)';
 
                     ignoredBody.innerHTML += `
-                        <tr class="${rowClass}" style="opacity: 0.5;">
-                            <td class="font-bold text-xs py-1 px-2">${t.symbol}</td>
+                        <tr class="${rowClass}">
+                            <td class="py-1 px-2 font-bold text-xs flex items-center gap-1">
+                                ${t.symbol}
+                                ${t.isCorrected ? '<span title="Data Corrupta (Ignorado)">⚠️</span>' : ''}
+                            </td>
                             <td class="text-center py-1"><span class="badge text-[9px]" style="padding: 2px 6px;">${caseDisplay}</span></td>
                             <td class="text-center py-1"><span class="badge ${css} text-[9px]" style="padding: 2px 6px;">${status}</span></td>
                             <td class="text-right font-mono text-xs py-1" style="color: ${rPnlColor}">${rPnl !== 0 ? '$' + rPnl.toFixed(2) : '-'}</td>
@@ -2322,6 +2348,15 @@
                 }
             });
 
+            // ZigZag Series
+            zigzagSeries = chart.addLineSeries({
+                color: 'rgba(255, 255, 255, 0.6)',
+                lineWidth: 2,
+                crosshairMarkerVisible: false,
+                lastValueVisible: false,
+                priceLineVisible: false
+            });
+
             // Resize handler
             window.addEventListener('resize', () => {
                 if (chart) chart.applyOptions({ width: container.clientWidth });
@@ -2330,7 +2365,8 @@
 
         async function loadCandleData(symbol) {
             try {
-                const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol}&interval=${currentTimeframe}&limit=200`;
+                // Aumentado a 1000 velas para más contexto
+                const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol}&interval=${currentTimeframe}&limit=1000`;
                 const response = await fetch(url);
                 const data = await response.json();
 
@@ -2345,6 +2381,11 @@
 
                     candleDataGlobal = candles; // Save for markers
                     candleSeries.setData(candles);
+
+                    // Calcular y dibujar ZigZag
+                    const zigzagPoints = calculateZigZag(candles, currentTimeframe);
+                    zigzagSeries.setData(zigzagPoints);
+
                     chart.timeScale().fitContent();
                 }
             } catch (error) {
@@ -2465,6 +2506,88 @@
                 const item = processedTradesGlobal[selectedTradeIndex];
                 loadCandleData(item.t.symbol).then(() => drawTradeLines(item));
             }
+        }
+
+        // ========== ZIGZAG ALGORITHM ==========
+        const ZIGZAG_CONFIGS = {
+            "1m": { "deviation": 0.3, "depth": 5, "backstep": 2 },
+            "5m": { "deviation": 0.5, "depth": 5, "backstep": 2 },
+            "15m": { "deviation": 1, "depth": 5, "backstep": 2 },
+            "1h": { "deviation": 2, "depth": 8, "backstep": 3 },
+            "4h": { "deviation": 3, "depth": 10, "backstep": 3 },
+            "1d": { "deviation": 5, "depth": 10, "backstep": 3 }
+        };
+
+        function calculateZigZag(data, timeframe) {
+            const config = ZIGZAG_CONFIGS[timeframe] || ZIGZAG_CONFIGS["1h"];
+            const deviation = config.deviation / 100;
+            const depth = config.depth;
+
+            if (data.length < depth * 2) return [];
+
+            let potentialPivots = [];
+
+            // Fase 1: Encontrar pivotes locales
+            for (let i = depth; i < data.length - 1; i++) {
+                let isHigh = true;
+                let isLow = true;
+
+                for (let j = Math.max(0, i - depth); j <= Math.min(data.length - 1, i + depth); j++) {
+                    if (j === i) continue;
+                    if (data[j].high >= data[i].high) isHigh = false;
+                    if (data[j].low <= data[i].low) isLow = false;
+                }
+
+                if (isHigh) potentialPivots.push({ index: i, price: data[i].high, type: 'high', time: data[i].time });
+                if (isLow) potentialPivots.push({ index: i, price: data[i].low, type: 'low', time: data[i].time });
+            }
+
+            if (potentialPivots.length === 0) return [];
+
+            // Fase 2: Filtrar por desviación y alternancia
+            let zigzag = [];
+            let lastType = null;
+            let lastPrice = null;
+
+            potentialPivots.forEach(pivot => {
+                if (zigzag.length === 0) {
+                    zigzag.push(pivot);
+                    lastType = pivot.type;
+                    lastPrice = pivot.price;
+                    return;
+                }
+
+                if (pivot.type === lastType) {
+                    // Update si es más extremo
+                    if (lastType === 'high' && pivot.price > zigzag[zigzag.length - 1].price) {
+                        zigzag[zigzag.length - 1] = pivot;
+                        lastPrice = pivot.price;
+                    } else if (lastType === 'low' && pivot.price < zigzag[zigzag.length - 1].price) {
+                        zigzag[zigzag.length - 1] = pivot;
+                        lastPrice = pivot.price;
+                    }
+                } else {
+                    const change = Math.abs(pivot.price - lastPrice) / lastPrice;
+                    if (change >= deviation) {
+                        zigzag.push(pivot);
+                        lastType = pivot.type;
+                        lastPrice = pivot.price;
+                    } else {
+                        // Check if better than previous of same type (simplified backstep logic)
+                        if (zigzag.length >= 2 && zigzag[zigzag.length - 2].type === pivot.type) {
+                            const prev = zigzag[zigzag.length - 2];
+                            if (pivot.type === 'high' && pivot.price > prev.price) {
+                                zigzag[zigzag.length - 2] = pivot;
+                            } else if (pivot.type === 'low' && pivot.price < prev.price) {
+                                zigzag[zigzag.length - 2] = pivot;
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Convert format for Lightweight Charts (time, value)
+            return zigzag.map(p => ({ time: p.time, value: p.price }));
         }
 
         // ========== INIT ==========
