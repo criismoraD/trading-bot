@@ -50,7 +50,7 @@ class PerformanceMetrics:
     
     def __post_init__(self):
         if self.case_stats is None:
-            self.case_stats = {1: {}, 2: {}, 3: {}, 4: {}}
+            self.case_stats = {1: {}, 3: {}, 4: {}}  # Caso 2 eliminado
 
 
 class PerformanceCalculator:
@@ -163,8 +163,8 @@ class PerformanceCalculator:
             except:
                 pass
         
-        # Por caso
-        for case_num in [1, 2, 3, 4]:
+        # Por caso (Caso 2 eliminado)
+        for case_num in [1, 3, 4]:
             case_trades = [t for t in closed_trades if t.get('strategy_case') == case_num]
             if case_trades:
                 case_pnls = [t.get('pnl', 0) for t in case_trades]
@@ -228,7 +228,6 @@ class PerformanceCalculator:
 ╠══════════════════════════════════════════════════════════════════╣
 ║  POR CASO                                                         ║
 ║  ├ Caso 1: {metrics.case_stats[1]['total']:>3} trades | WR: {metrics.case_stats[1]['win_rate']:>5.1f}% | PnL: ${metrics.case_stats[1]['total_pnl']:>8.4f}  ║
-║  ├ Caso 2: {metrics.case_stats[2]['total']:>3} trades | WR: {metrics.case_stats[2]['win_rate']:>5.1f}% | PnL: ${metrics.case_stats[2]['total_pnl']:>8.4f}  ║
 ║  ├ Caso 3: {metrics.case_stats[3]['total']:>3} trades | WR: {metrics.case_stats[3]['win_rate']:>5.1f}% | PnL: ${metrics.case_stats[3]['total_pnl']:>8.4f}  ║
 ║  └ Caso 4: {metrics.case_stats[4]['total']:>3} trades | WR: {metrics.case_stats[4]['win_rate']:>5.1f}% | PnL: ${metrics.case_stats[4]['total_pnl']:>8.4f}  ║
 ╚══════════════════════════════════════════════════════════════════╝

@@ -29,10 +29,9 @@ def get_max_simultaneous_operations() -> int:
 def get_strategy_config() -> dict:
     """Obtiene la configuración de TP/SL por caso desde shared_config.json"""
     defaults = {
-        "c1": {"tp": 0.51, "sl": 0.67},
-        "c2": {"tp": 0.50, "sl": 0.82},
-        "c3": {"tp": 0.50, "sl": 1.05},
-        "c4": {"tp": 0.50, "sl": 1.05}
+        "c1": {"tp": 0.50, "sl": 0.88},
+        "c3": {"tp": 0.51, "sl": 1.05},
+        "c4": {"tp": 0.56, "sl": 1.05}
     }
     try:
         with open('shared_config.json', 'r') as f:
@@ -319,7 +318,7 @@ class MarketScanner:
         
         NUEVO: scan_pair puede retornar múltiples resultados (por sistema de 2 caminos)
         """
-        results = {1: [], 2: [], 3: [], 4: []}
+        results = {1: [], 3: [], 4: []}  # Caso 2 eliminado
         
         async with aiohttp.ClientSession() as session:
             # Escanear en lotes (batch)
@@ -346,7 +345,7 @@ class MarketScanner:
                 
                 await asyncio.sleep(0.5)
         
-        print(f"🔍 Scan: C4: {len(results[4])} | C3: {len(results[3])} | C2: {len(results[2])} | C1: {len(results[1])}")
+        print(f"🔍 Scan: C4: {len(results[4])} | C3: {len(results[3])} | C1: {len(results[1])}")  # Caso 2 eliminado
         return results
 
 
@@ -561,50 +560,17 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             order_id = order.id
             final_sl = sl_price
     
-    elif case_num == 2:
-        # Caso 2: MARKET
-        fresh_price = await scanner.get_current_price(result.symbol)
-        if not fresh_price:
-            return False, None, None
-        
-        level_case2_min = result.fib_levels.get('low', 0) + fib_range * 0.618
-        level_case2_max = result.fib_levels.get('low', 0) + fib_range * 0.69
-        
-        if fresh_price < level_case2_min or fresh_price >= level_case2_max:
-            print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C2")
-            return False, None, None
-        
-        # TP y SL desde configuración
-        c2_config = strategies.get('c2', {'tp': 0.45, 'sl': 0.85})
-        tp_price = result.fib_levels.get('low', 0) + fib_range * c2_config['tp']
-        sl_price = result.fib_levels.get('low', 0) + fib_range * c2_config['sl'] if c2_config.get('sl') else None
-        
-        position = account.place_market_order(
-            symbol=result.symbol,
-            side=OrderSide.SELL,
-            current_price=fresh_price,
-            margin=margin_per_trade,
-            take_profit=tp_price,
-            stop_loss=sl_price,
-            strategy_case=case_num,
-            fib_high=result.fib_levels.get('high'),
-            fib_low=result.fib_levels.get('low')
-        )
-        if position:
-            sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
-            print(f"   🟡 CASO 2 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}{sl_str}")
-            order_placed = True
-            order_id = position.order_id
-            final_sl = sl_price
+    # Caso 2 eliminado - ya no existe
     
     elif case_num == 1:
-        # Caso 1: LIMIT 61.8%
+        # Caso 1: LIMIT SELL al 68%
         
         # TP y SL desde configuración
         c1_config = strategies.get('c1', {'tp': 0.51, 'sl': 0.67})
         tp_price = result.fib_levels.get('low', 0) + fib_range * c1_config['tp']
         sl_price = result.fib_levels.get('low', 0) + fib_range * c1_config['sl'] if c1_config.get('sl') else None
-        limit_price = result.fib_levels['618']
+        # LIMIT SELL al 68% (antes era 61.8%)
+        limit_price = result.fib_levels.get('low', 0) + fib_range * 0.68
         
         order = account.place_limit_order(
             symbol=result.symbol,

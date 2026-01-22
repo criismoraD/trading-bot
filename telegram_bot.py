@@ -192,7 +192,6 @@ class TelegramBot:
 
 <b>🎯 POR CASO</b>
 ├ C1: {len(cases[1])} trades | ${sum(cases[1]):.2f}
-├ C2: {len(cases[2])} trades | ${sum(cases[2]):.2f}
 ├ C3: {len(cases[3])} trades | ${sum(cases[3]):.2f}
 └ C4: {len(cases[4])} trades | ${sum(cases[4]):.2f}
 
@@ -356,7 +355,6 @@ class TelegramBot:
 
 <b>🎯 POR CASO</b>
 ├ Caso 1: {len(cases[1])} trades | ${sum(cases[1]):.4f}
-├ Caso 2: {len(cases[2])} trades | ${sum(cases[2]):.4f}
 ├ Caso 3: {len(cases[3])} trades | ${sum(cases[3]):.4f}
 └ Caso 4: {len(cases[4])} trades | ${sum(cases[4]):.4f}
 """

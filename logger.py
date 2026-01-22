@@ -216,7 +216,7 @@ def log_scan_result(total_pairs: int, valid_swings: int,
     """Compatibilidad con log_scan_result anterior"""
     get_logger().info(
         f"Scan: {total_pairs} pairs | {valid_swings} swings | "
-        f"C1:{cases.get(1,0)} C2:{cases.get(2,0)} C3:{cases.get(3,0)} C4:{cases.get(4,0)} | "
+        f"C1:{cases.get(1,0)} C3:{cases.get(3,0)} C4:{cases.get(4,0)} | "  # C2 eliminado
         f"{duration:.1f}s"
     )
 

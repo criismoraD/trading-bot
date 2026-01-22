@@ -114,9 +114,9 @@ class FibonacciTradingBot:
         if case == self.last_case_executed:
             return
         
-        # Para Casos 2 y 3, verificar que estemos en zona de entrada (55%+)
+        # Para Casos 3, verificar que estemos en zona de entrada (55%+)
         # Para Caso 1, siempre colocamos órdenes límite (se ejecutarán cuando el precio suba)
-        if case in [2, 3] and not self.current_swing.current_candle_at_55:
+        if case == 3 and not self.current_swing.current_candle_at_55:
             print(f"⏳ Precio en zona de Caso {case} pero esperando confirmación en 55%+")
             return
         
@@ -128,42 +128,38 @@ class FibonacciTradingBot:
                 shared_cfg = json.load(f)
                 strategies = shared_cfg.get('strategies', {})
                 c1_cfg = strategies.get('c1', {'tp': 0.51, 'sl': 0.67})
-                c2_cfg = strategies.get('c2', {'tp': 0.50, 'sl': 0.82})
                 c3_cfg = strategies.get('c3', {'tp': 0.50, 'sl': 1.05})
                 c4_cfg = strategies.get('c4', {'tp': 0.50, 'sl': 1.05})
         except Exception:
             # Valores por defecto si no se puede leer el archivo
             c1_cfg = {'tp': 0.51, 'sl': 0.67}
-            c2_cfg = {'tp': 0.50, 'sl': 0.82}
             c3_cfg = {'tp': 0.50, 'sl': 1.05}
             c4_cfg = {'tp': 0.50, 'sl': 1.05}
         
         fib_range = self.current_swing.high - self.current_swing.low
         fib_low = self.current_swing.low
         
-        # Calcular precios de TP/SL desde niveles Fibonacci
+        # Calcular precios de TP/SL desde niveles Fibonacci (Caso 2 eliminado)
         tp_c1 = fib_low + (fib_range * c1_cfg['tp'])
-        tp_c2 = fib_low + (fib_range * c2_cfg['tp'])
         tp_c3 = fib_low + (fib_range * c3_cfg['tp'])
         tp_c4 = fib_low + (fib_range * c4_cfg['tp'])
         
         sl_c1 = fib_low + (fib_range * c1_cfg['sl'])
-        sl_c2 = fib_low + (fib_range * c2_cfg['sl'])
         sl_c3 = fib_low + (fib_range * c3_cfg['sl'])
         sl_c4 = fib_low + (fib_range * c4_cfg['sl'])
         
-        level_618 = levels["61.8"]
+        level_68 = levels.get('68', fib_low + fib_range * 0.68)  # Caso 1: LIMIT SELL al 68%
         level_786 = levels["78.6"]
         
         print(f"\n🎯 CASO {case} detectado | Precio: ${current_price:.4f}")
         print(f"   Niveles: 61.8%=${level_618:.4f} | 78.6%=${level_786:.4f}")
         
         if case == 1:
-            # Precio < 61.8%: Órdenes límite en 61.8% y 78.6%
+            # Precio < 68%: Orden límite LIMIT SELL en 68%
             order1 = self.account.place_limit_order(
                 symbol=self.symbol,
                 side=OrderSide.SELL,
-                price=level_618,
+                price=level_68,  # LIMIT SELL al 68%
                 margin=MARGIN_PER_TRADE,
                 take_profit=tp_c1,  # TP desde shared_config
                 stop_loss=sl_c1     # SL desde shared_config
@@ -176,35 +172,13 @@ class FibonacciTradingBot:
                     price=level_786,
                     margin=MARGIN_PER_TRADE,
                     take_profit=tp_c1,   # TP desde shared_config
-                    stop_loss=sl_c1,     # SL desde shared_config
-                    linked_order_id=order1.id  # Vincular para cancelar si TP de order1 se ejecuta
+                    stop_loss=sl_c1      # SL desde shared_config
+                    # linked_order_id eliminado - ya no se usan órdenes vinculadas
                 )
             
             self.last_case_executed = 1
         
-        elif case == 2:
-            # 61.8% <= Precio < 78.6%: Mercado + límite en 78.6%
-            position = self.account.place_market_order(
-                symbol=self.symbol,
-                side=OrderSide.SELL,
-                current_price=current_price,
-                margin=MARGIN_PER_TRADE,
-                take_profit=tp_c2,  # TP desde shared_config
-                stop_loss=sl_c2     # SL desde shared_config
-            )
-            
-            if position:
-                self.account.place_limit_order(
-                    symbol=self.symbol,
-                    side=OrderSide.SELL,
-                    price=level_786,
-                    margin=MARGIN_PER_TRADE,
-                    take_profit=tp_c2,   # TP desde shared_config
-                    stop_loss=sl_c2,     # SL desde shared_config
-                    linked_order_id=position.order_id
-                )
-            
-            self.last_case_executed = 2
+        # Caso 2 eliminado - ya no existe
         
         elif case == 3:
             # Precio >= 78.6%: Mercado con TP/SL desde shared_config
@@ -479,7 +453,7 @@ async def main():
         scanner.pairs_cache = None  # Forzar fetch de todos los pares
         print(f"\n📊 Escaneando TODOS los pares disponibles (filtro RSI >= {RSI_THRESHOLD})")
     
-    print(f"🎯 Casos: 4 > 3 > 2 > 1 | Niveles Fibonacci desde config")
+    print(f"🎯 Casos: 4 > 3 > 1 | Niveles Fibonacci desde config")  # Caso 2 eliminado"
     print(f"💰 Balance Paper: ${account.balance:.2f} | Margen/orden: ${MARGIN_PER_TRADE}")
     print(f"⏱️  Primer escaneo: {FIRST_SCAN_DELAY}s | Siguientes: {SCAN_INTERVAL}s")
     print(f"\n🌐 Servidor Web: http://localhost:8000")
@@ -770,9 +744,7 @@ async def main():
                         if account.pending_orders:
                             account.check_pending_orders(symbol, price)
                         
-                        # 3. Actualizar precios post-cierre para monitoreo
-                        if account.closed_positions_monitoring:
-                            account._update_closed_positions_price(symbol, price)
+                        # 3. Monitoreo post-cierre eliminado - método ya no existe
             
             # --- WATCHDOG PERIÓDICO (Cada 10s) ---
             if scan_countdown % 10 == 0 and (account.open_positions or account.pending_orders):
