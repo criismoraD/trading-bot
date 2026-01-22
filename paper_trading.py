@@ -520,6 +520,12 @@ class PaperTradingAccount:
 
     def check_pending_orders(self, symbol: str, current_price: float):
         """Verificar si se activan órdenes pendientes (Limit Orders)"""
+        orders_to_fill = []
+
+        for order_id, order in self.pending_orders.items():
+            if order.symbol != symbol:
+                continue
+            
             # Actualizar precio actual en la orden para visualización json
             order.current_price = current_price
             
