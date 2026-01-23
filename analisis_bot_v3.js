@@ -1143,9 +1143,11 @@ async function showTradeOnChart(item) {
 
     // AUTO-SYNC: Update trade min/max from chart data (fixes "RUN" vs Chart reality)
     if (candleDataGlobal && candleDataGlobal.length > 0) {
-        const entryTimeStr = t.entry_time || (t.executions && t.executions[0] ? t.executions[0].time : null);
+        const entryTimeStr = t.opened_at || t.entry_time || (t.executions && t.executions[0] ? t.executions[0].time : null);
         if (entryTimeStr) {
-            const entryTime = new Date(entryTimeStr).getTime() / 1000;
+            // FORCE UTC: Append 'Z' if not present to ensure it's treated as UTC, not Local
+            const hasTimezone = entryTimeStr.includes('Z') || entryTimeStr.includes('+');
+            const entryTime = new Date(hasTimezone ? entryTimeStr : entryTimeStr + 'Z').getTime() / 1000;
 
             // Calculate buffer based on timeframe to ensure we include the entry candle
             // currentTimeframe is in minutes (e.g. '15', '60', 'D' is represented as 'D'?) 
@@ -1745,7 +1747,7 @@ function simulateTradePath(t, tpPrice, slPrice, candles) {
     const intervalSeconds = intervalMinutes * 60;
 
     // 2. Find Entry Candle
-    const entryTimeStr = t.entry_time || (t.executions && t.executions[0] ? t.executions[0].time : null);
+    const entryTimeStr = t.opened_at || t.entry_time || (t.executions && t.executions[0] ? t.executions[0].time : null);
     if (!entryTimeStr) return null;
 
     // FORCE UTC Parsing

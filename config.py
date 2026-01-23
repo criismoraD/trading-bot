@@ -41,7 +41,9 @@ REST_BASE_URL = "https://api.bybit.com"
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 # Intervalos soportados (desde shared_config o default)
-TIMEFRAME = _scanner.get("timeframe", "4h")
+# Intervalos soportados (desde shared_config o default)
+env_timeframe = os.getenv("BOT_TIMEFRAME")
+TIMEFRAME = env_timeframe if env_timeframe else _scanner.get("timeframe", "4h")
 
 # Niveles Fibonacci (desde shared_config o defaults)
 _fibonacci = _shared_config.get("fibonacci", {})
@@ -88,4 +90,4 @@ EXCLUDED_PAIRS = [
 ]
 
 # Archivos
-TRADES_FILE = "trades.json"
+TRADES_FILE = os.getenv("BOT_TRADES_FILE", "trades.json")

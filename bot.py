@@ -710,10 +710,18 @@ async def main():
         # --- WATCHDOG INICIAL: Actualizar precios por REST al arrancar ---
         logger.info("Sincronizando precios actuales vía API REST...")
         await scanner.update_prices_for_positions(account, price_cache)
+
+        # --- Iniciar Web Server ---
+        logger.info("Iniciando Dashboard Web...")
+        start_web_server()
         
         # --- Iniciar Bot de Telegram en paralelo ---
+        # --- Iniciar Bot de Telegram en paralelo (SOLO SI ESTÁ ACTIVADO) ---
         from config import TELEGRAM_TOKEN
-        if TELEGRAM_TOKEN:
+        # Variable de entorno para desactivar telegram en multibot (por defecto True)
+        enable_telegram = os.getenv("ENABLE_TELEGRAM", "true").lower() == "true"
+        
+        if TELEGRAM_TOKEN and enable_telegram:
             logger.info(f"Token de Telegram configurado: {TELEGRAM_TOKEN[:10]}...")
             telegram_bot.account = account
             telegram_bot.scanner = scanner
@@ -725,7 +733,10 @@ async def main():
             # Notificación inmediata si hay chats autorizados
             await telegram_bot.broadcast_message("🚀 <b>BOT INICIADO</b>\nEl sistema está en línea y operando.")
         else:
-            logger.warning("⚠️ TELEGRAM_TOKEN no configurado - Bot de Telegram deshabilitado")
+            if not enable_telegram:
+                logger.info("🔕 Telegram desactivado por configuración (Modo Multi-Bot)")
+            else:
+                logger.warning("⚠️ TELEGRAM_TOKEN no configurado - Bot de Telegram deshabilitado")
         
         while True:
             # 1. Verificar TP/SL y Pending Orders en tiempo real (WebSocket Cache)

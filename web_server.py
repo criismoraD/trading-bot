@@ -16,7 +16,7 @@ import requests
 from fibonacci import calculate_zigzag, calculate_fibonacci_levels, ZigZagPoint
 
 # Configuración
-PORT = 8080
+PORT = int(os.getenv("BOT_WEB_PORT", 8080))
 DIRECTORY = Path(__file__).parent
 
 # Cache para datos de velas
