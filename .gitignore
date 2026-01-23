@@ -6,7 +6,7 @@ venv/
 .env
 
 # Data & Logs
-trades.json
+trades*.json
 *.log
 database.sqlite
 
