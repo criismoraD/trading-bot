@@ -57,6 +57,14 @@
                                 <button onclick="resetDefaults()"
                                     class="text-xs text-cyan-400 hover:text-cyan-300 transition-colors font-medium">⟲
                                     Reiniciar</button>
+                                <div class="flex items-center gap-2 border-l border-slate-700 pl-2 ml-2"
+                                    title="Simular Comisiones (Maker: 0.02%, Taker: 0.055%)">
+                                    <span class="text-[10px] text-slate-400">Comisiones</span>
+                                    <label class="toggle-switch" style="width: 28px; height: 14px;">
+                                        <input type="checkbox" id="commissionsToggle" onchange="toggleCommissions()">
+                                        <span class="toggle-slider" style="border-radius: 14px;"></span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
 
@@ -67,6 +75,16 @@
                                 <div class="flex justify-between items-center mb-1">
                                     <div class="font-bold text-xs" style="color: var(--accent-blue)">⚡ C1</div>
                                     <div class="flex items-center gap-1">
+                                        <button onclick="optimizeCase(1, 'total', this)"
+                                            class="text-[10px] bg-blue-900/50 hover:bg-blue-800 text-blue-200 px-1.5 py-0.5 rounded border border-blue-700/50 transition-colors"
+                                            title="Optimizar Total (Real + Flot)">
+                                            🪄 Tot
+                                        </button>
+                                        <button onclick="optimizeCase(1, 'realized', this)"
+                                            class="text-[10px] bg-green-900/50 hover:bg-green-800 text-green-200 px-1.5 py-0.5 rounded border border-green-700/50 transition-colors"
+                                            title="Optimizar Solo Realizado">
+                                            💰 Real
+                                        </button>
                                         <label class="toggle-switch" style="width: 32px; height: 16px;">
                                             <input type="checkbox" id="sl_enabled_c1"
                                                 onchange="toggleSL(1); runSimulation();" checked>
@@ -76,12 +94,22 @@
                                 </div>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div class="slider-container">
-                                        <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">max
-                                                <span id="txt_max_tp_c1">--</span></span></label>
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">max
+                                                    <span id="txt_max_tp_c1">--</span></span></label>
+                                            <div class="flex gap-1">
+                                                <button onclick="optimizeTP(1, 'total', this)"
+                                                    class="text-[8px] bg-blue-900/30 hover:bg-blue-800 text-blue-200 px-1 rounded border border-blue-700/30 transition-colors"
+                                                    title="Optimizar TP (Total)">🪄 T</button>
+                                                <button onclick="optimizeTP(1, 'realized', this)"
+                                                    class="text-[8px] bg-green-900/30 hover:bg-green-800 text-green-200 px-1 rounded border border-green-700/30 transition-colors"
+                                                    title="Optimizar TP (Realized)">💰 R</button>
+                                            </div>
+                                        </div>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('tp_c1', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="tp_c1" value="51" min="0" max="61" step="1"
+                                            <input type="range" id="tp_c1" value="51" min="0" max="61" step="0.1"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('tp_c1', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -96,7 +124,7 @@
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('sl_c1', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="sl_c1" value="67" min="62" max="200" step="1"
+                                            <input type="range" id="sl_c1" value="67" min="62" max="120" step="0.1"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('sl_c1', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -114,6 +142,16 @@
                                 <div class="flex justify-between items-center mb-1">
                                     <div class="font-bold text-xs" style="color: var(--accent-orange)">🔥 C3</div>
                                     <div class="flex items-center gap-1">
+                                        <button onclick="optimizeCase(3, 'total', this)"
+                                            class="text-[10px] bg-orange-900/50 hover:bg-orange-800 text-orange-200 px-1.5 py-0.5 rounded border border-orange-700/50 transition-colors"
+                                            title="Optimizar Total (Real + Flot)">
+                                            🪄 Tot
+                                        </button>
+                                        <button onclick="optimizeCase(3, 'realized', this)"
+                                            class="text-[10px] bg-green-900/50 hover:bg-green-800 text-green-200 px-1.5 py-0.5 rounded border border-green-700/50 transition-colors"
+                                            title="Optimizar Solo Realizado">
+                                            💰 Real
+                                        </button>
                                         <label class="toggle-switch" style="width: 32px; height: 16px;">
                                             <input type="checkbox" id="sl_enabled_c3"
                                                 onchange="toggleSL(3); runSimulation();" checked>
@@ -123,12 +161,22 @@
                                 </div>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div class="slider-container">
-                                        <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">max
-                                                <span id="txt_max_tp_c3">--</span></span></label>
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">max
+                                                    <span id="txt_max_tp_c3">--</span></span></label>
+                                            <div class="flex gap-1">
+                                                <button onclick="optimizeTP(3, 'total', this)"
+                                                    class="text-[8px] bg-orange-900/30 hover:bg-orange-800 text-orange-200 px-1 rounded border border-orange-700/30 transition-colors"
+                                                    title="Optimizar TP (Total)">🪄 T</button>
+                                                <button onclick="optimizeTP(3, 'realized', this)"
+                                                    class="text-[8px] bg-green-900/30 hover:bg-green-800 text-green-200 px-1 rounded border border-green-700/30 transition-colors"
+                                                    title="Optimizar TP (Realized)">💰 R</button>
+                                            </div>
+                                        </div>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('tp_c3', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="tp_c3" value="61" min="0" max="78" step="1"
+                                            <input type="range" id="tp_c3" value="61" min="0" max="78" step="0.1"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('tp_c3', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -143,7 +191,7 @@
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('sl_c3', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="sl_c3" value="92" min="79" max="200" step="1"
+                                            <input type="range" id="sl_c3" value="92" min="79" max="120" step="0.1"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('sl_c3', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -159,6 +207,16 @@
                                 <div class="flex justify-between items-center mb-1">
                                     <div class="font-bold text-xs" style="color: var(--accent-red)">💎 C4</div>
                                     <div class="flex items-center gap-1">
+                                        <button onclick="optimizeCase(4, 'total', this)"
+                                            class="text-[10px] bg-red-900/50 hover:bg-red-800 text-red-200 px-1.5 py-0.5 rounded border border-red-700/50 transition-colors"
+                                            title="Optimizar Total (Real + Flot)">
+                                            🪄 Tot
+                                        </button>
+                                        <button onclick="optimizeCase(4, 'realized', this)"
+                                            class="text-[10px] bg-green-900/50 hover:bg-green-800 text-green-200 px-1.5 py-0.5 rounded border border-green-700/50 transition-colors"
+                                            title="Optimizar Solo Realizado">
+                                            💰 Real
+                                        </button>
                                         <label class="toggle-switch" style="width: 32px; height: 16px;">
                                             <input type="checkbox" id="sl_enabled_c4"
                                                 onchange="toggleSL(4); runSimulation();" checked>
@@ -168,12 +226,22 @@
                                 </div>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div class="slider-container">
-                                        <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">max
-                                                <span id="txt_max_tp_c4">--</span></span></label>
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">max
+                                                    <span id="txt_max_tp_c4">--</span></span></label>
+                                            <div class="flex gap-1">
+                                                <button onclick="optimizeTP(4, 'total', this)"
+                                                    class="text-[8px] bg-red-900/30 hover:bg-red-800 text-red-200 px-1 rounded border border-red-700/30 transition-colors"
+                                                    title="Optimizar TP (Total)">🪄 T</button>
+                                                <button onclick="optimizeTP(4, 'realized', this)"
+                                                    class="text-[8px] bg-green-900/30 hover:bg-green-800 text-green-200 px-1 rounded border border-green-700/30 transition-colors"
+                                                    title="Optimizar TP (Realized)">💰 R</button>
+                                            </div>
+                                        </div>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('tp_c4', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="tp_c4" value="50" min="0" max="78" step="1"
+                                            <input type="range" id="tp_c4" value="50" min="0" max="78" step="0.1"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('tp_c4', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -188,7 +256,7 @@
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('sl_c4', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="sl_c4" value="95" min="90" max="200" step="1"
+                                            <input type="range" id="sl_c4" value="95" min="90" max="120" step="0.1"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('sl_c4', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -211,7 +279,7 @@
                                 <div class="flex items-center gap-1">
                                     <button type="button" onclick="adjustSlider('guide_line', -1)"
                                         class="precision-btn">&lt;</button>
-                                    <input type="range" id="guide_line" value="65" min="0" max="150" step="1"
+                                    <input type="range" id="guide_line" value="65" min="0" max="150" step="0.1"
                                         oninput="updateSliderValue(this); updateChartLinesFromSlider();" class="flex-1">
                                     <button type="button" onclick="adjustSlider('guide_line', 1)"
                                         class="precision-btn">&gt;</button>
@@ -354,33 +422,31 @@
                                 class="filter-btn text-[9px] px-1.5 py-0.5"
                                 style="color: var(--accent-purple); border-color: rgba(168, 85, 247, 0.3);">Fib
                                 ↓</button>
+                            <button onclick="setSortMode('fib_creation_desc')" id="btnSortFibCreationDesc"
+                                class="filter-btn text-[9px] px-1.5 py-0.5"
+                                style="color: var(--accent-orange); border-color: rgba(255, 152, 0, 0.3);">FibC
+                                ↓</button>
                         </div>
 
-                        <!-- IGNORAR -->
-                        <div class="px-3 py-1 border-b border-slate-700/20 flex items-center justify-between gap-2"
+                        <!-- AISLAR (Antes Ignorar) -->
+                        <div class="px-3 py-1 border-b border-slate-700/20 flex items-center gap-2"
                             style="background: rgba(0, 0, 0, 0.15);">
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <span class="text-[9px] text-slate-400 font-semibold uppercase">Ignorar:</span>
-                                <label class="flex items-center gap-0.5 cursor-pointer">
-                                    <input type="checkbox" id="ignoreC1" onchange="runSimulation()" class="w-2.5 h-2.5">
-                                    <span class="text-[9px] font-medium" style="color: var(--accent-blue);">C1</span>
-                                </label>
-                                <!-- C2 eliminado -->
-                                <label class="flex items-center gap-0.5 cursor-pointer">
-                                    <input type="checkbox" id="ignoreC3" onchange="runSimulation()" class="w-2.5 h-2.5">
-                                    <span class="text-[9px] font-medium" style="color: var(--accent-orange);">C3</span>
-                                </label>
-                                <label class="flex items-center gap-0.5 cursor-pointer">
-                                    <input type="checkbox" id="ignoreC4" onchange="runSimulation()" class="w-2.5 h-2.5">
-                                    <span class="text-[9px] font-medium" style="color: var(--accent-red);">C4</span>
-                                </label>
-                            </div>
+                            <span class="text-[9px] text-slate-400 font-semibold uppercase">Aislar:</span>
                             <div class="flex items-center gap-1">
-                                <span class="text-slate-600">|</span>
-                                <button onclick="ignoreAll()" class="text-[9px] text-slate-400 hover:text-white"
-                                    title="Seleccionar todos">Todos</button>
-                                <button onclick="unignoreAll()" class="text-[9px] text-slate-400 hover:text-white"
-                                    title="Deseleccionar todos">Ninguno</button>
+                                <button onclick="setIsolation('none')" id="btnIsoNone"
+                                    class="filter-btn active text-[9px] px-2 py-0.5 rounded border border-slate-600/50 text-slate-400 hover:text-white transition-colors">Ninguno</button>
+
+                                <button onclick="setIsolation(1)" id="btnIso1"
+                                    class="filter-btn text-[9px] px-2 py-0.5 rounded border border-slate-600/50 text-slate-400 hover:text-blue-300 hover:border-blue-500/50 transition-colors">C1</button>
+
+                                <button onclick="setIsolation(3)" id="btnIso3"
+                                    class="filter-btn text-[9px] px-2 py-0.5 rounded border border-slate-600/50 text-slate-400 hover:text-orange-300 hover:border-orange-500/50 transition-colors">C3</button>
+
+                                <button onclick="setIsolation(4)" id="btnIso4"
+                                    class="filter-btn text-[9px] px-2 py-0.5 rounded border border-slate-600/50 text-slate-400 hover:text-red-300 hover:border-red-500/50 transition-colors">C4</button>
+
+                                <button onclick="setIsolation('all')" id="btnIsoAll"
+                                    class="filter-btn text-[9px] px-2 py-0.5 rounded border border-slate-600/50 text-slate-400 hover:text-white transition-colors">Todos</button>
                             </div>
                         </div>
 
@@ -391,6 +457,8 @@
                                     <tr>
                                         <th class="text-left text-[10px] py-1 px-2">Par</th>
                                         <th class="text-center text-[10px] py-1">Caso</th>
+                                        <th class="text-center text-[10px] py-1" title="Origen: SIM=Simulado">Src</th>
+                                        <th class="text-center text-[10px] py-1" title="Fib% al crear orden">FibC</th>
                                         <th class="text-center text-[10px] py-1">Estado</th>
                                         <th class="text-right text-[10px] py-1">Real</th>
                                         <th class="text-right text-[10px] py-1">Flot</th>
@@ -418,8 +486,19 @@
                                 <h3 class="font-bold text-slate-200 text-xs">Órdenes Limit (Pendientes)</h3>
                                 <span id="limitCount" class="text-[9px] text-slate-500">(0)</span>
                             </div>
-                            <button onclick="toggleLimitList()" id="btnToggleLimit"
-                                class="text-[9px] text-slate-400 hover:text-white">Ocultar</button>
+                            <div class="flex items-center gap-3">
+                                <!-- Toggle Simular Pending -->
+                                <div class="flex items-center gap-1" title="Simular órdenes pendientes">
+                                    <span class="text-[9px] text-slate-400">Simular</span>
+                                    <label class="toggle-switch" style="width: 32px; height: 16px;">
+                                        <input type="checkbox" id="simulatePendingToggle"
+                                            onchange="toggleSimulatePending()">
+                                        <span class="toggle-slider" style="border-radius: 16px;"></span>
+                                    </label>
+                                </div>
+                                <button onclick="toggleLimitList()" id="btnToggleLimit"
+                                    class="text-[9px] text-slate-400 hover:text-white">Ocultar</button>
+                            </div>
                         </div>
                         <div id="limitOrdersContainer" class="overflow-y-auto" style="max-height: 200px;">
                             <table class="modern-table">

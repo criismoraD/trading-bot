@@ -18,6 +18,8 @@ let marketDataCache = {}; // Cache for all symbols: { "BTCUSDT": [candles...] }
 let isBulkLoading = false;
 
 let isBulkDataLoaded = false; // Flag to force "RUN" state until we have real data
+let simulatePendingOrdersEnabled = false; // Switch para simulación de pending orders
+let simulateCommissionsEnabled = false; // Switch para simulación de comisiones
 
 async function bulkFetchCandles(trades) {
     isBulkDataLoaded = false;
@@ -123,12 +125,7 @@ function switchMode() {
 function updateSliderValue(slider) {
     const valSpan = document.getElementById(slider.id + '_val');
     if (valSpan) {
-        // Mostrar decimales para filtros de ganancia
-        if (slider.id.includes('filter')) {
-            valSpan.textContent = parseFloat(slider.value).toFixed(1);
-        } else {
-            valSpan.textContent = slider.value;
-        }
+        valSpan.textContent = parseFloat(slider.value).toFixed(1);
     }
     // Actualizar líneas del gráfico en tiempo real
     updateChartLinesFromSlider();
@@ -166,7 +163,7 @@ function adjustSlider(sliderId, delta) {
     const max = parseFloat(slider.max) || 100;
     let newValue = parseFloat(slider.value) + (delta * step);
     newValue = Math.max(min, Math.min(max, newValue));
-    slider.value = newValue;
+    slider.value = newValue.toFixed(1);
     updateSliderValue(slider);
     runSimulation();
 }
@@ -186,8 +183,8 @@ function resetSlider(sliderId, defaultVal) {
             const caseName = parts[1]; // c1, c1pp, c2, etc
 
             if (sharedConfig.strategies[caseName] && sharedConfig.strategies[caseName][type]) {
-                // Config guarda decimales (0.51), slider usa enteros (51)
-                finalVal = Math.round(sharedConfig.strategies[caseName][type] * 100);
+                // Config guarda decimales (0.51), slider usa valores con decimales (51.0)
+                finalVal = parseFloat((sharedConfig.strategies[caseName][type] * 100).toFixed(1));
             }
         }
     }
@@ -267,10 +264,25 @@ function toggleSL(caseNum) {
     updateChartLinesFromSlider();
 }
 
-// ========== FILTER/SORT ==========
+// Toggle para simulación de pending orders
+function toggleSimulatePending() {
+    const checkbox = document.getElementById('simulatePendingToggle');
+    simulatePendingOrdersEnabled = checkbox ? checkbox.checked : false;
+    runSimulation();
+}
+
+// Toggle para simulación de comisiones
+function toggleCommissions() {
+    const checkbox = document.getElementById('commissionsToggle');
+    simulateCommissionsEnabled = checkbox ? checkbox.checked : false;
+    runSimulation();
+}
+
+// ========== FILTER/SORT/ISOLATE ==========
 let casePriority = 0;
 let sortMode = 'none';
-let caseFilters = new Set(); // Para selección múltiple de casos
+let caseFilters = new Set(); // Para selección múltiple de casos (Visual)
+let isolationMode = 'none'; // 'none', '1', '3', '4', 'all'
 
 function toggleCaseFilter(caseNum) {
     if (caseNum === 0) {
@@ -317,25 +329,40 @@ function setSortMode(mode) {
         'pnl_real_asc': 'btnSortPnlRealAsc',
         'pnl_flot_desc': 'btnSortPnlFlotDesc',
         'pnl_flot_asc': 'btnSortPnlFlotAsc',
-        'fib_desc': 'btnSortFibDesc'
+        'fib_desc': 'btnSortFibDesc',
+        'fib_creation_desc': 'btnSortFibCreationDesc'
     };
     document.getElementById(btnMap[mode])?.classList.add('active');
     runSimulation();
 }
 
-function ignoreAll() {
-    ['C1', 'C3', 'C4'].forEach(c => {  // C2 eliminado
-        const cb = document.getElementById(`ignore${c}`);
-        if (cb) cb.checked = true;
-    });
-    runSimulation();
-}
+function setIsolation(mode) {
+    isolationMode = mode;
 
-function unignoreAll() {
-    ['C1', 'C11', 'C3', 'C4'].forEach(c => {  // C2 eliminado
-        const cb = document.getElementById(`ignore${c}`);
-        if (cb) cb.checked = false;
+    // UI Update
+    document.querySelectorAll('[id^="btnIso"]').forEach(btn => {
+        btn.classList.remove('active', 'border-blue-500', 'border-orange-500', 'border-red-500', 'text-white', 'text-blue-300', 'text-orange-300', 'text-red-300');
+        btn.classList.add('border-slate-600/50', 'text-slate-400'); // Reset to default
     });
+
+    const btnId = mode === 'none' ? 'btnIsoNone' : (mode === 'all' ? 'btnIsoAll' : `btnIso${mode}`);
+    const btn = document.getElementById(btnId);
+
+    if (btn) {
+        btn.classList.remove('border-slate-600/50', 'text-slate-400');
+        btn.classList.add('active', 'text-white');
+
+        if (mode === 1) {
+            btn.classList.add('border-blue-500', 'text-blue-300');
+        } else if (mode === 3) {
+            btn.classList.add('border-orange-500', 'text-orange-300');
+        } else if (mode === 4) {
+            btn.classList.add('border-red-500', 'text-red-300');
+        } else {
+            btn.classList.add('border-white/50');
+        }
+    }
+
     runSimulation();
 }
 
@@ -372,7 +399,7 @@ async function resetDefaults() {
     });
 
     // Unignore all
-    unignoreAll();
+    setIsolation('none');
     setCasePriority(0);
     setSortMode('none');
     runSimulation();
@@ -412,16 +439,24 @@ function applySharedConfig() {
             // TP (convertir de decimal a porcentaje)
             const tpEl = document.getElementById(ids.tp);
             if (tpEl && config.tp) {
-                tpEl.value = Math.round(config.tp * 100);
+                tpEl.value = parseFloat((config.tp * 100).toFixed(1));
                 updateSliderValue(tpEl);
             }
             // SL (convertir de decimal a porcentaje)
             const slEl = document.getElementById(ids.sl);
             if (slEl && config.sl) {
-                slEl.value = Math.round(config.sl * 100);
+                slEl.value = parseFloat((config.sl * 100).toFixed(1));
                 updateSliderValue(slEl);
             }
         }
+    }
+
+    // Cargar switch de simulación de pending orders
+    if (sharedConfig.trading && sharedConfig.trading.simulate_pending_orders !== undefined) {
+        simulatePendingOrdersEnabled = sharedConfig.trading.simulate_pending_orders;
+        // Sincronizar con checkbox visual
+        const toggle = document.getElementById('simulatePendingToggle');
+        if (toggle) toggle.checked = simulatePendingOrdersEnabled;
     }
 }
 
@@ -505,12 +540,17 @@ function getCaseSettings(caseId) {
 function runSimulation() {
     if (!rawData) return;
 
-    const ignoredCases = {
-        1: document.getElementById('ignoreC1')?.checked || false,
-        // 2 eliminado
-        3: document.getElementById('ignoreC3')?.checked || false,
-        4: document.getElementById('ignoreC4')?.checked || false
-    };
+    const ignoredCases = { 1: true, 3: true, 4: true }; // Default to ignore all (None mode)
+
+    if (isolationMode === 'all') {
+        ignoredCases[1] = false;
+        ignoredCases[3] = false;
+        ignoredCases[4] = false;
+    } else if (isolationMode !== 'none') {
+        // Isolate specific case
+        const activeCase = parseInt(isolationMode);
+        ignoredCases[activeCase] = false;
+    }
 
     let stats = {
         realized: 0, floating: 0,
@@ -535,6 +575,59 @@ function runSimulation() {
 
     // Unify trades
     let allTrades = [];
+
+    // ========== SIMULACIÓN DE PENDING ORDERS ==========
+    // Listas para clasificar pending orders por resultado de simulación
+    let simulatedActivatedOrders = [];   // Órdenes que se activaron (tocan entry)
+    let simulatedCancelledOrders = [];   // Órdenes que se cancelaron (tocan cancel_below)
+    let simulatedPendingOrders = [];     // Órdenes que siguen pendientes
+
+    if (simulatePendingOrdersEnabled && rawData.pending_orders) {
+        const c1CancelBelow = sharedConfig?.trading?.c1_cancel_below || 0.38;
+        const c3CancelBelow = sharedConfig?.trading?.c3_cancel_below || 0.50;
+
+        Object.values(rawData.pending_orders).forEach(o => {
+            const candlesForSim = marketDataCache[o.symbol];
+
+            if (candlesForSim) {
+                const simResult = simulatePendingOrder(o, candlesForSim, c1CancelBelow, c3CancelBelow);
+
+                if (simResult) {
+                    if (simResult.simStatus === 'tp' || simResult.simStatus === 'sl' || simResult.simStatus === 'open') {
+                        // Orden activada - convertir a trade para procesamiento
+                        const activatedTrade = {
+                            ...o,
+                            _src: 'SIM_PEND',
+                            _simResult: simResult,
+                            entry_price: o.price,
+                            opened_at: simResult.activatedAt ? new Date(simResult.activatedAt * 1000).toISOString() : o.created_at,
+                            entry_time: simResult.activatedAt ? new Date(simResult.activatedAt * 1000).toISOString() : o.created_at,
+                            _max: simResult.slPrice || o.price,
+                            _min: simResult.tpPrice || o.price
+                        };
+                        simulatedActivatedOrders.push(activatedTrade);
+                    } else if (simResult.simStatus === 'cancelled') {
+                        // Orden cancelada - agregar a lista de canceladas
+                        const cancelledOrder = {
+                            ...o,
+                            cancelled_at: simResult.resultTime ? new Date(simResult.resultTime * 1000).toISOString() : null,
+                            cancel_reason: `Simulado: ${simResult.reason}`
+                        };
+                        simulatedCancelledOrders.push(cancelledOrder);
+                    } else {
+                        // Sigue pendiente
+                        simulatedPendingOrders.push(o);
+                    }
+                } else {
+                    simulatedPendingOrders.push(o);
+                }
+            } else {
+                // Sin datos de velas, mantener como pendiente
+                simulatedPendingOrders.push(o);
+            }
+        });
+    }
+
     if (rawData.history) rawData.history.forEach(t => {
         t._src = 'HIST';
         // LOGIC CHANGED: We removed pre/post close fields.
@@ -554,6 +647,9 @@ function runSimulation() {
         if (!t.fib_low) t.fib_low = t.entry_price * 0.95;
         allTrades.push(t);
     });
+
+    // Agregar órdenes activadas por simulación a allTrades
+    simulatedActivatedOrders.forEach(t => allTrades.push(t));
 
     // Process trades
     let processedTrades = [];
@@ -634,9 +730,20 @@ function runSimulation() {
             fPnl = 0; rPnl = 0; isClosed = false;
         }
 
+        // Apply Commissions
+        if (simulateCommissionsEnabled) {
+            const commRate = (cID === 1 || cID === 2) ? 0.0002 : 0.00055;
+            const comm = (t.entry_price * (t.quantity || 0) * commRate) * (isClosed ? 2 : 1);
+            if (isClosed) rPnl -= comm;
+            else fPnl -= comm;
+        }
+
         // NO calcular stats aquí - se hará después de los filtros
 
-        processedTrades.push({ t, cID, s, tpPrice, slPrice, status, css, rPnl, fPnl, isIgnored, isClosed, fibEntryLevel, hitSL, originalReason });
+        // Calcular fibCreationLevel (para órdenes que vienen de pending)
+        const fibCreationLevel = t.creation_fib_level || null;
+
+        processedTrades.push({ t, cID, s, tpPrice, slPrice, status, css, rPnl, fPnl, isIgnored, isClosed, fibEntryLevel, fibCreationLevel, hitSL, originalReason });
     });
 
     // Filter by case (selección múltiple)
@@ -697,6 +804,8 @@ function runSimulation() {
         displayTrades.sort((a, b) => a.fPnl - b.fPnl);
     } else if (sortMode === 'fib_desc') {
         displayTrades.sort((a, b) => (b.fibEntryLevel || 0) - (a.fibEntryLevel || 0));
+    } else if (sortMode === 'fib_creation_desc') {
+        displayTrades.sort((a, b) => (b.fibCreationLevel || 0) - (a.fibCreationLevel || 0));
     }
 
     processedTradesGlobal = displayTrades;
@@ -713,7 +822,7 @@ function runSimulation() {
     activeTrades.forEach((item) => {
         // Obtener índice real en processedTradesGlobal
         const idx = processedTradesGlobal.indexOf(item);
-        const { t, cID, status, css, rPnl, fPnl, tpPrice, slPrice, hitSL, originalReason } = item;
+        const { t, cID, status, css, rPnl, fPnl, tpPrice, slPrice, hitSL, originalReason, fibCreationLevel } = item;
         const caseDisplay = `C${cID}`;
         const rowClass = `row-c${cID}`;
         const selectedClass = idx === selectedTradeIndex ? 'selected' : '';
@@ -779,6 +888,8 @@ Original Reason: '${originalReason}'`;
                             </div>
                         </td>
                         <td class="text-center py-1"><span class="badge text-[9px]" style="padding: 2px 6px;">${caseDisplay}</span></td>
+                        <td class="text-center py-1 text-[9px]" style="color: ${t._src === 'SIM_PEND' ? 'var(--accent-orange)' : 'var(--text-muted)'}">${t._src === 'SIM_PEND' ? 'SIM' : '-'}</td>
+                        <td class="text-center py-1 text-[9px] font-mono" style="color: var(--accent-purple)">${fibCreationLevel != null ? (fibCreationLevel * 100).toFixed(1) : '-'}</td>
                         <td class="text-center py-1"><span class="badge ${css} text-[9px]" style="padding: 2px 6px;">${status}</span></td>
                         <td class="text-right font-mono font-bold text-xs py-1" style="color: ${rPnlColor}">${rPnl !== 0 ? '$' + rPnl.toFixed(2) : '-'}</td>
                         <td class="text-right font-mono text-xs py-1" style="color: ${fPnlColor}">${fPnl !== 0 ? '$' + fPnl.toFixed(2) : '-'}</td>
@@ -826,22 +937,30 @@ Original Reason: '${originalReason}'`;
     const limitSection = document.getElementById('limitOrdersSection');
     const limitBody = document.getElementById('limitOrdersBody');
     const limitCount = document.getElementById('limitCount');
+
+    // Obtener valores de cancel_below desde config
+    const c1CancelBelow = sharedConfig?.trading?.c1_cancel_below || 0.38;
+    const c3CancelBelow = sharedConfig?.trading?.c3_cancel_below || 0.50;
+
     // Populate global array with filters
+    // Usar simulatedPendingOrders si la simulación está habilitada, sino usar rawData.pending_orders
     limitOrdersGlobal = [];
-    if (rawData.pending_orders) {
-        Object.values(rawData.pending_orders).forEach(o => {
-            // 1. Filter by Case
-            const cID = o.strategy_case || 1;
-            if (caseFilters.size > 0 && !caseFilters.has(cID)) {
-                return; // Skip logic
-            }
-            // 2. Filter by Search Text
-            if (filterText && !o.symbol.toUpperCase().includes(filterText)) {
-                return; // Skip logic
-            }
-            limitOrdersGlobal.push(o);
-        });
-    }
+    const pendingSource = (simulatePendingOrdersEnabled && simulatedPendingOrders.length >= 0)
+        ? simulatedPendingOrders
+        : (rawData.pending_orders ? Object.values(rawData.pending_orders) : []);
+
+    pendingSource.forEach(o => {
+        // 1. Filter by Case
+        const cID = o.strategy_case || 1;
+        if (caseFilters.size > 0 && !caseFilters.has(cID)) {
+            return; // Skip logic
+        }
+        // 2. Filter by Search Text
+        if (filterText && !o.symbol.toUpperCase().includes(filterText)) {
+            return; // Skip logic
+        }
+        limitOrdersGlobal.push(o);
+    });
 
     if (limitOrdersGlobal.length > 0) {
         limitSection.classList.remove('hidden');
@@ -884,6 +1003,10 @@ Original Reason: '${originalReason}'`;
                 fibDisplay = (o.creation_fib_level * 100).toFixed(1) + '%';
             }
 
+            // Estado: todas son pendientes ya que las activadas/canceladas fueron movidas
+            const simStatusDisplay = simulatePendingOrdersEnabled ? 'PENDING 📋' : '-';
+            const simStatusCss = simulatePendingOrdersEnabled ? 'bg-amber-600/30 text-amber-400' : 'text-slate-400';
+
             limitBody.innerHTML += `
                         <tr class="${rowClass} cursor-pointer hover:brightness-110" onclick="selectLimitOrder(${idx})">
                             <td class="py-1 px-2 font-bold text-xs">${o.symbol}</td>
@@ -891,12 +1014,34 @@ Original Reason: '${originalReason}'`;
                             <td class="text-center py-1 text-[9px] text-slate-400">${createdDisplay}</td>
                             <td class="text-center py-1 text-[9px] text-purple-400 font-mono">${fibDisplay}</td>
                             <td class="text-right font-mono text-xs py-1 text-amber-400">$${o.price.toFixed(4)}</td>
-                            <td class="text-right font-mono text-xs py-1 text-slate-400">${distDisplay}</td>
+                            <td class="text-center py-1"><span class="badge ${simStatusCss} text-[9px]" style="padding: 2px 6px;">${simStatusDisplay}</span></td>
                         </tr>
                     `;
         });
     } else {
-        limitSection.classList.add('hidden');
+        // Verificar si hay pending orders originales que fueron procesadas por simulación
+        const originalPendingCount = rawData.pending_orders ? Object.keys(rawData.pending_orders).length : 0;
+
+        if (simulatePendingOrdersEnabled && originalPendingCount > 0) {
+            // Hay órdenes originales pero todas fueron procesadas - mostrar resumen
+            limitSection.classList.remove('hidden');
+            const activatedCount = simulatedActivatedOrders.length;
+            const cancelledCount = simulatedCancelledOrders.length;
+            limitCount.textContent = `(0 de ${originalPendingCount})`;
+            limitBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="py-3 px-2 text-center text-[10px] text-slate-400">
+                        <div class="flex items-center justify-center gap-4">
+                            <span>📊 Todas simuladas:</span>
+                            <span class="text-green-400">✅ ${activatedCount} activadas</span>
+                            <span class="text-red-400">🚫 ${cancelledCount} canceladas</span>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        } else {
+            limitSection.classList.add('hidden');
+        }
     }
 
     // Render lista de Cancelled Orders
@@ -905,8 +1050,13 @@ Original Reason: '${originalReason}'`;
     const cancelledCount = document.getElementById('cancelledCount');
 
     cancelledOrdersGlobal = [];
+    // Primero agregar cancelled_history existente
     if (rawData.cancelled_history && rawData.cancelled_history.length > 0) {
-        cancelledOrdersGlobal = rawData.cancelled_history;
+        cancelledOrdersGlobal = [...rawData.cancelled_history];
+    }
+    // Agregar órdenes canceladas por simulación
+    if (simulatePendingOrdersEnabled && simulatedCancelledOrders.length > 0) {
+        cancelledOrdersGlobal = cancelledOrdersGlobal.concat(simulatedCancelledOrders);
     }
 
     if (cancelledOrdersGlobal.length > 0) {
@@ -1796,6 +1946,152 @@ function simulateTradePath(t, tpPrice, slPrice, candles) {
     return { status: "RUN ⏳", reason: "END_OF_DATA", lastPrice: lastPrice };
 }
 
+// ========== PENDING ORDER SIMULATION ==========
+// Simula órdenes pendientes: desde created_at, evalúa si toca entry, cancel_below, TP o SL
+function simulatePendingOrder(order, candles, c1CancelBelow, c3CancelBelow) {
+    if (!candles || candles.length === 0) return null;
+    if (!order.created_at || !order.price) return null;
+
+    // 1. Determinar intervalo de velas (dinámico)
+    let intervalMinutes = 1;
+    if (currentTimeframe === '1') intervalMinutes = 1;
+    else if (currentTimeframe === '5') intervalMinutes = 5;
+    else if (currentTimeframe === '15') intervalMinutes = 15;
+    else if (currentTimeframe === '60' || currentTimeframe.toLowerCase() === '1h') intervalMinutes = 60;
+    else if (currentTimeframe === '240' || currentTimeframe.toLowerCase() === '4h') intervalMinutes = 240;
+    else if (currentTimeframe === 'D' || currentTimeframe.toLowerCase() === '1d') intervalMinutes = 1440;
+
+    const intervalSeconds = intervalMinutes * 60;
+
+    // 2. Parsear fecha de creación
+    const creationTimeStr = order.created_at;
+    const hasTimezone = creationTimeStr.includes('Z') || creationTimeStr.includes('+');
+    const creationTime = new Date(hasTimezone ? creationTimeStr : creationTimeStr + 'Z').getTime() / 1000;
+
+    // 3. Encontrar vela de inicio (donde se creó la orden)
+    let startIndex = candles.findIndex(c => creationTime >= c.time && creationTime < (c.time + intervalSeconds));
+    if (startIndex === -1) {
+        startIndex = candles.findIndex(c => c.time >= creationTime);
+    }
+    if (startIndex === -1) {
+        return { status: "PENDING 📋", reason: "FUTURE_CREATION", simStatus: 'pending' };
+    }
+
+    // 4. Calcular precios de cancelación basados en Fibonacci
+    const cID = order.strategy_case || 1;
+    const range = order.fib_high - order.fib_low;
+    const cancelLevel = (cID === 1) ? c1CancelBelow : c3CancelBelow;
+    const cancelPrice = order.fib_low + (range * cancelLevel);  // SHORT: cancel si baja de este nivel
+    const entryPrice = order.price;
+
+    // 5. Calcular TP y SL para cuando se active
+    const settings = getCaseSettings(cID);
+    const tpPrice = order.fib_low + (range * settings.tp);
+    const slPrice = settings.sl > 0 ? order.fib_low + (range * settings.sl) : Infinity;
+
+    // 6. Simular desde la vela de creación
+    let isActivated = false;
+    let activationCandle = null;
+
+    for (let i = startIndex; i < candles.length; i++) {
+        const c = candles[i];
+
+        if (!isActivated) {
+            // Fase 1: Orden pendiente - esperando activación o cancelación
+            // SHORT: Entry se activa si el precio sube hasta el entry (high >= entry)
+            const entryHit = c.high >= entryPrice;
+            // Cancelación: si el precio baja demasiado (low <= cancelPrice)
+            const cancelHit = c.low <= cancelPrice;
+
+            if (entryHit && cancelHit) {
+                // Ambos en la misma vela - asumir peor caso (cancelada)
+                return {
+                    status: "CANCELADA 🚫",
+                    reason: "CANCEL_SAME_CANDLE",
+                    simStatus: 'cancelled',
+                    resultTime: c.time
+                };
+            }
+
+            if (cancelHit) {
+                return {
+                    status: "CANCELADA 🚫",
+                    reason: "CANCEL_BELOW",
+                    simStatus: 'cancelled',
+                    resultTime: c.time,
+                    cancelPrice: cancelPrice
+                };
+            }
+
+            if (entryHit) {
+                // Se activa la orden - pasa a fase 2
+                isActivated = true;
+                activationCandle = c;
+                // Continuar en esta misma vela para evaluar TP/SL
+            }
+        }
+
+        if (isActivated) {
+            // Fase 2: Orden activada - evaluar TP/SL como posición abierta
+            const slHit = (slPrice !== Infinity && slPrice > 0) && (c.high >= slPrice);
+            const tpHit = (tpPrice > 0) && (c.low <= tpPrice);
+
+            if (slHit && tpHit) {
+                return {
+                    status: "SL ❌",
+                    reason: "SL_PEND_BOTH",
+                    simStatus: 'sl',
+                    lastPrice: slPrice,
+                    resultTime: c.time,
+                    activatedAt: activationCandle?.time,
+                    tpPrice, slPrice
+                };
+            }
+            if (slHit) {
+                return {
+                    status: "SL ❌",
+                    reason: "SL_PEND",
+                    simStatus: 'sl',
+                    lastPrice: slPrice,
+                    resultTime: c.time,
+                    activatedAt: activationCandle?.time,
+                    tpPrice, slPrice
+                };
+            }
+            if (tpHit) {
+                return {
+                    status: "TP ✅",
+                    reason: "TP_PEND",
+                    simStatus: 'tp',
+                    lastPrice: tpPrice,
+                    resultTime: c.time,
+                    activatedAt: activationCandle?.time,
+                    tpPrice, slPrice
+                };
+            }
+        }
+    }
+
+    // Fin de datos
+    if (isActivated) {
+        const lastPrice = candles[candles.length - 1].close;
+        return {
+            status: "ABIERTA ⏳",
+            reason: "ACTIVATED_RUNNING",
+            simStatus: 'open',
+            lastPrice: lastPrice,
+            activatedAt: activationCandle?.time,
+            tpPrice, slPrice
+        };
+    } else {
+        return {
+            status: "PENDING 📋",
+            reason: "END_OF_DATA",
+            simStatus: 'pending'
+        };
+    }
+}
+
 function changeTimeframe(tf) {
     currentTimeframe = tf;
     document.querySelectorAll('.tf-btn').forEach(btn => {
@@ -1949,19 +2245,19 @@ async function loadAndApplySliderConfig() {
         // C1: Set range and default value
         setSliderRange('tp_c1', 0, c1_limit - 1, 'txt_max_tp_c1');
         setSliderValue('tp_c1', c1_tp_default);
-        setSliderRange('sl_c1', c1_limit, 200, 'txt_min_sl_c1');
+        setSliderRange('sl_c1', c1_limit, 120, 'txt_min_sl_c1');
         setSliderValue('sl_c1', c1_sl_default);
 
         // C3: Set range and default value
         setSliderRange('tp_c3', 0, c3_limit - 1, 'txt_max_tp_c3');
         setSliderValue('tp_c3', c3_tp_default);
-        setSliderRange('sl_c3', c3_limit, 200, 'txt_min_sl_c3');
+        setSliderRange('sl_c3', c3_limit, 120, 'txt_min_sl_c3');
         setSliderValue('sl_c3', c3_sl_default);
 
         // C4: Set range and default value
         setSliderRange('tp_c4', 0, c3_limit - 1, 'txt_max_tp_c4');
         setSliderValue('tp_c4', c4_tp_default);
-        setSliderRange('sl_c4', c4_limit, 200, 'txt_min_sl_c4');
+        setSliderRange('sl_c4', c4_limit, 120, 'txt_min_sl_c4');
         setSliderValue('sl_c4', c4_sl_default);
 
         console.log('✅ Slider ranges and defaults updated from shared_config.json');
@@ -1971,21 +2267,6 @@ async function loadAndApplySliderConfig() {
     }
 }
 
-function setSliderValue(inputId, value) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-
-    // Clamp value to min/max
-    const min = parseInt(input.min) || 0;
-    const max = parseInt(input.max) || 200;
-    value = Math.max(min, Math.min(max, value));
-
-    input.value = value;
-
-    // Update display
-    const event = new Event('input');
-    input.dispatchEvent(event);
-}
 
 function setSliderRange(inputId, min, max, textSpanId) {
     const input = document.getElementById(inputId);
@@ -2009,4 +2290,459 @@ function setSliderRange(inputId, min, max, textSpanId) {
     // Trigger update UI
     const event = new Event('input');
     input.dispatchEvent(event);
+}
+
+function setSliderValue(inputId, value) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    // Clamp value to min/max
+    const min = parseInt(input.min) || 0;
+    const max = parseInt(input.max) || 120;
+    value = Math.max(min, Math.min(max, value));
+
+    input.value = value;
+
+    // Update display
+    const event = new Event('input');
+    input.dispatchEvent(event);
+}
+
+// ========== OPTIMIZER ==========
+// ========== OPTIMIZER ==========
+async function optimizeCase(caseId, metric = 'total') {
+    const metricLabel = metric === 'realized' ? 'Realizado' : 'Total';
+    console.log(`🪄 Optimizing Case C${caseId} (${metricLabel})...`);
+
+    // Select the specific button clicked based on metric
+    const btnSelector = `button[onclick="optimizeCase(${caseId}, '${metric}')"]`;
+    const btn = document.querySelector(btnSelector);
+    const originalText = btn ? btn.innerHTML : (metric === 'realized' ? '💰 Real' : '🪄 Tot');
+
+    if (btn) {
+        btn.innerHTML = '⏳...';
+        btn.disabled = true;
+    }
+
+    // Give UI a moment to update
+    await new Promise(r => setTimeout(r, 10));
+
+    try {
+        // 1. Identify relevant trades for this case
+        const trades = processedTradesGlobal
+            .filter(p => !p.isIgnored && p.cID === caseId) // Only active trades for this case
+            .map(p => p.t);
+
+        if (trades.length === 0) {
+            alert(`No hay trades activos para el Caso ${caseId} para optimizar.`);
+            throw new Error("No trades");
+        }
+
+        // 2. Get Limits from Sliders (Search Space)
+        const tpSlider = document.getElementById(`tp_c${caseId}`);
+        const slSlider = document.getElementById(`sl_c${caseId}`);
+
+        if (!tpSlider || !slSlider) throw new Error("Sliders not found");
+
+        const limits = {
+            tpMin: parseFloat(tpSlider.min) || 0,
+            tpMax: parseFloat(tpSlider.max) || 100,
+            slMin: parseFloat(slSlider.min) || 50,
+            slMax: parseFloat(slSlider.max) || 120
+        };
+
+        // 3. Pre-calculate Hit Maps for each trade
+        const tradeHitMaps = [];
+        const step = 0.5; // Precision 0.5% for 2D optimization to maintain speed
+
+        console.time("PreCalc");
+        for (const t of trades) {
+            // Need candle data
+            const candles = marketDataCache[t.symbol];
+            if (!candles) {
+                console.warn(`Skipping optimization for ${t.symbol} (no candle data)`);
+                continue;
+            }
+
+            const range = (t.fib_high && t.fib_low) ? (t.fib_high - t.fib_low) : 0;
+            if (range <= 0) continue;
+
+            const fibLow = t.fib_low;
+
+            const tpTargets = [];
+            for (let v = limits.tpMin; v <= limits.tpMax; v = parseFloat((v + step).toFixed(1))) {
+                tpTargets.push({ val: v, price: fibLow + range * (v / 100) });
+            }
+            const slTargets = [];
+            for (let v = limits.slMin; v <= limits.slMax; v = parseFloat((v + step).toFixed(1))) {
+                slTargets.push({ val: v, price: fibLow + range * (v / 100) });
+            }
+
+            // Hit Results: val -> time
+            const hits = {};
+
+            // Find entry time index
+            let intervalMinutes = 1;
+            if (currentTimeframe === '1') intervalMinutes = 1;
+            else if (currentTimeframe === '5') intervalMinutes = 5;
+            else if (currentTimeframe === '15') intervalMinutes = 15;
+            else if (currentTimeframe === '60') intervalMinutes = 60;
+            else if (currentTimeframe === '240') intervalMinutes = 240;
+
+            const intervalSeconds = intervalMinutes * 60;
+            const entryTimeStr = t.opened_at || t.entry_time || (t.executions && t.executions[0] ? t.executions[0].time : null);
+            if (!entryTimeStr) continue;
+
+            const hasTimezone = entryTimeStr.includes('Z') || entryTimeStr.includes('+');
+            const entryTime = new Date(hasTimezone ? entryTimeStr : entryTimeStr + 'Z').getTime() / 1000;
+
+            let startIndex = candles.findIndex(c => entryTime >= c.time && entryTime < (c.time + intervalSeconds));
+            if (startIndex === -1) startIndex = candles.findIndex(c => c.time >= entryTime); // Fallback
+            if (startIndex === -1) continue; // No future data
+
+            let activeTpTargets = [...tpTargets];
+            let activeSlTargets = [...slTargets];
+
+            for (let i = startIndex; i < candles.length; i++) {
+                const c = candles[i];
+
+                // SL: High >= Target
+                for (let k = activeSlTargets.length - 1; k >= 0; k--) {
+                    if (c.high >= activeSlTargets[k].price) {
+                        hits['sl_' + activeSlTargets[k].val] = c.time;
+                        activeSlTargets.splice(k, 1);
+                    }
+                }
+
+                // TP: Low <= Target
+                for (let k = activeTpTargets.length - 1; k >= 0; k--) {
+                    if (c.low <= activeTpTargets[k].price) {
+                        hits['tp_' + activeTpTargets[k].val] = c.time;
+                        activeTpTargets.splice(k, 1);
+                    }
+                }
+
+                if (activeTpTargets.length === 0 && activeSlTargets.length === 0) break;
+            }
+
+            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price, quantity: t.quantity });
+        }
+        console.timeEnd("PreCalc");
+
+        // 4. Grid Search
+        console.time("GridSearch");
+        let bestPnL = -Infinity;
+        let bestCombo = { tp: limits.tpMin, sl: limits.slMin };
+
+        // Commission Rate
+        let commRate = 0;
+        if (simulateCommissionsEnabled) {
+            commRate = (caseId === 1 || caseId === 2) ? 0.0002 : 0.00055;
+        }
+
+        for (let tp = limits.tpMin; tp <= limits.tpMax; tp = parseFloat((tp + step).toFixed(1))) {
+            for (let sl = limits.slMin; sl <= limits.slMax; sl = parseFloat((sl + step).toFixed(1))) {
+
+                let currentPnL = 0;
+
+                for (const tradeData of tradeHitMaps) {
+                    const { t, hits, range, fibLow, entryPrice, quantity } = tradeData;
+
+                    const slKey = 'sl_' + tp; // ERROR IN LOGIC, fixed below
+                    const slKeyReal = 'sl_' + sl;
+                    const tpKeyReal = 'tp_' + tp;
+
+                    const timeSL = hits[slKeyReal];
+                    const timeTP = hits[tpKeyReal];
+
+                    let rPnl = 0;
+                    let fPnl = 0;
+
+                    const hasSL = (timeSL !== undefined);
+                    const hasTP = (timeTP !== undefined);
+
+                    let result = 'RUN';
+                    if (hasSL && hasTP) {
+                        if (timeSL <= timeTP) result = 'SL';
+                        else result = 'TP';
+                    } else if (hasSL) {
+                        result = 'SL';
+                    } else if (hasTP) {
+                        result = 'TP';
+                    }
+
+                    // Prices
+                    const priceTP = fibLow + range * (tp / 100);
+                    const priceSL = fibLow + range * (sl / 100);
+
+                    // Calc PnL
+                    if (result === 'SL') {
+                        rPnl = (entryPrice - priceSL) * quantity;
+                        // Closed: 2x comm
+                        if (simulateCommissionsEnabled) rPnl -= (entryPrice * quantity * commRate * 2);
+                    } else if (result === 'TP') {
+                        rPnl = (entryPrice - priceTP) * quantity;
+                        // Closed: 2x comm
+                        if (simulateCommissionsEnabled) rPnl -= (entryPrice * quantity * commRate * 2);
+                    } else {
+                        // RUN - Calc Floating if metric is 'total'
+                        if (metric === 'total') {
+                            if (!tradeData.lastPrice) {
+                                const candles = marketDataCache[t.symbol];
+                                if (candles && candles.length > 0) tradeData.lastPrice = candles[candles.length - 1].close;
+                                else tradeData.lastPrice = entryPrice;
+                            }
+                            fPnl = (entryPrice - tradeData.lastPrice) * quantity;
+                            // Open: 1x comm
+                            if (simulateCommissionsEnabled) fPnl -= (entryPrice * quantity * commRate);
+                        }
+                    }
+
+                    // Add to sum based on metric
+                    currentPnL += rPnl;
+                    if (metric === 'total') {
+                        currentPnL += fPnl;
+                    }
+                }
+
+                if (currentPnL > bestPnL) {
+                    bestPnL = currentPnL;
+                    bestCombo = { tp, sl };
+                }
+            }
+        }
+        console.timeEnd("GridSearch");
+
+        console.log(`✅ Optimal (${metricLabel}) found: TP ${bestCombo.tp}%, SL ${bestCombo.sl}% (PnL: $${bestPnL.toFixed(2)})`);
+
+        tpSlider.value = bestCombo.tp;
+        updateSliderValue(tpSlider);
+
+        slSlider.value = bestCombo.sl;
+        updateSliderValue(slSlider);
+
+        // Ensure SL toggle is ON
+        const slCheck = document.getElementById(`sl_enabled_c${caseId}`);
+        if (slCheck && !slCheck.checked) {
+            slCheck.click(); // Toggle it on
+        } else {
+            runSimulation(); // Trigger run
+        }
+
+        // Show toast
+        const toast = document.createElement('div');
+        toast.className = "fixed top-4 right-4 bg-purple-600 text-white px-4 py-2 rounded shadow-lg z-50 animate-bounce";
+        toast.innerHTML = `<b>Caso ${caseId} Opt. (${metricLabel})!</b><br>TP: ${bestCombo.tp}% | SL: ${bestCombo.sl}%<br>PnL: $${bestPnL.toFixed(2)}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+
+    } catch (e) {
+        console.error("Optimization failed", e);
+        alert("Error in optimization: " + e.message);
+    } finally {
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+}
+
+async function optimizeTP(caseId, metric = 'total', btnElement) {
+    const metricLabel = metric === 'realized' ? 'Realizado' : 'Total';
+    console.log(`🪄 Optimizing TP C${caseId} (${metricLabel})...`);
+
+    const btn = btnElement || document.querySelector(`button[onclick="optimizeTP(${caseId}, '${metric}')"]`);
+    const originalText = btn ? btn.innerHTML : (metric === 'realized' ? '💰 R' : '🪄 T');
+
+    if (btn) {
+        btn.innerHTML = '⏳';
+        btn.disabled = true;
+    }
+
+    // Give UI a moment to update
+    await new Promise(r => setTimeout(r, 10));
+
+    try {
+        // 1. Identify relevant trades for this case
+        const trades = processedTradesGlobal
+            .filter(p => !p.isIgnored && p.cID === caseId)
+            .map(p => p.t);
+
+        if (trades.length === 0) {
+            alert(`No hay trades activos para el Caso ${caseId} para optimizar.`);
+            throw new Error("No trades");
+        }
+
+        // 2. Get Limits from Sliders (Search Space)
+        const tpSlider = document.getElementById(`tp_c${caseId}`);
+        const slSlider = document.getElementById(`sl_c${caseId}`); // We need this for current value
+
+        if (!tpSlider || !slSlider) throw new Error("Sliders not found");
+
+        const limits = {
+            tpMin: parseInt(tpSlider.min) || 0,
+            tpMax: parseInt(tpSlider.max) || 100
+        };
+        const currentSL = parseInt(slSlider.value) || 100;
+
+        // 3. Pre-calculate Hit Maps for each trade
+        const tradeHitMaps = [];
+
+        console.time("PreCalcTP");
+        for (const t of trades) {
+            const candles = marketDataCache[t.symbol];
+            if (!candles) continue;
+
+            const range = (t.fib_high && t.fib_low) ? (t.fib_high - t.fib_low) : 0;
+            if (range <= 0) continue;
+
+            const fibLow = t.fib_low;
+
+            // TP Targets: Full range
+            const tpTargets = [];
+            for (let v = limits.tpMin; v <= limits.tpMax; v++) {
+                tpTargets.push({ val: v, price: fibLow + range * (v / 100) });
+            }
+
+            // SL Target: ONLY current SL
+            const slTargets = [{ val: currentSL, price: fibLow + range * (currentSL / 100) }];
+
+            const hits = {};
+
+            // Find entry time index
+            let intervalMinutes = 1;
+            if (currentTimeframe === '1') intervalMinutes = 1;
+            else if (currentTimeframe === '5') intervalMinutes = 5;
+            else if (currentTimeframe === '15') intervalMinutes = 15;
+            else if (currentTimeframe === '60') intervalMinutes = 60;
+            else if (currentTimeframe === '240') intervalMinutes = 240;
+
+            const intervalSeconds = intervalMinutes * 60;
+            const entryTimeStr = t.opened_at || t.entry_time || (t.executions && t.executions[0] ? t.executions[0].time : null);
+            if (!entryTimeStr) continue;
+
+            const hasTimezone = entryTimeStr.includes('Z') || entryTimeStr.includes('+');
+            const entryTime = new Date(hasTimezone ? entryTimeStr : entryTimeStr + 'Z').getTime() / 1000;
+
+            let startIndex = candles.findIndex(c => entryTime >= c.time && entryTime < (c.time + intervalSeconds));
+            if (startIndex === -1) startIndex = candles.findIndex(c => c.time >= entryTime);
+            if (startIndex === -1) continue;
+
+            let activeTpTargets = [...tpTargets];
+            let activeSlTargets = [...slTargets];
+
+            for (let i = startIndex; i < candles.length; i++) {
+                const c = candles[i];
+
+                // SL: High >= Target
+                for (let k = activeSlTargets.length - 1; k >= 0; k--) {
+                    if (c.high >= activeSlTargets[k].price) {
+                        hits['sl'] = c.time; // Key is just 'sl' since only one
+                        activeSlTargets.splice(k, 1);
+                    }
+                }
+
+                // TP: Low <= Target
+                for (let k = activeTpTargets.length - 1; k >= 0; k--) {
+                    if (c.low <= activeTpTargets[k].price) {
+                        hits['tp_' + activeTpTargets[k].val] = c.time;
+                        activeTpTargets.splice(k, 1);
+                    }
+                }
+
+                if (activeTpTargets.length === 0 && activeSlTargets.length === 0) break;
+            }
+
+            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price, quantity: t.quantity });
+        }
+        console.timeEnd("PreCalcTP");
+
+        // 4. Search Best TP
+        console.time("SearchTP");
+        let bestPnL = -Infinity;
+        let bestTP = limits.tpMin;
+
+        // Loop ONLY TP values
+        for (let tp = limits.tpMin; tp <= limits.tpMax; tp++) {
+            let currentPnL = 0;
+
+            for (const tradeData of tradeHitMaps) {
+                const { t, hits, range, fibLow, entryPrice, quantity } = tradeData;
+
+                // Check if SL was hit
+                let timeSL = hits['sl'];
+
+                // Check if TP was hit
+                let timeTP = hits['tp_' + tp];
+
+                let rPnl = 0;
+                let fPnl = 0;
+                let result = 'RUN';
+
+                const hasSL = (timeSL !== undefined);
+                const hasTP = (timeTP !== undefined);
+
+                if (hasSL && hasTP) {
+                    if (timeSL <= timeTP) result = 'SL';
+                    else result = 'TP';
+                } else if (hasSL) {
+                    result = 'SL';
+                } else if (hasTP) {
+                    result = 'TP';
+                }
+
+                const priceTP = fibLow + range * (tp / 100);
+                const priceSL = fibLow + range * (currentSL / 100);
+
+                if (result === 'SL') {
+                    rPnl = (entryPrice - priceSL) * quantity;
+                } else if (result === 'TP') {
+                    rPnl = (entryPrice - priceTP) * quantity;
+                } else {
+                    // RUN
+                    if (metric === 'total') {
+                        if (!tradeData.lastPrice) {
+                            const candles = marketDataCache[t.symbol];
+                            if (candles && candles.length > 0) tradeData.lastPrice = candles[candles.length - 1].close;
+                            else tradeData.lastPrice = entryPrice;
+                        }
+                        fPnl = (entryPrice - tradeData.lastPrice) * quantity;
+                    }
+                }
+
+                currentPnL += rPnl;
+                if (metric === 'total') currentPnL += fPnl;
+            }
+
+            if (currentPnL > bestPnL) {
+                bestPnL = currentPnL;
+                bestTP = tp;
+            }
+        }
+        console.timeEnd("SearchTP");
+
+        // 5. Apply
+        console.log(`✅ Optimal TP found: ${bestTP}% (PnL: $${bestPnL.toFixed(2)}) keeping SL ${currentSL}%`);
+
+        tpSlider.value = bestTP;
+        updateSliderValue(tpSlider);
+
+        runSimulation();
+
+        // Show toast
+        const toast = document.createElement('div');
+        toast.className = "fixed top-4 right-4 bg-teal-600 text-white px-4 py-2 rounded shadow-lg z-50 animate-bounce";
+        toast.innerHTML = `<b>TP C${caseId} Opt (${metricLabel})!</b><br>TP: ${bestTP}%<br>(SL fijo en ${currentSL}%)`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+
+    } catch (e) {
+        console.error("TP Optimization failed", e);
+        alert("Error in TP optimization: " + e.message);
+    } finally {
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
 }

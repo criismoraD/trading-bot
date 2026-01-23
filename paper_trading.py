@@ -102,10 +102,13 @@ class Position:
     fib_high: Optional[float] = None  # Precio del High (100%) del swing
     fib_low: Optional[float] = None   # Precio del Low (0%) del swing
     entry_fib_level: Optional[float] = None  # Nivel Fibonacci de entrada (ej: 0.618 para 61.8%)
+    creation_fib_level: Optional[float] = None  # Nivel Fibonacci del mercado al crear la orden
     # Historial de ejecuciones (para tracking de órdenes promediadas)
     executions: List[dict] = field(default_factory=list)  # [{price, qty, time, order_num}]
     # Timestamp de apertura para cooldown de TP/SL
     opened_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # Fecha de creación original (cuando fue orden pendiente)
+    created_at: Optional[str] = None
     
     def calculate_pnl(self, current_price: float) -> float:
         """Calcular PnL no realizado y actualizar precios extremos"""
@@ -247,8 +250,10 @@ class PaperTradingAccount:
             "strategy_case": pos.strategy_case,
             "fib_high": pos.fib_high,
             "fib_low": pos.fib_low,
+            "creation_fib_level": pos.creation_fib_level,
             "executions": pos.executions,
-            "opened_at": pos.opened_at
+            "opened_at": pos.opened_at,
+            "created_at": pos.created_at
         }
     
     def _save_trades(self):
@@ -382,6 +387,10 @@ class PaperTradingAccount:
             if fib_range > 0:
                 entry_fib_level = (current_price - fib_low) / fib_range
         
+        # Para órdenes de mercado, creation_fib_level = entry_fib_level
+        # (porque se ejecutan inmediatamente al precio actual)
+        creation_fib_level = entry_fib_level
+        
         order_id = self._generate_order_id()
         position_side = PositionSide.SHORT if side == OrderSide.SELL else PositionSide.LONG
         
@@ -403,13 +412,15 @@ class PaperTradingAccount:
             fib_high=fib_high,
             fib_low=fib_low,
             entry_fib_level=entry_fib_level,
+            creation_fib_level=creation_fib_level,
             executions=[{
                 "order_num": 1,
                 "price": current_price,
                 "quantity": quantity,
                 "type": "MARKET",
                 "time": datetime.now().isoformat()
-            }]
+            }],
+            created_at=datetime.now(timezone.utc).isoformat() # Para market order, creado y abierto es igual
         )
         self.open_positions[order_id] = position
             
@@ -462,13 +473,15 @@ class PaperTradingAccount:
             fib_high=order.fib_high,
             fib_low=order.fib_low,
             entry_fib_level=(fill_price - order.fib_low) / (order.fib_high - order.fib_low) if (order.fib_high and order.fib_low and (order.fib_high - order.fib_low) != 0) else order.entry_fib_level,
+            creation_fib_level=order.creation_fib_level,  # Nivel Fib cuando se creó la orden
             executions=[{
                 "order_num": 1,
                 "price": fill_price,
                 "quantity": order.quantity,
                 "type": "LIMIT",
                 "time": datetime.now(timezone.utc).isoformat()
-            }]
+            }],
+            created_at=order.created_at # Conservar fecha original de la orden
         )
         
         self.open_positions[order_id] = position
@@ -671,8 +684,10 @@ class PaperTradingAccount:
             "fib_low": position.fib_low,    # Nivel 0% (precio del Low)
             "stop_loss": round(position.stop_loss, 8) if position.stop_loss else None,
             "take_profit": position.take_profit,
+            "creation_fib_level": position.creation_fib_level,
             "executions": position.executions,  # Historial de ejecuciones
             "opened_at": position.opened_at,  # Fecha de entrada (cuando se abrió/ejecutó)
+            "created_at": position.created_at, # Fecha de creación original (scanner)
             "closed_at": datetime.now(timezone.utc).isoformat()
         }
         self.trade_history.append(trade_record)

@@ -6,15 +6,7 @@ import signal
 
 # Configuración de las instancias
 INSTANCES = [
-    {
-        "env": {
-            "BOT_TIMEFRAME": "1h",
-            "BOT_TRADES_FILE": "trades_1h.json",
-            "BOT_WEB_PORT": "8081",
-            "ENABLE_TELEGRAM": "False"
-        },
-        "name": "Bot 1H"
-    },
+
     {
         "env": {
             "BOT_TIMEFRAME": "2h",
@@ -87,7 +79,7 @@ def main():
     processes.append(p_tele)
 
     print("\n✅ Todos los sistemas iniciados.")
-    print("Tablero 1H: http://localhost:8081")
+
     print("Tablero 2H: http://localhost:8082")
     print("Tablero 4H: http://localhost:8083")
     print("\nPresiona Ctrl+C para detener todo.")
