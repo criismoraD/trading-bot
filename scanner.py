@@ -494,17 +494,34 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
     order_id = None
     final_sl = None
     
-    # Obtener configuración de estrategias
+    # Obtener configuración de estrategias y trading
     strategies = get_strategy_config()
     
+    # Leer niveles de entrada desde shared_config.json
+    try:
+        with open('shared_config.json', 'r') as f:
+            config = json.load(f)
+            trading = config.get('trading', {})
+            case_1_max_3_min = trading.get('case_1_max_3_min', 0.67)
+            case_3_max_4_min = trading.get('case_3_max_4_min', 0.79)
+            case_4_max = trading.get('case_4_max', 0.90)
+    except:
+        case_1_max_3_min = 0.67
+        case_3_max_4_min = 0.79
+        case_4_max = 0.90
+    
+    # Obtener precio fresco para registrar 'creation_price' precisa
+    fresh_price = await scanner.get_current_price(result.symbol)
+    if not fresh_price:
+         fresh_price = result.current_price if hasattr(result, 'current_price') else 0.0
+
     if case_num == 4:
         # Caso 4: MARKET
-        fresh_price = await scanner.get_current_price(result.symbol)
-        if not fresh_price:
+        if not fresh_price or fresh_price == 0.0:
             return False, None, None
         
-        level_case4_min = result.fib_levels.get('low', 0) + fib_range * 0.75
-        level_case4_max = result.fib_levels.get('low', 0) + fib_range * 0.90
+        level_case4_min = result.fib_levels.get('low', 0) + fib_range * case_3_max_4_min
+        level_case4_max = result.fib_levels.get('low', 0) + fib_range * case_4_max
         
         if fresh_price < level_case4_min or fresh_price >= level_case4_max:
             print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C4")
@@ -534,8 +551,8 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             final_sl = sl_price
     
     elif case_num == 3:
-        # Caso 3: LIMIT 78.6%
-        limit_price = result.fib_levels['786']
+        # Caso 3: LIMIT al nivel case_3_max_4_min (por defecto 79%)
+        limit_price = result.fib_levels.get('low', 0) + fib_range * case_3_max_4_min
         
         # TP y SL desde configuración
         c3_config = strategies.get('c3', {'tp': 0.62, 'sl': 0.94})
@@ -551,7 +568,8 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             stop_loss=sl_price,
             strategy_case=case_num,
             fib_high=result.fib_levels.get('high'),
-            fib_low=result.fib_levels.get('low')
+            fib_low=result.fib_levels.get('low'),
+            current_price=fresh_price
         )
         if order:
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
@@ -563,14 +581,14 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
     # Caso 2 eliminado - ya no existe
     
     elif case_num == 1:
-        # Caso 1: LIMIT SELL al 68%
+        # Caso 1: LIMIT SELL al nivel case_1_max_3_min (por defecto 67%)
         
         # TP y SL desde configuración
         c1_config = strategies.get('c1', {'tp': 0.51, 'sl': 0.67})
         tp_price = result.fib_levels.get('low', 0) + fib_range * c1_config['tp']
         sl_price = result.fib_levels.get('low', 0) + fib_range * c1_config['sl'] if c1_config.get('sl') else None
-        # LIMIT SELL al 68% (antes era 61.8%)
-        limit_price = result.fib_levels.get('low', 0) + fib_range * 0.68
+        # LIMIT SELL al nivel configurado
+        limit_price = result.fib_levels.get('low', 0) + fib_range * case_1_max_3_min
         
         order = account.place_limit_order(
             symbol=result.symbol,
@@ -582,7 +600,8 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
 
             strategy_case=1,
             fib_high=result.fib_levels.get('high'),
-            fib_low=result.fib_levels.get('low')
+            fib_low=result.fib_levels.get('low'),
+            current_price=fresh_price
         )
         if order:
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""

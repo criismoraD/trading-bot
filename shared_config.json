@@ -1,16 +1,17 @@
 {
     "trading": {
-        "case_1_min": 0.55,
-        "case_1_max": 0.68,
-        "case_3_min": 0.68,
-        "case_3_max": 0.786,
-        "case_4_min": 0.786,
-        "case_4_max": 0.90,
+        "case_1_min": 0.53,
+        "case_1_max_3_min": 0.63,
+        "case_3_max_4_min": 0.79,
+        "case_4_max": 1.00,
+        "_description": "case_4_max controla el nivel de invalidación total del swing (actualmente 100%, poner 0.90 para 90%)",
         "initial_balance": 100,
         "margin_per_trade": 2.0,
         "min_available_margin": 2.0,
         "leverage": 10,
-        "max_simultaneous_operations": 9999
+        "max_simultaneous_operations": 9999,
+        "c1_cancel_below": 0.38,
+        "c3_cancel_below": 0.50
     },
     "strategies": {
         "c1": {
@@ -18,11 +19,11 @@
             "sl": 0.88
         },
         "c3": {
-            "tp": 0.51,
+            "tp": 0.55,
             "sl": 1.05
         },
         "c4": {
-            "tp": 0.56,
+            "tp": 0.65,
             "sl": 1.05
         }
     },
@@ -51,17 +52,15 @@
             "110": 1.10,
             "high": 1.0,
             "low": 0.0
-        },
-        "invalidation_level": 0.90,
-        "invalidation_level_secondary": 1.0
+        }
     },
     "scanner": {
         "rsi_threshold": 75,
         "first_scan_delay": 2,
         "scan_interval": 30,
         "target_pairs": [],
-        "timeframe": "4h",
-        "top_pairs_limit": 600,
+        "timeframe": "1h",
+        "top_pairs_limit": 650,
         "candle_limit": 2000
     }
 }

@@ -461,6 +461,9 @@ async def main():
     # Caché de precios compartido (actualizado por WebSocket)
     price_cache = {}
     
+    # Conectar price_cache a la cuenta para que pueda limpiarlo al cerrar posiciones
+    account.price_cache = price_cache
+    
     async def price_websocket_handler():
         """WebSocket para precios en tiempo real (Dinámico)"""
         nonlocal price_cache
@@ -649,15 +652,20 @@ async def main():
         # Posiciones paper trading
         if account.open_positions:
             for order_id, pos in account.open_positions.items():
-                pnl_color_pos = C_GREEN if pos.unrealized_pnl >= 0 else C_RED
                 current = price_cache.get(pos.symbol, pos.current_price)
+                # Calcular PnL en tiempo real con el precio actual
+                if current and current > 0:
+                    calculated_pnl = pos.calculate_pnl(current)
+                else:
+                    calculated_pnl = pos.unrealized_pnl
+                pnl_color_pos = C_GREEN if calculated_pnl >= 0 else C_RED
                 side_color = C_RED if pos.side.value == 'SHORT' else C_GREEN
                 case_str = f"C{pos.strategy_case}" if pos.strategy_case else "??"
                 
                 # Línea 1: Symbol, Case, Side, Qty
                 print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{pos.symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}{pos.side.value:<5}{C_RESET} │ Qty: {C_WHITE}{pos.quantity:.3f}{C_RESET}{' '*25}{C_CYAN}│{C_RESET}")
                 # Línea 2: Entry, Now, TP, PnL
-                print(f"{C_CYAN}│{C_RESET}      Entry: {C_WHITE}${pos.entry_price:.4f}{C_RESET} │ Now: {C_WHITE}${current:.4f}{C_RESET} │ {pnl_color_pos}PnL: ${pos.unrealized_pnl:>.4f}{C_RESET}{' '*8}{C_CYAN}│{C_RESET}")
+                print(f"{C_CYAN}│{C_RESET}      Entry: {C_WHITE}${pos.entry_price:.4f}{C_RESET} │ Now: {C_WHITE}${current:.4f}{C_RESET} │ {pnl_color_pos}PnL: ${calculated_pnl:>.4f}{C_RESET}{' '*8}{C_CYAN}│{C_RESET}")
                 
                 if pos != list(account.open_positions.values())[-1]:
                     print(f"{C_CYAN}│{C_RESET}  {'-'*68}  {C_CYAN}│{C_RESET}")

@@ -5,7 +5,7 @@ Simula operaciones sin usar dinero real
 import json
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -42,7 +42,7 @@ class Order:
     take_profit: float
     stop_loss: Optional[float] = None
     status: OrderStatus = OrderStatus.PENDING
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     filled_at: Optional[str] = None
     closed_at: Optional[str] = None
     pnl: float = 0.0
@@ -50,11 +50,10 @@ class Order:
     strategy_case: int = 0  # Caso de trading (1-4)
     fib_high: Optional[float] = None  # Precio del High (100%) del swing
     fib_low: Optional[float] = None   # Precio del Low (0%) del swing
-    strategy_case: int = 0  # Caso de trading (1-4)
-    fib_high: Optional[float] = None  # Precio del High (100%) del swing
-    fib_low: Optional[float] = None   # Precio del Low (0%) del swing
     entry_fib_level: Optional[float] = None  # Nivel Fibonacci de entrada (ej: 0.618 para 61.8%)
-    current_price: float = 0.0  # Precio actual del mercado (informativo)
+    current_price: float = 0.0  # Precio actual del mercado (vivo/informativo)
+    creation_price: float = 0.0 # Precio de mercado al momento de crear la orden
+    creation_fib_level: Optional[float] = None # Nivel Fibonacci del mercado al crear
     
     def to_dict(self) -> dict:
         return {
@@ -81,7 +80,9 @@ class Order:
             "fib_high": self.fib_high,
             "fib_low": self.fib_low,
             "entry_fib_level": self.entry_fib_level,
-            "current_price": self.current_price
+            "current_price": self.current_price,
+            "creation_price": self.creation_price,
+            "creation_fib_level": self.creation_fib_level
         }
 
 @dataclass
@@ -97,24 +98,19 @@ class Position:
     order_id: str = ""
     unrealized_pnl: float = 0.0
     current_price: float = 0.0  # Precio actual para calcular PnL
-    # linked_order_id eliminado - ya no se usan órdenes vinculadas
-    # Precios extremos durante la operación (pre-close)
-    max_price_pre_close: Optional[float] = None  # Precio máximo durante la operación
-    max_price_pre_close_time: Optional[str] = None
-    min_price_pre_close: Optional[float] = None  # Precio mínimo durante la operación
-    min_price_pre_close_time: Optional[str] = None
-    price_pivots_pre_close: List[dict] = field(default_factory=list)  # Array de pivotes pre-close [{type, price, time}]
     strategy_case: int = 0  # Caso de trading (1-4)
     fib_high: Optional[float] = None  # Precio del High (100%) del swing
     fib_low: Optional[float] = None   # Precio del Low (0%) del swing
     entry_fib_level: Optional[float] = None  # Nivel Fibonacci de entrada (ej: 0.618 para 61.8%)
     # Historial de ejecuciones (para tracking de órdenes promediadas)
     executions: List[dict] = field(default_factory=list)  # [{price, qty, time, order_num}]
+    # Timestamp de apertura para cooldown de TP/SL
+    opened_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     
     def calculate_pnl(self, current_price: float) -> float:
         """Calcular PnL no realizado y actualizar precios extremos"""
         from datetime import datetime
-        current_time = datetime.now().isoformat()
+        current_time = datetime.now(timezone.utc).isoformat()
         
         self.current_price = current_price  # Guardar precio actual
         if self.side == PositionSide.SHORT:
@@ -170,6 +166,7 @@ class PaperTradingAccount:
         self.pending_orders: Dict[str, Order] = {}
         self.open_positions: Dict[str, Position] = {}
         self.trade_history: List[dict] = []
+        self.cancelled_history: List[dict] = []  # Historial de órdenes canceladas
         self.order_counter = 0
         
         # === Monitoreo de posiciones cerradas (seguimiento de precio post-cierre) ===
@@ -189,12 +186,15 @@ class PaperTradingAccount:
             "losing_trades": 0
         }
         
+        # === Referencia al price_cache externo (se asigna desde bot.py) ===
+        self.price_cache: Dict[str, float] = {}
+        
         # Cargar historial si existe
         self._load_trades()
     
     def _generate_order_id(self) -> str:
         self.order_counter += 1
-        return f"ORD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{self.order_counter}"
+        return f"ORD-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{self.order_counter}"
     
     def update_max_simultaneous(self):
         """Actualizar estadística de máximo de operaciones simultáneas"""
@@ -244,16 +244,11 @@ class PaperTradingAccount:
             "order_id": pos.order_id,
             "unrealized_pnl": pos.unrealized_pnl,
             "current_price": pos.current_price,
-            # linked_order_id eliminado del registro
-            "max_price_pre_close": pos.max_price_pre_close,
-            "max_price_pre_close_time": pos.max_price_pre_close_time,
-            "min_price_pre_close": pos.min_price_pre_close,
-            "min_price_pre_close_time": pos.min_price_pre_close_time,
-            "price_pivots_pre_close": pos.price_pivots_pre_close,
             "strategy_case": pos.strategy_case,
             "fib_high": pos.fib_high,
             "fib_low": pos.fib_low,
-            "executions": pos.executions
+            "executions": pos.executions,
+            "opened_at": pos.opened_at
         }
     
     def _save_trades(self):
@@ -269,11 +264,12 @@ class PaperTradingAccount:
                 "initial_balance": self.initial_balance,
                 "leverage": self.leverage,
                 "history": self.trade_history,
+                "cancelled_history": self.cancelled_history,
                 "stats": self.stats,
                 "open_positions": {k: self._serialize_position(v) for k, v in self.open_positions.items()},
                 "pending_orders": {k: v.to_dict() for k, v in self.pending_orders.items()},
                 "closed_positions_monitoring": self.closed_positions_monitoring,  # Persistir monitoreo post-cierre
-                "last_updated": datetime.now().isoformat()
+                "last_updated": datetime.now(timezone.utc).isoformat()
             }
             with open(self.trades_file, 'w') as f:
                 json.dump(data, f, indent=2, default=str)
@@ -316,7 +312,8 @@ class PaperTradingAccount:
                           strategy_case: int = 0,
                           fib_high: Optional[float] = None,
                           fib_low: Optional[float] = None,
-                          entry_fib_level: Optional[float] = None) -> Optional[Order]:
+                          entry_fib_level: Optional[float] = None,
+                          current_price: Optional[float] = None) -> Optional[Order]:
         """Colocar orden límite (sin límite de margen en paper trading)"""
         # Límite de margen eliminado para paper trading ilimitado
         
@@ -329,6 +326,13 @@ class PaperTradingAccount:
             fib_range = fib_high - fib_low
             if fib_range > 0:
                 entry_fib_level = (price - fib_low) / fib_range
+        
+        # Calcular creation_fib_level si hay current_price
+        creation_fib_level = None
+        if current_price is not None and fib_high is not None and fib_low is not None:
+             fib_range = fib_high - fib_low
+             if fib_range > 0:
+                  creation_fib_level = (current_price - fib_low) / fib_range
         
         order = Order(
             id=self._generate_order_id(),
@@ -345,7 +349,9 @@ class PaperTradingAccount:
             strategy_case=strategy_case,
             fib_high=fib_high,
             fib_low=fib_low,
-            entry_fib_level=entry_fib_level
+            entry_fib_level=entry_fib_level,
+            creation_price=current_price if current_price else 0.0,
+            creation_fib_level=creation_fib_level
         )
         
         self.pending_orders[order.id] = order
@@ -436,7 +442,7 @@ class PaperTradingAccount:
         
         order = self.pending_orders.pop(order_id)
         order.status = OrderStatus.FILLED
-        order.filled_at = datetime.now().isoformat()
+        order.filled_at = datetime.now(timezone.utc).isoformat()
         order.price = fill_price  # Precio real de ejecución
         
         position_side = PositionSide.SHORT if order.side == OrderSide.SELL else PositionSide.LONG
@@ -455,13 +461,13 @@ class PaperTradingAccount:
             strategy_case=order.strategy_case,
             fib_high=order.fib_high,
             fib_low=order.fib_low,
-            entry_fib_level=order.entry_fib_level,
+            entry_fib_level=(fill_price - order.fib_low) / (order.fib_high - order.fib_low) if (order.fib_high and order.fib_low and (order.fib_high - order.fib_low) != 0) else order.entry_fib_level,
             executions=[{
                 "order_num": 1,
                 "price": fill_price,
                 "quantity": order.quantity,
                 "type": "LIMIT",
-                "time": datetime.now().isoformat()
+                "time": datetime.now(timezone.utc).isoformat()
             }]
         )
         
@@ -478,9 +484,23 @@ class PaperTradingAccount:
         positions_to_close = []
         significant_change = False
         
+        # Cooldown: No cerrar posiciones abiertas hace menos de 1 segundo
+        COOLDOWN_SECONDS = 1
+        now = datetime.now(timezone.utc)
+        
         for order_id, position in self.open_positions.items():
             if position.symbol != symbol:
                 continue
+            
+            # Verificar cooldown - evitar cerrar posiciones recién abiertas
+            try:
+                opened_time = datetime.fromisoformat(position.opened_at)
+                age_seconds = (now - opened_time).total_seconds()
+                if age_seconds < COOLDOWN_SECONDS:
+                    # print(f"⏳ {symbol}: Cooldown activo ({age_seconds:.1f}s < {COOLDOWN_SECONDS}s)")
+                    continue
+            except (AttributeError, ValueError):
+                pass  # Si no tiene opened_at o es inválido, continuar normalmente
             
             # Logic removed for significant change detection involving min/max pre close
             pass
@@ -530,6 +550,18 @@ class PaperTradingAccount:
             order.current_price = current_price
             
             # --- REGLAS DE CANCELACIÓN AUTOMÁTICA ---
+            # Leer configuración de cancelación
+            cancel_c1 = 0.382
+            cancel_c3 = 0.50
+            try:
+                with open('shared_config.json', 'r') as f:
+                    cfg = json.load(f)
+                    trading_cfg = cfg.get('trading', {})
+                    cancel_c1 = trading_cfg.get('c1_cancel_below', 0.382)
+                    cancel_c3 = trading_cfg.get('c3_cancel_below', 0.50)
+            except:
+                pass
+
             cancel_reason = None
             if order.fib_high and order.fib_low:
                 fib_range = order.fib_high - order.fib_low
@@ -537,13 +569,13 @@ class PaperTradingAccount:
                     # Calcular nivel fib actual relativo al swing
                     current_fib = (current_price - order.fib_low) / fib_range
                     
-                    # Caso 1: Cancelar si baja al 38.2% (0.382)
-                    if order.strategy_case == 1 and current_fib <= 0.382:
-                        cancel_reason = "Precio tocó 38.2% (C1 anulado)"
+                    # Caso 1: Cancelar si baja al nivel configurado
+                    if order.strategy_case == 1 and current_fib <= cancel_c1:
+                        cancel_reason = f"Precio tocó {cancel_c1*100}% (C1 anulado)"
                     
-                    # Caso 3: Cancelar si baja al 50% (0.50)
-                    if order.strategy_case == 3 and current_fib <= 0.50:
-                        cancel_reason = "Precio tocó 50% (C3 anulado)"
+                    # Caso 3: Cancelar si baja al nivel configurado
+                    if order.strategy_case == 3 and current_fib <= cancel_c3:
+                        cancel_reason = f"Precio tocó {cancel_c3*100}% (C3 anulado)"
 
             if cancel_reason:
                 orders_to_fill.append((order, "CANCEL", cancel_reason))
@@ -578,6 +610,12 @@ class PaperTradingAccount:
                     # Registrar cancelación
                     self.stats["cancelled_orders"] = self.stats.get("cancelled_orders", 0) + 1
                     
+                    # Guardar historial de cancelación
+                    cancel_record = order.to_dict()
+                    cancel_record["cancelled_at"] = datetime.now(timezone.utc).isoformat()
+                    cancel_record["cancel_reason"] = reason
+                    self.cancelled_history.append(cancel_record)
+                    
                     self._save_trades()
                     print(f"🚫 Orden {order.symbol} CANCELADA autom.: {reason}")
     
@@ -588,6 +626,11 @@ class PaperTradingAccount:
         
         position = self.open_positions.pop(order_id)
         pnl = position.calculate_pnl(close_price)
+        
+        # IMPORTANTE: Limpiar price_cache del símbolo para evitar TP/SL falsos en nuevas posiciones
+        if self.price_cache and position.symbol in self.price_cache:
+            del self.price_cache[position.symbol]
+            # print(f"🧹 Cache limpiado para {position.symbol}")
         
         # Actualizar balance
         self.balance += pnl
@@ -620,30 +663,17 @@ class PaperTradingAccount:
             "quantity": position.quantity,
             "margin": position.margin,
             "pnl": pnl,
-            # Precios extremos DURANTE la operación (pre-close)
-            "max_price_pre_close": position.max_price_pre_close,
-            "max_price_pre_close_time": position.max_price_pre_close_time,
-            "min_price_pre_close": position.min_price_pre_close,
-            "min_price_pre_close_time": position.min_price_pre_close_time,
-            "price_pivots_pre_close": position.price_pivots_pre_close,  # Pivotes durante operación
             "potential_profit_usdt": round(potential_profit_usdt, 4),  # Ganancia potencial al TP
             "potential_loss_usdt": round(potential_loss_usdt, 4),      # Pérdida potencial al SL
             "strategy_case": position.strategy_case,
             "reason": reason,
             "fib_high": position.fib_high,  # Nivel 100% (precio del High)
             "fib_low": position.fib_low,    # Nivel 0% (precio del Low)
-            "stop_loss": round(position.stop_loss, 8) if position.stop_loss else None,  # Redondear SL
+            "stop_loss": round(position.stop_loss, 8) if position.stop_loss else None,
             "take_profit": position.take_profit,
-            "executions": position.executions,  # Historial de ejecuciones (precio de cada orden)
-            "closed_at": datetime.now().isoformat(),
-            # Precios extremos DESPUÉS del cierre (post-close) - se actualizan continuamente
-            "min_price_post_close": close_price,  # Precio mínimo alcanzado después del cierre
-            "min_price_post_close_time": datetime.now().isoformat(),  # Tiempo del nuevo mínimo post-cierre
-            "max_price_post_close": close_price,  # Precio máximo alcanzado después del cierre
-            "max_price_post_close_time": datetime.now().isoformat(),  # Tiempo del nuevo máximo post-cierre
-            "price_pivots_post_close": [],  # Array de pivotes post-close [{type, price, time}]
-            "last_price_post_close": close_price, # Último precio tomado después del cierre
-            "last_price_time": datetime.now().isoformat()  # Tiempo del último precio
+            "executions": position.executions,  # Historial de ejecuciones
+            "opened_at": position.opened_at,  # Fecha de entrada (cuando se abrió/ejecutó)
+            "closed_at": datetime.now(timezone.utc).isoformat()
         }
         self.trade_history.append(trade_record)
         

@@ -76,8 +76,8 @@
                                 </div>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div class="slider-container">
-                                        <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">(máx
-                                                61)</span></label>
+                                        <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">max
+                                                <span id="txt_max_tp_c1">--</span></span></label>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('tp_c1', -1)"
                                                 class="precision-btn">&lt;</button>
@@ -91,8 +91,8 @@
                                         <span class="slider-value text-xs" id="tp_c1_val">51</span>
                                     </div>
                                     <div class="slider-container" id="sl_container_c1">
-                                        <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">(mín
-                                                62)</span></label>
+                                        <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">min
+                                                <span id="txt_min_sl_c1">--</span></span></label>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('sl_c1', -1)"
                                                 class="precision-btn">&lt;</button>
@@ -123,8 +123,8 @@
                                 </div>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div class="slider-container">
-                                        <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">(máx
-                                                78)</span></label>
+                                        <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">max
+                                                <span id="txt_max_tp_c3">--</span></span></label>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('tp_c3', -1)"
                                                 class="precision-btn">&lt;</button>
@@ -138,8 +138,8 @@
                                         <span class="slider-value text-xs" id="tp_c3_val">61</span>
                                     </div>
                                     <div class="slider-container" id="sl_container_c3">
-                                        <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">(mín
-                                                79)</span></label>
+                                        <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">min
+                                                <span id="txt_min_sl_c3">--</span></span></label>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('sl_c3', -1)"
                                                 class="precision-btn">&lt;</button>
@@ -168,8 +168,8 @@
                                 </div>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div class="slider-container">
-                                        <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">(máx
-                                                78)</span></label>
+                                        <label class="text-[9px] text-slate-400">TP% <span class="text-red-400">max
+                                                <span id="txt_max_tp_c4">--</span></span></label>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('tp_c4', -1)"
                                                 class="precision-btn">&lt;</button>
@@ -183,8 +183,8 @@
                                         <span class="slider-value text-xs" id="tp_c4_val">50</span>
                                     </div>
                                     <div class="slider-container" id="sl_container_c4">
-                                        <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">(mín
-                                                90)</span></label>
+                                        <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">min
+                                                <span id="txt_min_sl_c4">--</span></span></label>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('sl_c4', -1)"
                                                 class="precision-btn">&lt;</button>
@@ -427,12 +427,43 @@
                                     <tr>
                                         <th class="text-left text-[10px] py-1 px-2">Par</th>
                                         <th class="text-center text-[10px] py-1">Caso</th>
-                                        <th class="text-center text-[10px] py-1">Tipo</th>
+                                        <th class="text-center text-[10px] py-1">Creado</th>
+                                        <th class="text-center text-[10px] py-1">Fib%</th>
                                         <th class="text-right text-[10px] py-1">Precio Entry</th>
                                         <th class="text-right text-[10px] py-1">Distancia</th>
                                     </tr>
                                 </thead>
                                 <tbody id="limitOrdersBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Lista de Órdenes Canceladas -->
+                    <div id="cancelledOrdersSection" class="card overflow-hidden p-0 hidden"
+                        style="border: 1px solid rgba(239, 68, 68, 0.3);">
+                        <div class="px-3 py-2 border-b border-slate-700/30 flex items-center justify-between"
+                            style="background: rgba(239, 68, 68, 0.05);">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[12px]">🚫</span>
+                                <h3 class="font-bold text-slate-200 text-xs">Órdenes Canceladas</h3>
+                                <span id="cancelledCount" class="text-[9px] text-slate-500">(0)</span>
+                            </div>
+                            <button onclick="toggleCancelledList()" id="btnToggleCancelled"
+                                class="text-[9px] text-slate-400 hover:text-white">Ocultar</button>
+                        </div>
+                        <div id="cancelledOrdersContainer" class="overflow-y-auto" style="max-height: 200px;">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th class="text-left text-[10px] py-1 px-2">Par</th>
+                                        <th class="text-center text-[10px] py-1">Caso</th>
+                                        <th class="text-center text-[10px] py-1">Creado</th>
+                                        <th class="text-center text-[10px] py-1">Cancelado</th>
+                                        <th class="text-left text-[10px] py-1">Razón</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cancelledOrdersBody">
                                 </tbody>
                             </table>
                         </div>

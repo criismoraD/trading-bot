@@ -3,8 +3,10 @@
 let rawData = null;
 let processedTradesGlobal = [];
 let limitOrdersGlobal = [];
+let cancelledOrdersGlobal = [];
 let selectedTradeIndex = -1;
 let selectedLimitOrderIndex = -1;
+let selectedCancelledOrderIndex = -1;
 let currentTimeframe = '1';
 
 // Chart variables
@@ -101,10 +103,11 @@ function formatDateShort(dateStr) {
     if (!dateStr) return '-';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
-    const day = d.getDate().toString().padStart(2, '0');
-    const month = (d.getMonth() + 1).toString().padStart(2, '0');
-    const hours = d.getHours().toString().padStart(2, '0');
-    const mins = d.getMinutes().toString().padStart(2, '0');
+    // Usar UTC para consistencia con trades.json
+    const day = d.getUTCDate().toString().padStart(2, '0');
+    const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+    const hours = d.getUTCHours().toString().padStart(2, '0');
+    const mins = d.getUTCMinutes().toString().padStart(2, '0');
     return `${day}/${month} ${hours}:${mins}`;
 }
 
@@ -862,11 +865,31 @@ Original Reason: '${originalReason}'`;
                 distDisplay = dist.toFixed(2) + '%';
             }
 
+            // Format created_at (use UTC)
+            let createdDisplay = '-';
+            if (o.created_at) {
+                const d = new Date(o.created_at);
+                if (!isNaN(d.getTime())) {
+                    const day = d.getUTCDate().toString().padStart(2, '0');
+                    const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+                    const hours = d.getUTCHours().toString().padStart(2, '0');
+                    const mins = d.getUTCMinutes().toString().padStart(2, '0');
+                    createdDisplay = `${day}/${month} ${hours}:${mins}`;
+                }
+            }
+
+            // Format creation_fib_level
+            let fibDisplay = '-';
+            if (o.creation_fib_level != null) {
+                fibDisplay = (o.creation_fib_level * 100).toFixed(1) + '%';
+            }
+
             limitBody.innerHTML += `
                         <tr class="${rowClass} cursor-pointer hover:brightness-110" onclick="selectLimitOrder(${idx})">
                             <td class="py-1 px-2 font-bold text-xs">${o.symbol}</td>
                             <td class="text-center py-1"><span class="badge text-[9px]" style="padding: 2px 6px;">${caseDisplay}</span></td>
-                            <td class="text-center py-1"><span class="badge text-[9px] bg-sky-900 text-sky-200" style="padding: 2px 6px;">LIMIT</span></td>
+                            <td class="text-center py-1 text-[9px] text-slate-400">${createdDisplay}</td>
+                            <td class="text-center py-1 text-[9px] text-purple-400 font-mono">${fibDisplay}</td>
                             <td class="text-right font-mono text-xs py-1 text-amber-400">$${o.price.toFixed(4)}</td>
                             <td class="text-right font-mono text-xs py-1 text-slate-400">${distDisplay}</td>
                         </tr>
@@ -874,6 +897,69 @@ Original Reason: '${originalReason}'`;
         });
     } else {
         limitSection.classList.add('hidden');
+    }
+
+    // Render lista de Cancelled Orders
+    const cancelledSection = document.getElementById('cancelledOrdersSection');
+    const cancelledBody = document.getElementById('cancelledOrdersBody');
+    const cancelledCount = document.getElementById('cancelledCount');
+
+    cancelledOrdersGlobal = [];
+    if (rawData.cancelled_history && rawData.cancelled_history.length > 0) {
+        cancelledOrdersGlobal = rawData.cancelled_history;
+    }
+
+    if (cancelledOrdersGlobal.length > 0) {
+        cancelledSection.classList.remove('hidden');
+        cancelledCount.textContent = `(${cancelledOrdersGlobal.length})`;
+        cancelledBody.innerHTML = '';
+
+        cancelledOrdersGlobal.forEach((o, idx) => {
+            const cID = o.strategy_case || 1;
+            const caseDisplay = cID == 11 ? 'C1++' : `C${cID}`;
+            const rowClass = cID == 11 ? 'row-c11' : `row-c${cID}`;
+
+            // Format created_at (UTC)
+            let createdDisplay = '-';
+            if (o.created_at) {
+                const d = new Date(o.created_at);
+                if (!isNaN(d.getTime())) {
+                    const day = d.getUTCDate().toString().padStart(2, '0');
+                    const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+                    const hours = d.getUTCHours().toString().padStart(2, '0');
+                    const mins = d.getUTCMinutes().toString().padStart(2, '0');
+                    createdDisplay = `${day}/${month} ${hours}:${mins}`;
+                }
+            }
+
+            // Format cancelled_at (UTC)
+            let cancelledDisplay = '-';
+            if (o.cancelled_at) {
+                const d = new Date(o.cancelled_at);
+                if (!isNaN(d.getTime())) {
+                    const day = d.getUTCDate().toString().padStart(2, '0');
+                    const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+                    const hours = d.getUTCHours().toString().padStart(2, '0');
+                    const mins = d.getUTCMinutes().toString().padStart(2, '0');
+                    cancelledDisplay = `${day}/${month} ${hours}:${mins}`;
+                }
+            }
+
+            // Reason
+            const reasonDisplay = o.cancel_reason || '-';
+
+            cancelledBody.innerHTML += `
+                        <tr class="${rowClass} opacity-60 cursor-pointer hover:brightness-110" onclick="selectCancelledOrder(${idx})">
+                            <td class="py-1 px-2 font-bold text-xs">${o.symbol}</td>
+                            <td class="text-center py-1"><span class="badge text-[9px]" style="padding: 2px 6px;">${caseDisplay}</span></td>
+                            <td class="text-center py-1 text-[9px] text-slate-400">${createdDisplay}</td>
+                            <td class="text-center py-1 text-[9px] text-red-400">${cancelledDisplay}</td>
+                            <td class="text-left py-1 text-[9px] text-slate-500 truncate max-w-[150px]" title="${reasonDisplay}">${reasonDisplay}</td>
+                        </tr>
+                    `;
+        });
+    } else {
+        cancelledSection.classList.add('hidden');
     }
 
     // Update KPIs
@@ -907,7 +993,7 @@ function updateCasePerformanceTable(caseStats) {
 
     let totalStats = { total: 0, closed: 0, wins: 0, grossWin: 0, grossLoss: 0, realized: 0, floating: 0 };
 
-    [1, 2, 3, 4].forEach(i => {
+    [1, 3, 4].forEach(i => {
         const s = caseStats[i];
         if (s.total === 0) return;
 
@@ -995,6 +1081,18 @@ function toggleMainList() {
 function toggleLimitList() {
     const container = document.getElementById('limitOrdersContainer');
     const btn = document.getElementById('btnToggleLimit');
+    if (container.classList.contains('hidden')) {
+        container.classList.remove('hidden');
+        btn.textContent = 'Ocultar';
+    } else {
+        container.classList.add('hidden');
+        btn.textContent = 'Mostrar';
+    }
+}
+
+function toggleCancelledList() {
+    const container = document.getElementById('cancelledOrdersContainer');
+    const btn = document.getElementById('btnToggleCancelled');
     if (container.classList.contains('hidden')) {
         container.classList.remove('hidden');
         btn.textContent = 'Ocultar';
@@ -1110,7 +1208,7 @@ function updateChartMarkers(tItem, tpPrice, slPrice) {
     let markers = [];
 
     // Marker for Entry
-    const entryTimeStr = t.entry_time || (t.executions && t.executions[0] ? t.executions[0].time : null);
+    const entryTimeStr = t.opened_at || t.entry_time || (t.executions && t.executions[0] ? t.executions[0].time : null);
 
     if (entryTimeStr) {
         // FORCE UTC: Append 'Z' if not present to ensure it's treated as UTC, not Local
@@ -1126,7 +1224,8 @@ function updateChartMarkers(tItem, tpPrice, slPrice) {
                 position: 'aboveBar',
                 color: '#f68410',
                 shape: 'arrowDown',
-                text: 'ENTRY'
+                text: 'ENTRY',
+                size: 2  // Marcador más grande
             });
         }
 
@@ -1238,7 +1337,197 @@ function selectLimitOrder(idx) {
         }
     });
 
-    loadCandleData(item.symbol);
+    // 5. Add creation_fib_level line if available
+    if (item.creation_fib_level != null && item.fib_high && item.fib_low) {
+        const range = item.fib_high - item.fib_low;
+        const creationPrice = item.fib_low + (range * item.creation_fib_level);
+        if (candleSeries) {
+            const creationLine = candleSeries.createPriceLine({
+                price: creationPrice,
+                color: '#a855f7', // Purple
+                lineWidth: 2,
+                lineStyle: 1, // Dotted
+                axisLabelVisible: true,
+                title: `CREACIÓN (${(item.creation_fib_level * 100).toFixed(1)}%)`
+            });
+            chartLines.push(creationLine);
+        }
+    }
+
+    // 6. Load candles and then add creation marker
+    (async () => {
+        await loadCandleData(item.symbol);
+        // Add creation marker after candles are loaded
+        if (item.created_at && candleSeries && candleDataGlobal && candleDataGlobal.length > 0) {
+            const hasTimezone = item.created_at.includes('Z') || item.created_at.includes('+');
+            const creationTs = new Date(hasTimezone ? item.created_at : item.created_at + 'Z').getTime() / 1000;
+
+            // Find closest candle
+            const creationCandle = candleDataGlobal.find(c => Math.abs(c.time - creationTs) < 60)
+                || candleDataGlobal.reduce((prev, curr) =>
+                    Math.abs(curr.time - creationTs) < Math.abs(prev.time - creationTs) ? curr : prev,
+                    candleDataGlobal[0]);
+
+            if (creationCandle) {
+                candleSeries.setMarkers([{
+                    time: creationCandle.time,
+                    position: 'aboveBar',
+                    color: '#a855f7', // Purple
+                    shape: 'arrowDown',
+                    text: 'CREACIÓN',
+                    size: 2
+                }]);
+            }
+        }
+    })();
+}
+
+function selectCancelledOrder(idx) {
+    const item = cancelledOrdersGlobal[idx];
+    if (!item) return;
+
+    selectedCancelledOrderIndex = idx;
+    selectedLimitOrderIndex = -1;
+    selectedTradeIndex = -1;
+
+    // Update chart info
+    document.getElementById('chartSymbol').textContent = item.symbol + ' (CANCELADA)';
+    document.getElementById('chartCaseBadge').textContent = item.strategy_case ? `C${item.strategy_case}` : '-';
+    document.getElementById('chartCaseBadge').classList.remove('hidden');
+
+    // Show basic info
+    document.getElementById('chartInfo').style.display = 'flex';
+    document.getElementById('infoEntry').textContent = item.price ? '$' + item.price.toFixed(4) : '-';
+    document.getElementById('infoTP').textContent = item.take_profit ? '$' + item.take_profit.toFixed(4) : '-';
+    document.getElementById('infoSL').textContent = item.stop_loss ? '$' + item.stop_loss.toFixed(4) : '-';
+    document.getElementById('infoFibLow').textContent = item.fib_low ? '$' + item.fib_low.toFixed(4) : '-';
+    document.getElementById('infoFibHigh').textContent = item.fib_high ? '$' + item.fib_high.toFixed(4) : '-';
+
+    // 1. Clear previous lines
+    if (chartLines) {
+        chartLines.forEach(line => {
+            try { candleSeries.removePriceLine(line); } catch (e) { }
+        });
+    }
+    chartLines = [];
+
+    // 2. Define lines to draw
+    const linesToDraw = [];
+    if (item.price) linesToDraw.push({ price: item.price, color: '#ef4444', title: 'ENTRY (CANCELADA)', lineWidth: 2, lineStyle: 1 });
+    if (item.take_profit) linesToDraw.push({ price: item.take_profit, color: '#22c55e', title: 'TP', lineWidth: 2, lineStyle: 2 });
+    if (item.stop_loss) linesToDraw.push({ price: item.stop_loss, color: '#ef4444', title: 'SL', lineWidth: 2, lineStyle: 2 });
+
+    if (item.fib_high && item.fib_low) {
+        // 100% & 0%
+        linesToDraw.push({ price: item.fib_high, color: 'rgba(244, 67, 54, 0.8)', title: '100%', lineWidth: 1, lineStyle: 0 });
+        linesToDraw.push({ price: item.fib_low, color: 'rgba(76, 175, 80, 0.8)', title: '0%', lineWidth: 1, lineStyle: 0 });
+
+        // Inner Levels
+        const range = item.fib_high - item.fib_low;
+        const levels = [
+            { pct: 0.236, label: '23.6%', color: '#4caf50' },
+            { pct: 0.382, label: '38.2%', color: '#8bc34a' },
+            { pct: 0.500, label: '50.0%', color: '#ffeb3b' },
+            { pct: 0.618, label: '61.8%', color: '#ff9800' },
+            { pct: 0.786, label: '78.6%', color: '#ff5722' }
+        ];
+
+        levels.forEach(l => {
+            linesToDraw.push({
+                price: item.fib_low + (range * l.pct),
+                color: l.color,
+                title: l.label,
+                lineWidth: 1,
+                lineStyle: 2 // Dashed
+            });
+        });
+    }
+
+    // 3. Initialize chart if needed
+    if (!chart) initChart();
+
+    // 4. Draw lines
+    linesToDraw.forEach(l => {
+        if (candleSeries) {
+            const lineObj = candleSeries.createPriceLine({
+                price: l.price,
+                color: l.color,
+                lineWidth: l.lineWidth || 1,
+                lineStyle: l.lineStyle || 0,
+                axisLabelVisible: true,
+                title: l.title
+            });
+            chartLines.push(lineObj);
+        }
+    });
+
+    // 5. Add creation_fib_level line if available
+    if (item.creation_fib_level != null && item.fib_high && item.fib_low) {
+        const range = item.fib_high - item.fib_low;
+        const creationPrice = item.fib_low + (range * item.creation_fib_level);
+        if (candleSeries) {
+            const creationLine = candleSeries.createPriceLine({
+                price: creationPrice,
+                color: '#a855f7',
+                lineWidth: 2,
+                lineStyle: 1,
+                axisLabelVisible: true,
+                title: `CREACIÓN (${(item.creation_fib_level * 100).toFixed(1)}%)`
+            });
+            chartLines.push(creationLine);
+        }
+    }
+
+    // 6. Load candles and add markers
+    (async () => {
+        await loadCandleData(item.symbol);
+
+        let markers = [];
+
+        // Creation marker
+        if (item.created_at && candleSeries && candleDataGlobal && candleDataGlobal.length > 0) {
+            const hasTimezone = item.created_at.includes('Z') || item.created_at.includes('+');
+            const creationTs = new Date(hasTimezone ? item.created_at : item.created_at + 'Z').getTime() / 1000;
+            const creationCandle = candleDataGlobal.find(c => Math.abs(c.time - creationTs) < 60)
+                || candleDataGlobal.reduce((prev, curr) =>
+                    Math.abs(curr.time - creationTs) < Math.abs(prev.time - creationTs) ? curr : prev,
+                    candleDataGlobal[0]);
+            if (creationCandle) {
+                markers.push({
+                    time: creationCandle.time,
+                    position: 'aboveBar',
+                    color: '#a855f7',
+                    shape: 'arrowDown',
+                    text: 'CREACIÓN',
+                    size: 2
+                });
+            }
+        }
+
+        // Cancellation marker
+        if (item.cancelled_at && candleSeries && candleDataGlobal && candleDataGlobal.length > 0) {
+            const hasTimezone = item.cancelled_at.includes('Z') || item.cancelled_at.includes('+');
+            const cancelTs = new Date(hasTimezone ? item.cancelled_at : item.cancelled_at + 'Z').getTime() / 1000;
+            const cancelCandle = candleDataGlobal.find(c => Math.abs(c.time - cancelTs) < 60)
+                || candleDataGlobal.reduce((prev, curr) =>
+                    Math.abs(curr.time - cancelTs) < Math.abs(prev.time - cancelTs) ? curr : prev,
+                    candleDataGlobal[0]);
+            if (cancelCandle) {
+                markers.push({
+                    time: cancelCandle.time,
+                    position: 'belowBar',
+                    color: '#ef4444',
+                    shape: 'square',
+                    text: 'CANCELADA',
+                    size: 2
+                });
+            }
+        }
+
+        // Sort and set markers
+        markers = markers.filter(m => m.time != null).sort((a, b) => a.time - b.time);
+        if (candleSeries) candleSeries.setMarkers(markers);
+    })();
 }
 
 function initChart() {
@@ -1527,21 +1816,11 @@ function changeTimeframe(tf) {
             updateChartMarkers(item, item.tpPrice, item.slPrice);
         });
     } else if (selectedLimitOrderIndex >= 0 && limitOrdersGlobal[selectedLimitOrderIndex]) {
-        const item = limitOrdersGlobal[selectedLimitOrderIndex];
-        // Re-use selectLimitOrder logic to re-draw but we need a function or just re-call draw lines
-        // Actually selectLimitOrder does a lot of setup. Let's just reload data and redraw lines.
-        // NOTE: `selectLimitOrder` draws specific lines. We should probably extract that drawing logic 
-        // or just manually re-draw here similar to drawTradeLines
-
-        loadCandleData(item.symbol).then(() => {
-            // We need to re-trigger the drawing logic. 
-            // Since selectLimitOrder constructs the lines and draws them, we can refactor or copy logic.
-            // Refactoring "selectLimitOrder" to separate "drawLimitLines" would be cleaner, but for now let's re-call selectLimitOrder 
-            // BUT selectLimitOrder does UI updates we might duplicate.
-            // Better: call selectLimitOrder(selectedLimitOrderIndex) again? 
-            // It's safe as it just updates UI and Chart.
-            selectLimitOrder(selectedLimitOrderIndex);
-        });
+        // Re-call selectLimitOrder to redraw with new timeframe
+        selectLimitOrder(selectedLimitOrderIndex);
+    } else if (selectedCancelledOrderIndex >= 0 && cancelledOrdersGlobal[selectedCancelledOrderIndex]) {
+        // Re-call selectCancelledOrder to redraw with new timeframe
+        selectCancelledOrder(selectedCancelledOrderIndex);
     }
 }
 
@@ -1630,6 +1909,102 @@ function calculateZigZag(data, timeframe) {
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', async function () {
     document.querySelectorAll('input[type="range"]').forEach(s => updateSliderValue(s));
-    await loadSharedConfig();  // Cargar configuración compartida primero
+    // Cargar configuración compartida para sliders dinámicos
+    if (typeof loadAndApplySliderConfig === 'function') {
+        await loadAndApplySliderConfig();
+    } else {
+        console.warn("loadAndApplySliderConfig not found");
+    }
     autoLoadTradesJson();
 });
+
+/* === Dynamic Slider Config === */
+async function loadAndApplySliderConfig() {
+    try {
+        const response = await fetch('shared_config.json?t=' + new Date().getTime());
+        if (!response.ok) throw new Error('Failed to load shared_config.json');
+        const config = await response.json();
+
+        // Update global sharedConfig so resetSlider can use it
+        sharedConfig = config;
+
+        const t = config.trading;
+        const strategies = config.strategies || {};
+
+        // Convert percentage 0.67 -> 67
+        const c1_limit = Math.round(t.case_1_max_3_min * 100);
+        const c3_limit = Math.round(t.case_3_max_4_min * 100);
+        const c4_limit = Math.round(t.case_4_max * 100);
+
+        // Get default values from strategies (convert 0.50 -> 50)
+        const c1_tp_default = Math.round((strategies.c1?.tp || 0.50) * 100);
+        const c1_sl_default = Math.round((strategies.c1?.sl || 0.88) * 100);
+        const c3_tp_default = Math.round((strategies.c3?.tp || 0.51) * 100);
+        const c3_sl_default = Math.round((strategies.c3?.sl || 1.05) * 100);
+        const c4_tp_default = Math.round((strategies.c4?.tp || 0.56) * 100);
+        const c4_sl_default = Math.round((strategies.c4?.sl || 1.05) * 100);
+
+        // C1: Set range and default value
+        setSliderRange('tp_c1', 0, c1_limit - 1, 'txt_max_tp_c1');
+        setSliderValue('tp_c1', c1_tp_default);
+        setSliderRange('sl_c1', c1_limit, 200, 'txt_min_sl_c1');
+        setSliderValue('sl_c1', c1_sl_default);
+
+        // C3: Set range and default value
+        setSliderRange('tp_c3', 0, c3_limit - 1, 'txt_max_tp_c3');
+        setSliderValue('tp_c3', c3_tp_default);
+        setSliderRange('sl_c3', c3_limit, 200, 'txt_min_sl_c3');
+        setSliderValue('sl_c3', c3_sl_default);
+
+        // C4: Set range and default value
+        setSliderRange('tp_c4', 0, c3_limit - 1, 'txt_max_tp_c4');
+        setSliderValue('tp_c4', c4_tp_default);
+        setSliderRange('sl_c4', c4_limit, 200, 'txt_min_sl_c4');
+        setSliderValue('sl_c4', c4_sl_default);
+
+        console.log('✅ Slider ranges and defaults updated from shared_config.json');
+
+    } catch (e) {
+        console.error('Error loading slider config:', e);
+    }
+}
+
+function setSliderValue(inputId, value) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    // Clamp value to min/max
+    const min = parseInt(input.min) || 0;
+    const max = parseInt(input.max) || 200;
+    value = Math.max(min, Math.min(max, value));
+
+    input.value = value;
+
+    // Update display
+    const event = new Event('input');
+    input.dispatchEvent(event);
+}
+
+function setSliderRange(inputId, min, max, textSpanId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    input.min = min;
+    input.max = max;
+
+    // Adjust current value if out of bounds
+    let val = parseInt(input.value);
+    if (val > max) input.value = max;
+    if (val < min) input.value = min;
+
+    // Update text label span
+    const span = document.getElementById(textSpanId);
+    if (span) {
+        if (textSpanId.includes('max')) span.textContent = max;
+        else if (textSpanId.includes('min')) span.textContent = min;
+    }
+
+    // Trigger update UI
+    const event = new Event('input');
+    input.dispatchEvent(event);
+}

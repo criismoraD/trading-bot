@@ -146,6 +146,10 @@ class TelegramBot:
         if not self.account:
             return "⚠️ Bot no inicializado"
         
+        # Actualizar PnL con precios actuales antes de generar reporte
+        if self.price_cache:
+            self.account.update_positions_pnl(self.price_cache)
+        
         status = self.account.get_status()
         now = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
         
@@ -275,6 +279,10 @@ class TelegramBot:
         if not self.account:
             return "⚠️ Bot no inicializado"
         
+        # Actualizar PnL con precios actuales
+        if self.price_cache:
+            self.account.update_positions_pnl(self.price_cache)
+        
         status = self.account.get_status()
         return f"""
 <b>💰 BALANCE</b>
@@ -287,6 +295,10 @@ class TelegramBot:
         """Formato solo con posiciones"""
         if not self.account:
             return "⚠️ Bot no inicializado"
+        
+        # Actualizar PnL con precios actuales
+        if self.price_cache:
+            self.account.update_positions_pnl(self.price_cache)
         
         if not self.account.open_positions:
             return "📭 Sin posiciones abiertas"
