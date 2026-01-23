@@ -39,6 +39,13 @@ def main():
     # Registrar manejador de Ctrl+C
     signal.signal(signal.SIGINT, signal_handler)
 
+    # Limpiar bandera de parada anterior si existe
+    if os.path.exists("stop_signal.flag"):
+        try:
+            os.remove("stop_signal.flag")
+        except:
+            pass
+
     print("🚀 Iniciando Multi-Bot Launcher + Telegram Monitor...")
     print("=====================================================")
 

@@ -36,7 +36,9 @@ class MultiTelegramBot:
         self.api_url = f"https://api.telegram.org/bot{token}"
         self.last_update_id = 0
         self.running = False
+        self.running = False
         self.authorized_chats = self._load_chats()
+        self.startup_time = int(datetime.now().timestamp())
         
     def _load_chats(self) -> set:
         if os.path.exists(CHATS_FILE):
@@ -195,6 +197,12 @@ class MultiTelegramBot:
                                 self.last_update_id = update["update_id"]
                                 if "message" in update:
                                     msg = update["message"]
+                                    # Ignorar mensajes viejos (anteriores al inicio del bot)
+                                    # Usamos una ventana de seguridad de 10 segundos
+                                    if "date" in msg and msg["date"] < (self.startup_time - 10):
+                                        logger.info(f"Ignorando mensaje viejo ID {update['update_id']}")
+                                        continue
+                                        
                                     if "text" in msg:
                                         await self.handle_command(msg["chat"]["id"], msg["text"])
             except Exception as e:
