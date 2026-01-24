@@ -1127,6 +1127,13 @@ Original Reason: '${originalReason}'`;
     document.getElementById('kpi_trades_info').innerText = `${stats.closedTrades}/${stats.totalTrades}`;
     document.getElementById('kpi_pf').innerText = gPF;
 
+    // Update Sim Stats
+    if (rawData) {
+        document.getElementById('kpi_max_sim_pos').innerText = rawData.stats?.max_simultaneous_positions !== undefined ? rawData.stats.max_simultaneous_positions : '-';
+        document.getElementById('kpi_max_sim_ord').innerText = rawData.stats?.max_simultaneous_orders !== undefined ? rawData.stats.max_simultaneous_orders : '-';
+        document.getElementById('kpi_max_sim_tot').innerText = rawData.stats?.max_simultaneous_total !== undefined ? rawData.stats.max_simultaneous_total : '-';
+    }
+
     // Update Case Performance Table
     updateCasePerformanceTable(caseStats);
 
@@ -2243,21 +2250,21 @@ async function loadAndApplySliderConfig() {
         const c4_sl_default = Math.round((strategies.c4?.sl || 1.05) * 100);
 
         // C1: Set range and default value
-        setSliderRange('tp_c1', 0, c1_limit - 1, 'txt_max_tp_c1');
+        setSliderRange('tp_c1', 20, c1_limit - 1, 'txt_max_tp_c1');
         setSliderValue('tp_c1', c1_tp_default);
-        setSliderRange('sl_c1', c1_limit, 120, 'txt_min_sl_c1');
+        setSliderRange('sl_c1', c1_limit, 110, 'txt_min_sl_c1');
         setSliderValue('sl_c1', c1_sl_default);
 
         // C3: Set range and default value
-        setSliderRange('tp_c3', 0, c3_limit - 1, 'txt_max_tp_c3');
+        setSliderRange('tp_c3', 20, c3_limit - 1, 'txt_max_tp_c3');
         setSliderValue('tp_c3', c3_tp_default);
-        setSliderRange('sl_c3', c3_limit, 120, 'txt_min_sl_c3');
+        setSliderRange('sl_c3', c3_limit, 110, 'txt_min_sl_c3');
         setSliderValue('sl_c3', c3_sl_default);
 
         // C4: Set range and default value
-        setSliderRange('tp_c4', 0, c3_limit - 1, 'txt_max_tp_c4');
+        setSliderRange('tp_c4', 20, c3_limit - 1, 'txt_max_tp_c4');
         setSliderValue('tp_c4', c4_tp_default);
-        setSliderRange('sl_c4', c4_limit, 120, 'txt_min_sl_c4');
+        setSliderRange('sl_c4', c4_limit, 110, 'txt_min_sl_c4');
         setSliderValue('sl_c4', c4_sl_default);
 
         console.log('✅ Slider ranges and defaults updated from shared_config.json');
@@ -2297,8 +2304,8 @@ function setSliderValue(inputId, value) {
     if (!input) return;
 
     // Clamp value to min/max
-    const min = parseInt(input.min) || 0;
-    const max = parseInt(input.max) || 120;
+    const min = parseInt(input.min) || 20;
+    const max = parseInt(input.max) || 110;
     value = Math.max(min, Math.min(max, value));
 
     input.value = value;
@@ -2345,10 +2352,10 @@ async function optimizeCase(caseId, metric = 'total') {
         if (!tpSlider || !slSlider) throw new Error("Sliders not found");
 
         const limits = {
-            tpMin: parseFloat(tpSlider.min) || 0,
+            tpMin: parseFloat(tpSlider.min) || 20,
             tpMax: parseFloat(tpSlider.max) || 100,
             slMin: parseFloat(slSlider.min) || 50,
-            slMax: parseFloat(slSlider.max) || 120
+            slMax: parseFloat(slSlider.max) || 110
         };
 
         // 3. Pre-calculate Hit Maps for each trade
@@ -2425,7 +2432,16 @@ async function optimizeCase(caseId, metric = 'total') {
                 if (activeTpTargets.length === 0 && activeSlTargets.length === 0) break;
             }
 
-            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price, quantity: t.quantity });
+
+            // Calculate Fib Entry Level
+            let fibEntryLevel = 0;
+            if (t.fib_level) {
+                fibEntryLevel = parseFloat(t.fib_level);
+            } else if (range > 0) {
+                fibEntryLevel = (t.entry_price - fibLow) / range;
+            }
+
+            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price, quantity: t.quantity, fibEntryLevel });
         }
         console.timeEnd("PreCalc");
 
@@ -2446,7 +2462,10 @@ async function optimizeCase(caseId, metric = 'total') {
                 let currentPnL = 0;
 
                 for (const tradeData of tradeHitMaps) {
-                    const { t, hits, range, fibLow, entryPrice, quantity } = tradeData;
+                    const { t, hits, range, fibLow, entryPrice, quantity, fibEntryLevel } = tradeData;
+
+                    // IGNORE RULE: If Entry is worse than SL, ignore trade (PnL = 0)
+                    if (fibEntryLevel >= sl / 100) continue;
 
                     const slKey = 'sl_' + tp; // ERROR IN LOGIC, fixed below
                     const slKeyReal = 'sl_' + sl;
@@ -2745,4 +2764,61 @@ async function optimizeTP(caseId, metric = 'total', btnElement) {
             btn.disabled = false;
         }
     }
+}
+
+// ========== EXPORT FUNCTION ==========
+function exportTableToCSV() {
+    if (!processedTradesGlobal || processedTradesGlobal.length === 0) {
+        alert("No hay datos para exportar");
+        return;
+    }
+
+    const headers = ["Par", "Caso", "Origen", "Fib Creacion", "Fib Entrada", "Estado", "PnL Real", "PnL Flotante", "RR", "Precio Entrada", "TP", "SL", "Fecha"];
+
+    const rows = processedTradesGlobal.map(item => {
+        const t = item.t;
+
+        // Calcular R:R logic
+        let rrDisplay = '-';
+        if (item.slPrice !== Infinity && item.slPrice > t.entry_price) {
+            const reward = t.entry_price - item.tpPrice;
+            const risk = item.slPrice - t.entry_price;
+            if (risk > 0) {
+                rrDisplay = (reward / risk).toFixed(2);
+            }
+        }
+
+        let statusClean = item.status;
+
+        return [
+            t.symbol,
+            "C" + item.cID,
+            t._src || '-',
+            item.fibCreationLevel != null ? (item.fibCreationLevel * 100).toFixed(1) + '%' : '-',
+            (item.fibEntryLevel * 100).toFixed(1) + '%',
+            statusClean,
+            item.rPnl.toFixed(2),
+            item.fPnl.toFixed(2),
+            rrDisplay,
+            t.entry_price,
+            item.tpPrice.toFixed(4),
+            item.slPrice === Infinity ? 'INF' : item.slPrice.toFixed(4),
+            t.entry_time || t.created_at || ''
+        ];
+    });
+
+    const csvContent = [
+        headers.join(","),
+        ...rows.map(e => e.join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "trades_export_" + new Date().toLocaleDateString().replace(/\//g, '-') + ".csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }

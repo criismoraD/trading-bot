@@ -22,6 +22,30 @@
                 <h1 class="main-title">🚀 Simulador Trading Bot <span>V3</span></h1>
                 <p class="text-sm text-slate-400 mt-1">Análisis profesional con gráfico integrado</p>
             </div>
+
+            <!-- Notas de Análisis + Stats -->
+            <div class="flex-grow mx-4 w-full md:w-1/3 flex gap-4">
+                <textarea id="botNotes"
+                    class="w-1/2 h-32 bg-transparent text-[#00ff00] font-bold border border-slate-700/50 rounded-xl p-4 text-2xl md:text-3xl focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none resize-none shadow-inner transition-all placeholder-slate-600 font-mono leading-relaxed"
+                    style="background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(5px); text-shadow: 0 0 5px rgba(0, 255, 0, 0.3);"
+                    placeholder="📝 NOTAS..." spellcheck="false"></textarea>
+
+                <!-- Stats in Header -->
+                <div class="w-1/2 grid grid-cols-2 gap-2">
+                    <div class="kpi-card kpi-blue p-2 flex flex-col justify-center h-full">
+                        <div class="text-[9px] text-slate-400 font-bold uppercase">Max Posiciones</div>
+                        <div class="kpi-value text-xl mt-1" id="kpi_max_sim_pos">-</div>
+                    </div>
+                    <div class="kpi-card kpi-purple p-2 flex flex-col justify-center h-full">
+                        <div class="text-[9px] text-slate-400 font-bold uppercase">Max Órdenes</div>
+                        <div class="kpi-value text-xl mt-1" id="kpi_max_sim_ord">-</div>
+                    </div>
+                    <div class="kpi-card kpi-green p-2 col-span-2 flex flex-col justify-center h-full">
+                        <div class="text-[9px] text-slate-400 font-bold uppercase">Max Total Simultáneo</div>
+                        <div class="kpi-value text-xl mt-1" id="kpi_max_sim_tot">-</div>
+                    </div>
+                </div>
+            </div>
             <div class="flex items-center gap-4">
                 <!-- Mode Switch -->
                 <div class="mode-switch-container">
@@ -322,6 +346,8 @@
                         </div>
                     </div>
 
+
+
                     <!-- Tabla Rendimiento por Caso (Elegante) -->
                     <div class="card p-3"
                         style="background: linear-gradient(145deg, rgba(22, 33, 62, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1px solid rgba(168, 85, 247, 0.2);">
@@ -385,6 +411,9 @@
                             <div class="flex items-center gap-2">
                                 <span class="text-sm">📜</span>
                                 <h3 class="font-bold text-slate-200 text-xs">Operaciones</h3>
+                                <button onclick="exportTableToCSV()"
+                                    class="text-[9px] text-teal-400 hover:text-teal-200 ml-2" title="Exportar a CSV">💾
+                                    CSV</button>
                                 <button onclick="toggleMainList()" id="btnToggleMain"
                                     class="text-[9px] text-slate-400 hover:text-white ml-2">(Ocultar)</button>
                             </div>
@@ -620,7 +649,23 @@
         </div>
     </div>
 
-    <script src="analisis_bot_v3.js"></script>
+    <script>
+        // Auto-save notes logic
+        document.addEventListener('DOMContentLoaded', () => {
+            const noteArea = document.getElementById('botNotes');
+            if (noteArea) {
+                // Load saved notes
+                const savedNotes = localStorage.getItem('botNotes_v3');
+                if (savedNotes) noteArea.value = savedNotes;
+
+                // Save on input
+                noteArea.addEventListener('input', () => {
+                    localStorage.setItem('botNotes_v3', noteArea.value);
+                });
+            }
+        });
+    </script>
+    <script src="analisis_bot_v3.js?v=3.1"></script>
 </body>
 
 </html>
