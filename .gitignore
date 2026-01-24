@@ -3,15 +3,20 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
+.venv/
 .env
 
 # Data & Logs
 trades*.json
 *.log
 database.sqlite
+candles.db
+logs/
 
-# Config (Contains sensitive info)
-
+# Development Tools
+.gemini/
+.antigravity/
+.antigravityignore
 
 # Web
 node_modules/

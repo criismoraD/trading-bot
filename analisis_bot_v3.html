@@ -133,7 +133,7 @@
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('tp_c1', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="tp_c1" value="51" min="0" max="61" step="0.1"
+                                            <input type="range" id="tp_c1" value="51" min="0" max="61" step="0.5"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('tp_c1', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -143,12 +143,22 @@
                                         <span class="slider-value text-xs" id="tp_c1_val">51</span>
                                     </div>
                                     <div class="slider-container" id="sl_container_c1">
-                                        <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">min
-                                                <span id="txt_min_sl_c1">--</span></span></label>
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">min
+                                                    <span id="txt_min_sl_c1">--</span></span></label>
+                                            <div class="flex gap-1">
+                                                <button onclick="optimizeSL(1, 'total', this)"
+                                                    class="text-[8px] bg-red-900/30 hover:bg-red-800 text-red-200 px-1 rounded border border-red-700/30 transition-colors"
+                                                    title="Optimizar SL (Total)">🪄 T</button>
+                                                <button onclick="optimizeSL(1, 'realized', this)"
+                                                    class="text-[8px] bg-green-900/30 hover:bg-green-800 text-green-200 px-1 rounded border border-green-700/30 transition-colors"
+                                                    title="Optimizar SL (Realized)">💰 R</button>
+                                            </div>
+                                        </div>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('sl_c1', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="sl_c1" value="67" min="62" max="120" step="0.1"
+                                            <input type="range" id="sl_c1" value="67" min="62" max="120" step="0.5"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('sl_c1', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -200,7 +210,7 @@
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('tp_c3', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="tp_c3" value="61" min="0" max="78" step="0.1"
+                                            <input type="range" id="tp_c3" value="61" min="0" max="78" step="0.5"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('tp_c3', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -210,12 +220,22 @@
                                         <span class="slider-value text-xs" id="tp_c3_val">61</span>
                                     </div>
                                     <div class="slider-container" id="sl_container_c3">
-                                        <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">min
-                                                <span id="txt_min_sl_c3">--</span></span></label>
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">min
+                                                    <span id="txt_min_sl_c3">--</span></span></label>
+                                            <div class="flex gap-1">
+                                                <button onclick="optimizeSL(3, 'total', this)"
+                                                    class="text-[8px] bg-orange-900/30 hover:bg-orange-800 text-orange-200 px-1 rounded border border-orange-700/30 transition-colors"
+                                                    title="Optimizar SL (Total)">🪄 T</button>
+                                                <button onclick="optimizeSL(3, 'realized', this)"
+                                                    class="text-[8px] bg-green-900/30 hover:bg-green-800 text-green-200 px-1 rounded border border-green-700/30 transition-colors"
+                                                    title="Optimizar SL (Realized)">💰 R</button>
+                                            </div>
+                                        </div>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('sl_c3', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="sl_c3" value="92" min="79" max="120" step="0.1"
+                                            <input type="range" id="sl_c3" value="92" min="79" max="120" step="0.5"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('sl_c3', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -265,7 +285,7 @@
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('tp_c4', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="tp_c4" value="50" min="0" max="78" step="0.1"
+                                            <input type="range" id="tp_c4" value="50" min="0" max="78" step="0.5"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('tp_c4', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -275,12 +295,22 @@
                                         <span class="slider-value text-xs" id="tp_c4_val">50</span>
                                     </div>
                                     <div class="slider-container" id="sl_container_c4">
-                                        <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">min
-                                                <span id="txt_min_sl_c4">--</span></span></label>
+                                        <div class="flex justify-between items-center">
+                                            <label class="text-[9px] text-slate-400">SL% <span class="text-red-400">min
+                                                    <span id="txt_min_sl_c4">--</span></span></label>
+                                            <div class="flex gap-1">
+                                                <button onclick="optimizeSL(4, 'total', this)"
+                                                    class="text-[8px] bg-red-900/30 hover:bg-red-800 text-red-200 px-1 rounded border border-red-700/30 transition-colors"
+                                                    title="Optimizar SL (Total)">🪄 T</button>
+                                                <button onclick="optimizeSL(4, 'realized', this)"
+                                                    class="text-[8px] bg-green-900/30 hover:bg-green-800 text-green-200 px-1 rounded border border-green-700/30 transition-colors"
+                                                    title="Optimizar SL (Realized)">💰 R</button>
+                                            </div>
+                                        </div>
                                         <div class="flex items-center gap-1">
                                             <button type="button" onclick="adjustSlider('sl_c4', -1)"
                                                 class="precision-btn">&lt;</button>
-                                            <input type="range" id="sl_c4" value="95" min="90" max="120" step="0.1"
+                                            <input type="range" id="sl_c4" value="95" min="90" max="120" step="0.5"
                                                 oninput="updateSliderValue(this); runSimulation();" class="flex-1">
                                             <button type="button" onclick="adjustSlider('sl_c4', 1)"
                                                 class="precision-btn">&gt;</button>
@@ -303,7 +333,7 @@
                                 <div class="flex items-center gap-1">
                                     <button type="button" onclick="adjustSlider('guide_line', -1)"
                                         class="precision-btn">&lt;</button>
-                                    <input type="range" id="guide_line" value="65" min="0" max="150" step="0.1"
+                                    <input type="range" id="guide_line" value="65" min="0" max="150" step="0.5"
                                         oninput="updateSliderValue(this); updateChartLinesFromSlider();" class="flex-1">
                                     <button type="button" onclick="adjustSlider('guide_line', 1)"
                                         class="precision-btn">&gt;</button>

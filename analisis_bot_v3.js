@@ -518,21 +518,12 @@ document.getElementById('fileInput').addEventListener('change', function (e) {
 // ========== CASE SETTINGS ==========
 function getCaseSettings(caseId) {
     let c = [1, 3, 4].includes(caseId) ? caseId : 1;  // C2 eliminado
-    const limits = {
-        1: { tpMax: 0.61, slMin: 0.62 },
-        // 2 eliminado
-        3: { tpMax: 0.78, slMin: 0.79 },
-        4: { tpMax: 0.90, slMin: 0.90 }
-    };
-    const limit = limits[c];
 
     let tp = (parseFloat(document.getElementById(`tp_c${c}`)?.value) || 50) / 100;
     const slEnabled = document.getElementById(`sl_enabled_c${c}`)?.checked ?? true;
     let sl = slEnabled ? (parseFloat(document.getElementById(`sl_c${c}`)?.value) || 100) / 100 : 0;
 
-    if (tp > limit.tpMax) tp = limit.tpMax;
-    if (sl > 0 && sl < limit.slMin) sl = limit.slMin;
-
+    // Se eliminan los límites hardcoded para coincidir exactamente con los sliders
     return { tp, sl };
 }
 
@@ -2237,37 +2228,37 @@ async function loadAndApplySliderConfig() {
         const strategies = config.strategies || {};
 
         // Convert percentage 0.67 -> 67
-        const c1_limit = Math.round(t.case_1_max_3_min * 100);
-        const c3_limit = Math.round(t.case_3_max_4_min * 100);
-        const c4_limit = Math.round(t.case_4_max * 100);
+        const c1_base = t.case_1_max_3_min * 100;
+        const c3_base = t.case_3_max_4_min * 100;
+        const c4_base = t.case_4_max * 100;
 
         // Get default values from strategies (convert 0.50 -> 50)
-        const c1_tp_default = Math.round((strategies.c1?.tp || 0.50) * 100);
-        const c1_sl_default = Math.round((strategies.c1?.sl || 0.88) * 100);
-        const c3_tp_default = Math.round((strategies.c3?.tp || 0.51) * 100);
-        const c3_sl_default = Math.round((strategies.c3?.sl || 1.05) * 100);
-        const c4_tp_default = Math.round((strategies.c4?.tp || 0.56) * 100);
-        const c4_sl_default = Math.round((strategies.c4?.sl || 1.05) * 100);
+        const c1_tp_default = (strategies.c1?.tp || 0.50) * 100;
+        const c1_sl_default = (strategies.c1?.sl || 0.88) * 100;
+        const c3_tp_default = (strategies.c3?.tp || 0.51) * 100;
+        const c3_sl_default = (strategies.c3?.sl || 1.05) * 100;
+        const c4_tp_default = (strategies.c4?.tp || 0.56) * 100;
+        const c4_sl_default = (strategies.c4?.sl || 1.05) * 100;
 
-        // C1: Set range and default value
-        setSliderRange('tp_c1', 20, c1_limit - 1, 'txt_max_tp_c1');
+        // C1: Set range and default value (Buffer 0.5)
+        setSliderRange('tp_c1', 20, c1_base - 0.5, 'txt_max_tp_c1');
         setSliderValue('tp_c1', c1_tp_default);
-        setSliderRange('sl_c1', c1_limit, 110, 'txt_min_sl_c1');
+        setSliderRange('sl_c1', c1_base + 0.5, 110, 'txt_min_sl_c1');
         setSliderValue('sl_c1', c1_sl_default);
 
-        // C3: Set range and default value
-        setSliderRange('tp_c3', 20, c3_limit - 1, 'txt_max_tp_c3');
+        // C3: Set range and default value (Buffer 0.5)
+        setSliderRange('tp_c3', 20, c3_base - 0.5, 'txt_max_tp_c3');
         setSliderValue('tp_c3', c3_tp_default);
-        setSliderRange('sl_c3', c3_limit, 110, 'txt_min_sl_c3');
+        setSliderRange('sl_c3', c3_base + 0.5, 110, 'txt_min_sl_c3');
         setSliderValue('sl_c3', c3_sl_default);
 
-        // C4: Set range and default value
-        setSliderRange('tp_c4', 20, c3_limit - 1, 'txt_max_tp_c4');
+        // C4: Set range and default value (NO BUFFER as requested: TP to 79, SL from 92)
+        setSliderRange('tp_c4', 20, c3_base - 1.0, 'txt_max_tp_c4');
         setSliderValue('tp_c4', c4_tp_default);
-        setSliderRange('sl_c4', c4_limit, 110, 'txt_min_sl_c4');
+        setSliderRange('sl_c4', c4_base, 110, 'txt_min_sl_c4');
         setSliderValue('sl_c4', c4_sl_default);
 
-        console.log('✅ Slider ranges and defaults updated from shared_config.json');
+        console.log('✅ Slider ranges and defaults updated with 0.5 buffer');
 
     } catch (e) {
         console.error('Error loading slider config:', e);
@@ -2283,15 +2274,15 @@ function setSliderRange(inputId, min, max, textSpanId) {
     input.max = max;
 
     // Adjust current value if out of bounds
-    let val = parseInt(input.value);
+    let val = parseFloat(input.value);
     if (val > max) input.value = max;
     if (val < min) input.value = min;
 
     // Update text label span
     const span = document.getElementById(textSpanId);
     if (span) {
-        if (textSpanId.includes('max')) span.textContent = max;
-        else if (textSpanId.includes('min')) span.textContent = min;
+        if (textSpanId.includes('max')) span.textContent = max.toFixed(1);
+        else if (textSpanId.includes('min')) span.textContent = min.toFixed(1);
     }
 
     // Trigger update UI
@@ -2304,8 +2295,8 @@ function setSliderValue(inputId, value) {
     if (!input) return;
 
     // Clamp value to min/max
-    const min = parseInt(input.min) || 20;
-    const max = parseInt(input.max) || 110;
+    const min = parseFloat(input.min) || 20;
+    const max = parseFloat(input.max) || 110;
     value = Math.max(min, Math.min(max, value));
 
     input.value = value;
@@ -2337,7 +2328,7 @@ async function optimizeCase(caseId, metric = 'total') {
     try {
         // 1. Identify relevant trades for this case
         const trades = processedTradesGlobal
-            .filter(p => !p.isIgnored && p.cID === caseId) // Only active trades for this case
+            .filter(p => p.cID === caseId && !p.t.isCorrected)
             .map(p => p.t);
 
         if (trades.length === 0) {
@@ -2584,7 +2575,7 @@ async function optimizeTP(caseId, metric = 'total', btnElement) {
     try {
         // 1. Identify relevant trades for this case
         const trades = processedTradesGlobal
-            .filter(p => !p.isIgnored && p.cID === caseId)
+            .filter(p => p.cID === caseId && !p.t.isCorrected)
             .map(p => p.t);
 
         if (trades.length === 0) {
@@ -2617,9 +2608,9 @@ async function optimizeTP(caseId, metric = 'total', btnElement) {
 
             const fibLow = t.fib_low;
 
-            // TP Targets: Full range
+            // TP Targets: Full range (0.5 precision)
             const tpTargets = [];
-            for (let v = limits.tpMin; v <= limits.tpMax; v++) {
+            for (let v = limits.tpMin; v <= limits.tpMax; v = parseFloat((v + 0.5).toFixed(1))) {
                 tpTargets.push({ val: v, price: fibLow + range * (v / 100) });
             }
 
@@ -2681,8 +2672,8 @@ async function optimizeTP(caseId, metric = 'total', btnElement) {
         let bestPnL = -Infinity;
         let bestTP = limits.tpMin;
 
-        // Loop ONLY TP values
-        for (let tp = limits.tpMin; tp <= limits.tpMax; tp++) {
+        // Loop ONLY TP values (0.5 precision)
+        for (let tp = limits.tpMin; tp <= limits.tpMax; tp = parseFloat((tp + 0.5).toFixed(1))) {
             let currentPnL = 0;
 
             for (const tradeData of tradeHitMaps) {
@@ -2758,6 +2749,223 @@ async function optimizeTP(caseId, metric = 'total', btnElement) {
     } catch (e) {
         console.error("TP Optimization failed", e);
         alert("Error in TP optimization: " + e.message);
+    } finally {
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+}
+
+async function optimizeSL(caseId, metric = 'total', btnElement) {
+    const metricLabel = metric === 'realized' ? 'Realizado' : 'Total';
+    console.log(`🪄 Optimizing SL C${caseId} (${metricLabel})...`);
+
+    const btn = btnElement || document.querySelector(`button[onclick="optimizeSL(${caseId}, '${metric}')"]`);
+    const originalText = btn ? btn.innerHTML : (metric === 'realized' ? '💰 R' : '🪄 T');
+
+    if (btn) {
+        btn.innerHTML = '⏳';
+        btn.disabled = true;
+    }
+
+    // Give UI a moment to update
+    await new Promise(r => setTimeout(r, 10));
+
+    try {
+        // 1. Identify relevant trades for this case
+        const trades = processedTradesGlobal
+            .filter(p => p.cID === caseId && !p.t.isCorrected)
+            .map(p => p.t);
+
+        if (trades.length === 0) {
+            alert(`No hay trades activos para el Caso ${caseId} para optimizar.`);
+            throw new Error("No trades");
+        }
+
+        // 2. Get Limits from Sliders (Search Space)
+        const tpSlider = document.getElementById(`tp_c${caseId}`);
+        const slSlider = document.getElementById(`sl_c${caseId}`);
+
+        if (!tpSlider || !slSlider) throw new Error("Sliders not found");
+
+        const limits = {
+            slMin: parseFloat(slSlider.min) || 60,
+            slMax: parseFloat(slSlider.max) || 120
+        };
+        const currentTP = parseFloat(tpSlider.value) || 50;
+
+        // 3. Pre-calculate Hit Maps for each trade
+        const tradeHitMaps = [];
+        const step = 0.5;
+
+        console.time("PreCalcSL");
+        for (const t of trades) {
+            const candles = marketDataCache[t.symbol];
+            if (!candles) continue;
+
+            const range = (t.fib_high && t.fib_low) ? (t.fib_high - t.fib_low) : 0;
+            if (range <= 0) continue;
+
+            const fibLow = t.fib_low;
+
+            // SL Targets: Full range from slider (0.5 precision)
+            const slTargets = [];
+            for (let v = limits.slMin; v <= limits.slMax; v = parseFloat((v + 0.5).toFixed(1))) {
+                slTargets.push({ val: v, price: fibLow + range * (v / 100) });
+            }
+
+            // TP Target: ONLY current TP
+            const tpTargets = [{ val: currentTP, price: fibLow + range * (currentTP / 100) }];
+
+            const hits = {};
+
+            // Find entry time index
+            let intervalMinutes = 1;
+            if (currentTimeframe === '1') intervalMinutes = 1;
+            else if (currentTimeframe === '5') intervalMinutes = 5;
+            else if (currentTimeframe === '15') intervalMinutes = 15;
+            else if (currentTimeframe === '60') intervalMinutes = 60;
+            else if (currentTimeframe === '240') intervalMinutes = 240;
+
+            const intervalSeconds = intervalMinutes * 60;
+            const entryTimeStr = t.opened_at || t.entry_time || (t.executions && t.executions[0] ? t.executions[0].time : null);
+            if (!entryTimeStr) continue;
+
+            const hasTimezone = entryTimeStr.includes('Z') || entryTimeStr.includes('+');
+            const entryTime = new Date(hasTimezone ? entryTimeStr : entryTimeStr + 'Z').getTime() / 1000;
+
+            let startIndex = candles.findIndex(c => entryTime >= c.time && entryTime < (c.time + intervalSeconds));
+            if (startIndex === -1) startIndex = candles.findIndex(c => c.time >= entryTime);
+            if (startIndex === -1) continue;
+
+            let activeTpTargets = [...tpTargets];
+            let activeSlTargets = [...slTargets];
+
+            for (let i = startIndex; i < candles.length; i++) {
+                const c = candles[i];
+
+                // SL: High >= Target
+                for (let k = activeSlTargets.length - 1; k >= 0; k--) {
+                    if (c.high >= activeSlTargets[k].price) {
+                        hits['sl_' + activeSlTargets[k].val] = c.time;
+                        activeSlTargets.splice(k, 1);
+                    }
+                }
+
+                // TP: Low <= Target
+                for (let k = activeTpTargets.length - 1; k >= 0; k--) {
+                    if (c.low <= activeTpTargets[k].price) {
+                        hits['tp'] = c.time; // Only one TP
+                        activeTpTargets.splice(k, 1);
+                    }
+                }
+
+                if (activeTpTargets.length === 0 && activeSlTargets.length === 0) break;
+            }
+
+            // Fib Entry Level para la regla de ignorar
+            let fibEntryLevel = 0;
+            if (t.fib_level) {
+                fibEntryLevel = parseFloat(t.fib_level);
+            } else if (range > 0) {
+                fibEntryLevel = (t.entry_price - fibLow) / range;
+            }
+
+            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price, quantity: t.quantity, fibEntryLevel });
+        }
+        console.timeEnd("PreCalcSL");
+
+        // 4. Search Best SL
+        console.time("SearchSL");
+        let bestPnL = -Infinity;
+        let bestSL = limits.slMin;
+
+        // Loop ONLY SL values (0.5 precision)
+        for (let sl = limits.slMin; sl <= limits.slMax; sl = parseFloat((sl + 0.5).toFixed(1))) {
+            let currentPnL = 0;
+
+            for (const tradeData of tradeHitMaps) {
+                const { t, hits, range, fibLow, entryPrice, quantity, fibEntryLevel } = tradeData;
+
+                // IGNORE RULE: If Entry is worse than current SL, PnL = 0
+                if (fibEntryLevel >= sl / 100) continue;
+
+                // Check if SL was hit
+                let timeSL = hits['sl_' + sl];
+                // Check if TP was hit
+                let timeTP = hits['tp'];
+
+                let rPnl = 0;
+                let fPnl = 0;
+                let result = 'RUN';
+
+                const hasSL = (timeSL !== undefined);
+                const hasTP = (timeTP !== undefined);
+
+                if (hasSL && hasTP) {
+                    if (timeSL <= timeTP) result = 'SL';
+                    else result = 'TP';
+                } else if (hasSL) {
+                    result = 'SL';
+                } else if (hasTP) {
+                    result = 'TP';
+                }
+
+                const priceTP = fibLow + range * (currentTP / 100);
+                const priceSL = fibLow + range * (sl / 100);
+
+                if (result === 'SL') {
+                    rPnl = (entryPrice - priceSL) * quantity;
+                } else if (result === 'TP') {
+                    rPnl = (entryPrice - priceTP) * quantity;
+                } else {
+                    // RUN
+                    if (metric === 'total') {
+                        if (!tradeData.lastPrice) {
+                            const candles = marketDataCache[t.symbol];
+                            if (candles && candles.length > 0) tradeData.lastPrice = candles[candles.length - 1].close;
+                            else tradeData.lastPrice = entryPrice;
+                        }
+                        fPnl = (entryPrice - tradeData.lastPrice) * quantity;
+                    }
+                }
+
+                currentPnL += rPnl;
+                if (metric === 'total') currentPnL += fPnl;
+            }
+
+            if (currentPnL > bestPnL) {
+                bestPnL = currentPnL;
+                bestSL = sl;
+            }
+        }
+        console.timeEnd("SearchSL");
+
+        // 5. Apply
+        console.log(`✅ Optimal SL found: ${bestSL}% (PnL: $${bestPnL.toFixed(2)}) keeping TP ${currentTP}%`);
+
+        slSlider.value = bestSL;
+        updateSliderValue(slSlider);
+
+        // Ensure SL toggle is ON
+        const slCheck = document.getElementById(`sl_enabled_c${caseId}`);
+        if (slCheck && !slCheck.checked) {
+            slCheck.click();
+        } else {
+            runSimulation();
+        }
+
+        // Show toast
+        const toast = document.createElement('div');
+        toast.className = "fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded shadow-lg z-50 animate-bounce";
+        toast.innerHTML = `<b>SL C${caseId} Opt (${metricLabel})!</b><br>SL: ${bestSL}%<br>(TP fijo en ${currentTP}%)`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+
+    } catch (e) {
+        console.error("SL Optimization failed", e);
+        alert("Error in SL optimization: " + e.message);
     } finally {
         if (btn) {
             btn.innerHTML = originalText;

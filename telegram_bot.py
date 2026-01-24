@@ -11,7 +11,7 @@ from typing import Optional, Dict, List
 from dataclasses import dataclass
 
 from logger import telegram_logger as logger
-from config import TELEGRAM_TOKEN
+from config import TELEGRAM_TOKEN, TRADES_FILE
 
 # Configuración del Bot de Telegram
 # Archivo para guardar los chats autorizados
@@ -92,46 +92,34 @@ class TelegramBot:
         """Enviar documento a un chat"""
         url = f"{self.api_url}/sendDocument"
         
-        if not os.path.exists(file_path):
-            await self.send_message(chat_id, f"⚠️ Archivo no encontrado: {file_path}")
-            return False
-
         try:
+            # Asegurar que el path sea absoluto
+            abs_path = os.path.abspath(file_path)
+            if not os.path.exists(abs_path):
+                await self.send_message(chat_id, f"⚠️ Archivo no encontrado: {os.path.basename(abs_path)}")
+                return False
+
             data = aiohttp.FormData()
             data.add_field('chat_id', str(chat_id))
             data.add_field('caption', caption)
-            data.add_field('document', open(file_path, 'rb'), filename=os.path.basename(file_path))
+            
+            # Usar 'with' para asegurar que el archivo se cierre
+            with open(abs_path, 'rb') as f:
+                data.add_field('document', f, filename=os.path.basename(abs_path))
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=data) as response:
-                    if response.status == 200:
-                        return True
-                    else:
-                        error = await response.text()
-                        logger.error(f"Error enviando documento: {error}")
-                        return False
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, data=data) as response:
+                        if response.status == 200:
+                            return True
+                        else:
+                            error = await response.text()
+                            logger.error(f"Error enviando documento: {error}")
+                            await self.send_message(chat_id, f"❌ Error de Telegram al enviar: {response.status}")
+                            return False
         except Exception as e:
             logger.error(f"Error en send_document: {e}")
+            await self.send_message(chat_id, f"❌ Error interno al enviar archivo: {str(e)}")
             return False
-    
-    async def get_ngrok_url(self) -> Optional[str]:
-        """Obtener URL pública de ngrok si está activo"""
-        try:
-            async with aiohttp.ClientSession() as session:
-                # ngrok expone su API local en el puerto 4040
-                async with session.get("http://127.0.0.1:4040/api/tunnels", timeout=2) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        tunnels = data.get("tunnels", [])
-                        for tunnel in tunnels:
-                            if tunnel.get("proto") == "https":
-                                return tunnel.get("public_url")
-                        # Si no hay HTTPS, usar HTTP
-                        if tunnels:
-                            return tunnels[0].get("public_url")
-        except Exception as e:
-            logger.debug(f"ngrok no disponible: {e}")
-        return None
     
     async def broadcast_message(self, text: str):
         """Enviar mensaje a todos los chats autorizados"""
@@ -198,47 +186,7 @@ class TelegramBot:
 ├ C1: {len(cases[1])} trades | ${sum(cases[1]):.2f}
 ├ C3: {len(cases[3])} trades | ${sum(cases[3]):.2f}
 └ C4: {len(cases[4])} trades | ${sum(cases[4]):.2f}
-
-<b>📂 ESTADO ACTUAL</b>
-├ Posiciones: <code>{status['open_positions']}</code>
-└ Órdenes: <code>{status['pending_orders']}</code>
 """
-        
-        # Agregar detalle de posiciones (todas) con CASO
-        if self.account.open_positions:
-            report += "\n<b>👁️ POSICIONES ACTIVAS:</b>\n"
-            for order_id, pos in self.account.open_positions.items():
-                current = self.price_cache.get(pos.symbol, pos.current_price)
-                pnl_pos = pos.unrealized_pnl
-                emoji = "🟢" if pnl_pos >= 0 else "🔴"
-                case_str = self._format_case(pos.strategy_case) if hasattr(pos, 'strategy_case') else "?"
-                report += (
-                    f"├ {pos.symbol} ({case_str}) {emoji} <code>${pnl_pos:.2f}</code>\n"
-                    f"   Entry: <code>${pos.entry_price:.4f}</code> → Actual: <code>${current:.4f}</code>\n"
-                )
-
-        # Agregar detalle de órdenes pendientes (todas) con CASO
-        if self.account.pending_orders:
-            report += "\n<b>📋 ÓRDENES PENDIENTES:</b>\n"
-            for order_id, order in self.account.pending_orders.items():
-                case_str = self._format_case(order.strategy_case) if hasattr(order, 'strategy_case') else "?"
-                report += (
-                    f"├ {order.symbol} ({case_str}) {order.side.value}\n"
-                    f"   Precio: <code>${order.price:.4f}</code> → TP: <code>${order.take_profit:.4f}</code>\n"
-                )
-        
-        # Agregar últimas operaciones cerradas (máx 5)
-        if history:
-            report += "\n<b>📜 ÚLTIMAS OPERACIONES:</b>\n"
-            recent = list(reversed(history[-5:]))  # Últimas 5, más reciente primero
-            for t in recent:
-                pnl = t.get('pnl', 0)
-                emoji = "🟢" if pnl >= 0 else "🔴"
-                reason = t.get('reason', '?')
-                reason_emoji = "✅" if reason == 'TP' else "❌"
-                case_str = self._format_case(t.get('strategy_case', 0))
-                report += f"├ {t.get('symbol', '?')} ({case_str}) {reason_emoji} {emoji} <code>${pnl:.4f}</code>\n"
-                
         report += "\n💡 /download para bajar el historial completo"
         return report
     
@@ -441,7 +389,7 @@ class TelegramBot:
 <b>Comandos disponibles:</b>
 /report - Reporte completo (cuenta, stats, posiciones, historial)
 /download - Descargar historial (JSON)
-/analyzer - Link al analizador web (requiere ngrok)
+/stop - Detener el bot completo remotamente
 
 Tu chat ha sido registrado para recibir notificaciones.
 """)
@@ -457,36 +405,16 @@ Tu chat ha sido registrado para recibir notificaciones.
             await self.send_message(chat_id, self.format_report())
 
         elif command == "/download":
-            path = os.path.join(os.getcwd(), 'trades.json')
-            await self.send_document(chat_id, path, caption="📂 Historial de Trades (trades.json)")
+            # Usar el archivo configurado
+            success = await self.send_document(chat_id, TRADES_FILE, caption=f"📂 Historial de Trades ({TRADES_FILE})")
+            if not success:
+                logger.error(f"Falla al descargar {TRADES_FILE} para chat {chat_id}")
         
-        elif command == "/analyzer":
-            # Obtener URL de ngrok si está activo
-            ngrok_url = await self.get_ngrok_url()
-            if ngrok_url:
-                await self.send_message(chat_id, f"""
-<b>📊 Analizador de Trades</b>
-
-🔗 <a href="{ngrok_url}">{ngrok_url}</a>
-
-<b>Funciones:</b>
-• Simular TP/SL por caso
-• Ver estadísticas en tiempo real
-• Activar auto-refresh para datos en vivo
-
-💡 Haz click en el botón "🔄 Auto (OFF)" para activar actualización automática cada 2 segundos.
-""")
-            else:
-                await self.send_message(chat_id, """
-<b>📊 Analizador de Trades</b>
-
-⚠️ El servidor web no está activo o ngrok no está corriendo.
-
-<b>Para activar:</b>
-1. Ejecuta: <code>python web_server.py</code>
-2. En otra terminal: <code>ngrok http 8080</code>
-3. Usa /analyzer de nuevo para obtener el link
-""")
+        elif command == "/stop":
+            await self.broadcast_message("🛑 <b>BOT DETENIDO</b>\nEl sistema se está apagando por comando remoto.")
+            await asyncio.sleep(1)
+            import os
+            os._exit(0)
             
         elif command == "/help":
             await self.send_message(chat_id, """
@@ -495,21 +423,33 @@ Tu chat ha sido registrado para recibir notificaciones.
 <b>Comandos:</b>
 /report - Reporte completo (cuenta, posiciones, historial, stats)
 /download - Descargar archivo trades.json
-/analyzer - Link al analizador web (requiere ngrok)
+/stop - Apagar el sistema por completo
 
 <b>Notificaciones automáticas:</b>
 • Reportes cada 40 minutos
 • Alertas cuando se abre/cierra una posición
 • Alertas cuando se ejecuta una orden límite
-
-<b>Configurar analizador web:</b>
-1. <code>python web_server.py</code>
-2. <code>ngrok http 8080</code>
-3. Usa /analyzer para obtener link
 """)
         else:
             await self.send_message(chat_id, "❓ Comando no reconocido. Usa /report o /download")
     
+    async def flush_updates(self):
+        """Obtener la última update_id para ignorar mensajes antiguos al iniciar"""
+        url = f"{self.api_url}/getUpdates"
+        params = {"offset": -1} # Pedir solo el último
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, timeout=10) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get("ok") and data.get("result"):
+                            last_update = data["result"][0]
+                            self.last_update_id = last_update["update_id"]
+                            logger.info(f"Updates flusheadas. Iniciando desde ID: {self.last_update_id}")
+        except Exception as e:
+            logger.error(f"Error flusheando updates: {e}")
+
     async def poll_updates(self):
         """Obtener actualizaciones de Telegram (polling)"""
         url = f"{self.api_url}/getUpdates"
@@ -588,13 +528,13 @@ Tu chat ha sido registrado para recibir notificaciones.
     
     async def run_polling_loop(self):
         """Loop principal de polling"""
-        logger.info("Iniciando bot de Telegram...")
+        logger.info("Iniciando bot de Telegram (polling)...")
         self.running = True
         
-        # MENSAJE DE BIENVENIDA AL INICIAR
-        if AUTHORIZED_CHATS:
-             await self.broadcast_message("🚀 <b>BOT INICIADO</b>\nEl sistema está en línea y operando.")
+        # 1. Ignorar mensajes antiguos del historial de Telegram
+        await self.flush_updates()
         
+        # 2. Iniciar loop de escucha
         while self.running:
             await self.poll_updates()
             await asyncio.sleep(1)

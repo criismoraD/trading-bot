@@ -232,23 +232,25 @@ class MarketScanner:
         debido al sistema de 2 caminos
         """
         try:
-            # Obtener velas 5m para RSI
-            candles_5m = await self.fetch_klines(session, symbol, '5m', 100)
+            # === OPTIMIZACIÓN: Fetch paralelo de 5m (RSI) y TIMEFRAME (Fibo) ===
+            t5m_task = self.fetch_klines(session, symbol, '5m', 100)
+            tfibo_task = self.fetch_klines(session, symbol, TIMEFRAME, CANDLE_LIMIT)
+            
+            candles_5m, candles = await asyncio.gather(t5m_task, tfibo_task)
+            
             if not candles_5m:
-                print(f"   [DEBUG] {symbol}: Sin velas 5m")
+                # print(f"   [DEBUG] {symbol}: Sin velas 5m")
                 return None
             
             rsi = self.calculate_rsi(candles_5m)
             
             # Filtrar por RSI
             if rsi < self.rsi_threshold:
-                print(f"   [DEBUG] {symbol}: RSI {rsi:.1f} < {self.rsi_threshold}")
+                # print(f"   [DEBUG] {symbol}: RSI {rsi:.1f} < {self.rsi_threshold}")
                 return None
             
-            # Obtener velas para Fibonacci (usando TIMEFRAME y CANDLE_LIMIT configurados)
-            candles = await self.fetch_klines(session, symbol, TIMEFRAME, CANDLE_LIMIT)
             if len(candles) < 50:
-                print(f"   [DEBUG] {symbol}: Pocas velas {TIMEFRAME} ({len(candles)})")
+                # print(f"   [DEBUG] {symbol}: Pocas velas {TIMEFRAME} ({len(candles)})")
                 return None
             
             # Calcular Fibonacci
@@ -422,7 +424,7 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
     
     print(f"📊 Escaneando {total_pairs} pares en paralelo...")
     
-    BATCH_SIZE = 20  # Procesar 20 pares en paralelo
+    BATCH_SIZE = 50  # Optimizado: de 20 a 50
     
     async with aiohttp.ClientSession() as session:
         # Procesar en batches para velocidad
@@ -481,8 +483,8 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                         orders_placed += 1
 
             
-            # Pausa mínima entre batches
-            await asyncio.sleep(0.1)
+            # Pausa eliminada para máxima velocidad
+            pass
     
     print(f"\n📊 Escaneo completado: {orders_placed} órdenes colocadas")
     print(f"💰 Margen disponible: ${account.get_available_margin():.2f}")

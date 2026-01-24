@@ -706,16 +706,15 @@ async def main():
     try:
         import time
         scan_countdown = FIRST_SCAN_DELAY  # Primer escaneo según config
+        equity_timer = 0  # Temporizador para registro de balance (cada 60s)
         
         # --- WATCHDOG INICIAL: Actualizar precios por REST al arrancar ---
         logger.info("Sincronizando precios actuales vía API REST...")
         await scanner.update_prices_for_positions(account, price_cache)
-
-        # --- Iniciar Web Server ---
-        logger.info("Iniciando Dashboard Web...")
-        start_web_server()
         
-        # --- Iniciar Bot de Telegram en paralelo ---
+        # Registrar punto inicial
+        account.record_equity_point(price_cache)
+
         # --- Iniciar Bot de Telegram en paralelo (SOLO SI ESTÁ ACTIVADO) ---
         from config import TELEGRAM_TOKEN
         # Variable de entorno para desactivar telegram en multibot (por defecto True)
@@ -762,8 +761,12 @@ async def main():
                         # 2. Verificar Activación de Órdenes Pendientes (Limit)
                         if account.pending_orders:
                             account.check_pending_orders(symbol, price)
-                        
-                        # 3. Monitoreo post-cierre eliminado - método ya no existe
+            
+            # --- REGISTRO DE EQUITY (Cada 60s) ---
+            equity_timer += 1
+            if equity_timer >= 60:
+                account.record_equity_point(price_cache)
+                equity_timer = 0
             
             # --- WATCHDOG PERIÓDICO (Cada 10s) ---
             if scan_countdown % 10 == 0 and (account.open_positions or account.pending_orders):

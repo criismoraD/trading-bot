@@ -189,6 +189,10 @@ class PaperTradingAccount:
             "losing_trades": 0
         }
         
+        # === NUEVO: Histórico de Equity (Balance + PnL Flotante) cada 1 min ===
+        self.equity_history: List[dict] = []
+        self._last_equity_record_time = 0
+        
         # === Referencia al price_cache externo (se asigna desde bot.py) ===
         self.price_cache: Dict[str, float] = {}
         
@@ -230,6 +234,7 @@ class PaperTradingAccount:
             "losing_trades": 0,
             "cancelled_orders": 0
         }
+        self.equity_history = []
         print(f"🗑️ trades.json reiniciado | Balance inicial: ${self.initial_balance:.2f}")
         self._save_trades()  # Guardar archivo limpio
     
@@ -273,6 +278,7 @@ class PaperTradingAccount:
                 "stats": self.stats,
                 "open_positions": {k: self._serialize_position(v) for k, v in self.open_positions.items()},
                 "pending_orders": {k: v.to_dict() for k, v in self.pending_orders.items()},
+                "equity_history": self.equity_history,  # Histórico de balance total
                 "closed_positions_monitoring": self.closed_positions_monitoring,  # Persistir monitoreo post-cierre
                 "last_updated": datetime.now(timezone.utc).isoformat()
             }
@@ -300,6 +306,26 @@ class PaperTradingAccount:
     def get_margin_balance(self, current_prices: Dict[str, float] = None) -> float:
         """Obtener balance de margen (balance + PnL no realizado)"""
         return self.balance + self.get_unrealized_pnl(current_prices)
+    
+    def record_equity_point(self, current_prices: Dict[str, float] = None):
+        """Registrar el balance total actual (Equity) para el gráfico de historial"""
+        unrealized_pnl = self.get_unrealized_pnl(current_prices)
+        margin_balance = self.balance + unrealized_pnl
+        
+        point = {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "balance": round(self.balance, 2),
+            "unrealized_pnl": round(unrealized_pnl, 4),
+            "equity": round(margin_balance, 2)
+        }
+        
+        self.equity_history.append(point)
+        # Mantener un límite razonable para evitar archivos gigantes (ej: 10,000 puntos = 7 días a 1 min)
+        if len(self.equity_history) > 10000:
+            self.equity_history.pop(0)
+            
+        # Forzar un guardado inmediato cuando se registra el punto
+        self._save_trades()
     
     def update_positions_pnl(self, current_prices: Dict[str, float]):
         """Actualizar PnL de todas las posiciones con precios actuales y guardar"""
