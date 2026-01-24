@@ -19,7 +19,7 @@ let isBulkLoading = false;
 
 let isBulkDataLoaded = false; // Flag to force "RUN" state until we have real data
 let simulatePendingOrdersEnabled = false; // Switch para simulación de pending orders
-let simulateCommissionsEnabled = false; // Switch para simulación de comisiones
+
 
 async function bulkFetchCandles(trades) {
     isBulkDataLoaded = false;
@@ -271,12 +271,6 @@ function toggleSimulatePending() {
     runSimulation();
 }
 
-// Toggle para simulación de comisiones
-function toggleCommissions() {
-    const checkbox = document.getElementById('commissionsToggle');
-    simulateCommissionsEnabled = checkbox ? checkbox.checked : false;
-    runSimulation();
-}
 
 // ========== FILTER/SORT/ISOLATE ==========
 let casePriority = 0;
@@ -721,20 +715,15 @@ function runSimulation() {
             fPnl = 0; rPnl = 0; isClosed = false;
         }
 
-        // Apply Commissions
-        if (simulateCommissionsEnabled) {
-            const commRate = (cID === 1 || cID === 2) ? 0.0002 : 0.00055;
-            const comm = (t.entry_price * (t.quantity || 0) * commRate) * (isClosed ? 2 : 1);
-            if (isClosed) rPnl -= comm;
-            else fPnl -= comm;
-        }
-
         // NO calcular stats aquí - se hará después de los filtros
 
         // Calcular fibCreationLevel (para órdenes que vienen de pending)
         const fibCreationLevel = t.creation_fib_level || null;
 
-        processedTrades.push({ t, cID, s, tpPrice, slPrice, status, css, rPnl, fPnl, isIgnored, isClosed, fibEntryLevel, fibCreationLevel, hitSL, originalReason });
+        // NUEVO: Guardar PnL real (si viene de HIST) para comparar con simulación
+        const actualPnl = t._src === 'HIST' ? t.pnl : null;
+
+        processedTrades.push({ t, cID, s, tpPrice, slPrice, status, css, rPnl, fPnl, isIgnored, isClosed, fibEntryLevel, fibCreationLevel, hitSL, originalReason, actualPnl });
     });
 
     // Filter by case (selección múltiple)
@@ -813,7 +802,7 @@ function runSimulation() {
     activeTrades.forEach((item) => {
         // Obtener índice real en processedTradesGlobal
         const idx = processedTradesGlobal.indexOf(item);
-        const { t, cID, status, css, rPnl, fPnl, tpPrice, slPrice, hitSL, originalReason, fibCreationLevel } = item;
+        const { t, cID, status, css, rPnl, fPnl, tpPrice, slPrice, hitSL, originalReason, fibCreationLevel, actualPnl } = item;
         const caseDisplay = `C${cID}`;
         const rowClass = `row-c${cID}`;
         const selectedClass = idx === selectedTradeIndex ? 'selected' : '';
@@ -882,7 +871,22 @@ Original Reason: '${originalReason}'`;
                         <td class="text-center py-1 text-[9px]" style="color: ${t._src === 'SIM_PEND' ? 'var(--accent-orange)' : 'var(--text-muted)'}">${t._src === 'SIM_PEND' ? 'SIM' : '-'}</td>
                         <td class="text-center py-1 text-[9px] font-mono" style="color: var(--accent-purple)">${fibCreationLevel != null ? (fibCreationLevel * 100).toFixed(1) : '-'}</td>
                         <td class="text-center py-1"><span class="badge ${css} text-[9px]" style="padding: 2px 6px;">${status}</span></td>
-                        <td class="text-right font-mono font-bold text-xs py-1" style="color: ${rPnlColor}">${rPnl !== 0 ? '$' + rPnl.toFixed(2) : '-'}</td>
+                        <td class="text-right font-mono font-bold text-xs py-1" style="color: ${rPnlColor}">
+                            ${(() => {
+                if (rPnl === 0) return '-';
+                const mainPnl = '$' + rPnl.toFixed(2);
+                if (actualPnl != null) {
+                    const diff = actualPnl - rPnl;
+                    const slippageText = diff !== 0 ? ` (Real: $${actualPnl.toFixed(2)}, Slippage: $${diff.toFixed(2)})` : ' (Coincide con Real)';
+                    // Mostrar asterisco si hay diferencia significativa (> 0.01)
+                    const showWarning = Math.abs(diff) > 0.01;
+                    return `<span title="Simulado: $${rPnl.toFixed(4)}${slippageText}" style="cursor: help; border-bottom: 1px dotted rgba(255,255,255,0.2);">
+                                        ${mainPnl}${showWarning ? '*' : ''}
+                                    </span>`;
+                }
+                return mainPnl;
+            })()}
+                        </td>
                         <td class="text-right font-mono text-xs py-1" style="color: ${fPnlColor}">${fPnl !== 0 ? '$' + fPnl.toFixed(2) : '-'}</td>
                         <td class="text-center font-mono text-xs py-1" style="color: ${rrColor}">${rrDisplay}</td>
                     </tr>
@@ -2441,11 +2445,7 @@ async function optimizeCase(caseId, metric = 'total') {
         let bestPnL = -Infinity;
         let bestCombo = { tp: limits.tpMin, sl: limits.slMin };
 
-        // Commission Rate
-        let commRate = 0;
-        if (simulateCommissionsEnabled) {
-            commRate = (caseId === 1 || caseId === 2) ? 0.0002 : 0.00055;
-        }
+
 
         for (let tp = limits.tpMin; tp <= limits.tpMax; tp = parseFloat((tp + step).toFixed(1))) {
             for (let sl = limits.slMin; sl <= limits.slMax; sl = parseFloat((sl + step).toFixed(1))) {
@@ -2489,11 +2489,11 @@ async function optimizeCase(caseId, metric = 'total') {
                     if (result === 'SL') {
                         rPnl = (entryPrice - priceSL) * quantity;
                         // Closed: 2x comm
-                        if (simulateCommissionsEnabled) rPnl -= (entryPrice * quantity * commRate * 2);
+
                     } else if (result === 'TP') {
                         rPnl = (entryPrice - priceTP) * quantity;
                         // Closed: 2x comm
-                        if (simulateCommissionsEnabled) rPnl -= (entryPrice * quantity * commRate * 2);
+
                     } else {
                         // RUN - Calc Floating if metric is 'total'
                         if (metric === 'total') {
@@ -2504,7 +2504,7 @@ async function optimizeCase(caseId, metric = 'total') {
                             }
                             fPnl = (entryPrice - tradeData.lastPrice) * quantity;
                             // Open: 1x comm
-                            if (simulateCommissionsEnabled) fPnl -= (entryPrice * quantity * commRate);
+
                         }
                     }
 

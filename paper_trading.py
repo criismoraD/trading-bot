@@ -12,6 +12,10 @@ from enum import Enum
 
 from logger import trading_logger as logger, log_trade
 
+# Comisiones de Bybit Futuros
+MAKER_FEE = 0.0002  # 0.02% para órdenes Limit (C1, C3)
+TAKER_FEE = 0.00055 # 0.055% para órdenes Market (C4)
+
 class OrderType(Enum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
@@ -312,11 +316,17 @@ class PaperTradingAccount:
         unrealized_pnl = self.get_unrealized_pnl(current_prices)
         margin_balance = self.balance + unrealized_pnl
         
+        # Nuevos valores solicitados
+        active_ops = len(self.open_positions) + len(self.pending_orders)
+        drawdown = self.initial_balance - margin_balance
+
         point = {
             "time": datetime.now(timezone.utc).isoformat(),
             "balance": round(self.balance, 2),
             "unrealized_pnl": round(unrealized_pnl, 4),
-            "equity": round(margin_balance, 2)
+            "equity": round(margin_balance, 2),
+            "active_operations_count": active_ops,
+            "balance_drawdown": round(drawdown, 2)
         }
         
         self.equity_history.append(point)
@@ -449,6 +459,11 @@ class PaperTradingAccount:
             created_at=datetime.now(timezone.utc).isoformat() # Para market order, creado y abierto es igual
         )
         self.open_positions[order_id] = position
+        
+        # Cobrar comisión de apertura (Taker para Market Order)
+        notional_value = quantity * current_price
+        fee = notional_value * TAKER_FEE
+        self.balance -= fee
             
         self._save_trades()
         
@@ -511,6 +526,11 @@ class PaperTradingAccount:
         )
         
         self.open_positions[order_id] = position
+        
+        # Cobrar comisión de apertura (Maker para Limit Order)
+        notional_value = position.quantity * fill_price
+        fee = notional_value * MAKER_FEE
+        self.balance -= fee
             
         self.update_max_simultaneous()  # Track máximo simultáneo
         self._save_trades()
@@ -673,6 +693,13 @@ class PaperTradingAccount:
         
         # Actualizar balance
         self.balance += pnl
+        
+        # Cobrar comisión de cierre según el caso
+        # C1 (1, 11) y C3 son Maker (0.02%), C4 es Taker (0.055%)
+        notional_value = position.quantity * close_price
+        fee_rate = MAKER_FEE if position.strategy_case in [1, 3, 11] else TAKER_FEE
+        closing_fee = notional_value * fee_rate
+        self.balance -= closing_fee
         
         # Calcular ganancia/pérdida potencial en USDT
         # Para SHORT: ganancia si precio baja al TP, pérdida si sube al SL

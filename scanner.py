@@ -4,6 +4,7 @@ Escanea top pares, filtra por RSI >= 75, sin prioridad de casos
 Implementa sistema de 2 caminos para detección de swing Fibonacci
 """
 import json
+import os
 import asyncio
 import aiohttp
 from typing import List, Dict, Optional, Tuple
@@ -28,6 +29,17 @@ def get_max_simultaneous_operations() -> int:
 # Cargar configuración de TP/SL por estrategia
 def get_strategy_config() -> dict:
     """Obtiene la configuración de TP/SL por caso desde shared_config.json"""
+    
+    # 1. Intentar cargar desde variable de entorno (Override)
+    # Esto permite inyectar estrategias específicas por instancia (Multibot)
+    env_override = os.getenv("BOT_STRATEGIES_OVERRIDE")
+    if env_override:
+        try:
+            return json.loads(env_override)
+        except Exception as e:
+            print(f"⚠️ Error al parsear BOT_STRATEGIES_OVERRIDE: {e}")
+            # Fallback a shared_config si falla
+
     defaults = {
         "c1": {"tp": 0.50, "sl": 0.88},
         "c3": {"tp": 0.51, "sl": 1.05},
