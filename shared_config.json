@@ -3,7 +3,7 @@
         "case_1_min": 0.50,
         "case_1_max_3_min": 0.63,
         "case_3_max_4_min": 0.80,
-        "case_4_max": 0.91,
+        "case_4_max": 0.92,
         "initial_balance": 1000,
         "margin_per_trade": 1.0,
         "max_margin_per_trade": 100.0,

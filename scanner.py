@@ -507,6 +507,7 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
     order_placed = False
     order_id = None
     final_sl = None
+    fresh_price = 0.0
     
     # Obtener configuración de estrategias y trading
     strategies = get_strategy_config()

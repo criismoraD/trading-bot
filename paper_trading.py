@@ -346,7 +346,15 @@ class PaperTradingAccount:
                 updated = True
         if updated:
             self._save_trades()  # Persistir cambios en JSON
-    
+
+    def place_limit_order(self, symbol: str, side: OrderSide, price: float,
+                          margin: float, take_profit: float, stop_loss: Optional[float] = None,
+                          strategy_case: int = 0,
+                          fib_high: Optional[float] = None,
+                          fib_low: Optional[float] = None,
+                          entry_fib_level: Optional[float] = None,
+                          current_price: Optional[float] = None) -> Optional[Order]:
+        """Colocar una orden límite"""
         # Verificar margen disponible
         from config import MIN_AVAILABLE_MARGIN
         if self.get_available_margin() < MIN_AVAILABLE_MARGIN:
