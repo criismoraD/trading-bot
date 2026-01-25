@@ -324,7 +324,7 @@ function setSortMode(mode) {
         'pnl_flot_desc': 'btnSortPnlFlotDesc',
         'pnl_flot_asc': 'btnSortPnlFlotAsc',
         'fib_desc': 'btnSortFibDesc',
-        'fib_creation_desc': 'btnSortFibCreationDesc'
+        'fib_creation_desc': 'btnSortMarginDesc'
     };
     document.getElementById(btnMap[mode])?.classList.add('active');
     runSimulation();
@@ -684,7 +684,27 @@ function runSimulation() {
         // Use bulk cache if available (for all trades), or global chart data for selected
         let candlesForSim = marketDataCache[t.symbol];
 
-        const potProfit = (t.entry_price - tpPrice) * t.quantity;
+        const targetProfitVal = sharedConfig?.trading?.target_profit || 1.0;
+        const commRate = sharedConfig?.trading?.commission_rate || 0.0006;
+
+        // Qty = Target / ( (Entry - TP) - (Entry + TP) * Rate )
+        const priceDiffVal = t.entry_price - tpPrice;
+        const commFactorVal = (t.entry_price + tpPrice) * commRate;
+        const effectiveDiffVal = priceDiffVal - commFactorVal;
+
+        const dynamicQty = (effectiveDiffVal > 0) ? (targetProfitVal / effectiveDiffVal) : 0;
+
+        // Calcular Margen Requerido (Margin = (Qty * Price) / Leverage)
+        const currentLeverage = sharedConfig?.trading?.leverage || 10;
+        let reqMargin = (dynamicQty * t.entry_price) / currentLeverage;
+
+        // Aplicar límite máximo de margen
+        const maxMargin = sharedConfig?.trading?.max_margin_per_trade || Infinity;
+        let isMarginClamped = false;
+        if (reqMargin > maxMargin) {
+            reqMargin = maxMargin;
+            isMarginClamped = true;
+        }
 
         // Fallback to active chart data if selected and matches symbol (and no cache yet)
         if (!candlesForSim && selectedTradeIndex >= 0 && processedTradesGlobal[selectedTradeIndex] && processedTradesGlobal[selectedTradeIndex].t === t) {
@@ -698,12 +718,19 @@ function runSimulation() {
             const simResult = simulateTradePath(t, tpPrice, slPrice, candlesForSim);
             if (simResult) {
                 if (simResult.status.includes('SL')) {
-                    status = "SL ❌"; rPnl = (t.entry_price - slPrice) * t.quantity; isClosed = true; css = "bg-loss"; fPnl = 0; hitSL = true;
+                    status = "SL ❌";
+                    const grossLoss = (t.entry_price - slPrice) * dynamicQty;
+                    const fees = (t.entry_price + slPrice) * dynamicQty * commRate;
+                    rPnl = grossLoss - fees;
+                    isClosed = true; css = "bg-loss"; fPnl = 0; hitSL = true;
                 } else if (simResult.status.includes('TP')) {
-                    status = "TP ✅"; rPnl = potProfit; isClosed = true; css = "bg-win"; fPnl = 0;
+                    status = "TP ✅"; rPnl = targetProfitVal; isClosed = true; css = "bg-win"; fPnl = 0;
                 } else {
                     status = "RUN ⏳";
-                    fPnl = (t.entry_price - simResult.lastPrice) * t.quantity;
+                    const currentPrice = simResult.lastPrice;
+                    const grossPnL = (t.entry_price - currentPrice) * dynamicQty;
+                    const fees = (t.entry_price + currentPrice) * dynamicQty * commRate;
+                    fPnl = grossPnL - fees;
                     css = "bg-run"; isClosed = false; rPnl = 0;
                 }
             } else {
@@ -723,7 +750,7 @@ function runSimulation() {
         // NUEVO: Guardar PnL real (si viene de HIST) para comparar con simulación
         const actualPnl = t._src === 'HIST' ? t.pnl : null;
 
-        processedTrades.push({ t, cID, s, tpPrice, slPrice, status, css, rPnl, fPnl, isIgnored, isClosed, fibEntryLevel, fibCreationLevel, hitSL, originalReason, actualPnl });
+        processedTrades.push({ t, cID, s, tpPrice, slPrice, status, css, rPnl, fPnl, isIgnored, isClosed, fibEntryLevel, fibCreationLevel, hitSL, originalReason, actualPnl, reqMargin, dynamicQty, isMarginClamped });
     });
 
     // Filter by case (selección múltiple)
@@ -785,7 +812,7 @@ function runSimulation() {
     } else if (sortMode === 'fib_desc') {
         displayTrades.sort((a, b) => (b.fibEntryLevel || 0) - (a.fibEntryLevel || 0));
     } else if (sortMode === 'fib_creation_desc') {
-        displayTrades.sort((a, b) => (b.fibCreationLevel || 0) - (a.fibCreationLevel || 0));
+        displayTrades.sort((a, b) => (b.reqMargin || 0) - (a.reqMargin || 0));
     }
 
     processedTradesGlobal = displayTrades;
@@ -802,7 +829,7 @@ function runSimulation() {
     activeTrades.forEach((item) => {
         // Obtener índice real en processedTradesGlobal
         const idx = processedTradesGlobal.indexOf(item);
-        const { t, cID, status, css, rPnl, fPnl, tpPrice, slPrice, hitSL, originalReason, fibCreationLevel, actualPnl } = item;
+        const { t, cID, status, css, rPnl, fPnl, tpPrice, slPrice, hitSL, originalReason, fibCreationLevel, actualPnl, reqMargin, isMarginClamped } = item;
         const caseDisplay = `C${cID}`;
         const rowClass = `row-c${cID}`;
         const selectedClass = idx === selectedTradeIndex ? 'selected' : '';
@@ -869,7 +896,7 @@ Original Reason: '${originalReason}'`;
                         </td>
                         <td class="text-center py-1"><span class="badge text-[9px]" style="padding: 2px 6px;">${caseDisplay}</span></td>
                         <td class="text-center py-1 text-[9px]" style="color: ${t._src === 'SIM_PEND' ? 'var(--accent-orange)' : 'var(--text-muted)'}">${t._src === 'SIM_PEND' ? 'SIM' : '-'}</td>
-                        <td class="text-center py-1 text-[9px] font-mono" style="color: var(--accent-purple)">${fibCreationLevel != null ? (fibCreationLevel * 100).toFixed(1) : '-'}</td>
+                        <td class="text-center py-1 text-[9px] font-mono ${isMarginClamped ? 'text-red-500 font-bold' : 'text-amber-300'}" title="${isMarginClamped ? '¡LIMITADO POR MAX MARGIN!' : 'Margen requerido'}">${reqMargin != null ? '$' + reqMargin.toFixed(2) : '-'}</td>
                         <td class="text-center py-1"><span class="badge ${css} text-[9px]" style="padding: 2px 6px;">${status}</span></td>
                         <td class="text-right font-mono font-bold text-xs py-1" style="color: ${rPnlColor}">
                             ${(() => {
@@ -992,11 +1019,15 @@ Original Reason: '${originalReason}'`;
                 }
             }
 
-            // Format creation_fib_level
-            let fibDisplay = '-';
-            if (o.creation_fib_level != null) {
-                fibDisplay = (o.creation_fib_level * 100).toFixed(1) + '%';
-            }
+            // Margen para 1 USD Profit
+            const sPending = getCaseSettings(cID);
+            const rangePending = o.fib_high - o.fib_low;
+            const tpPricePending = o.fib_low + (rangePending * sPending.tp);
+            const diffPricePending = Math.abs(o.price - tpPricePending);
+            const dynamicQtyPending = (diffPricePending > 0) ? (1.0 / diffPricePending) : 0;
+            const currentLev = sharedConfig?.trading?.leverage || 10;
+            const reqMarginPending = (dynamicQtyPending * o.price) / currentLev;
+            const marginDisplay = '$' + reqMarginPending.toFixed(2);
 
             // Estado: todas son pendientes ya que las activadas/canceladas fueron movidas
             const simStatusDisplay = simulatePendingOrdersEnabled ? 'PENDING 📋' : '-';
@@ -1007,7 +1038,7 @@ Original Reason: '${originalReason}'`;
                             <td class="py-1 px-2 font-bold text-xs">${o.symbol}</td>
                             <td class="text-center py-1"><span class="badge text-[9px]" style="padding: 2px 6px;">${caseDisplay}</span></td>
                             <td class="text-center py-1 text-[9px] text-slate-400">${createdDisplay}</td>
-                            <td class="text-center py-1 text-[9px] text-purple-400 font-mono">${fibDisplay}</td>
+                            <td class="text-center py-1 text-[9px] text-amber-300 font-mono">${marginDisplay}</td>
                             <td class="text-right font-mono text-xs py-1 text-amber-400">$${o.price.toFixed(4)}</td>
                             <td class="text-center py-1"><span class="badge ${simStatusCss} text-[9px]" style="padding: 2px 6px;">${simStatusDisplay}</span></td>
                         </tr>
@@ -2247,19 +2278,19 @@ async function loadAndApplySliderConfig() {
         // C1: Set range and default value (Buffer 0.5)
         setSliderRange('tp_c1', 20, c1_base - 0.5, 'txt_max_tp_c1');
         setSliderValue('tp_c1', c1_tp_default);
-        setSliderRange('sl_c1', c1_base + 0.5, 110, 'txt_min_sl_c1');
+        setSliderRange('sl_c1', c1_base + 0.5, 130, 'txt_min_sl_c1');
         setSliderValue('sl_c1', c1_sl_default);
 
         // C3: Set range and default value (Buffer 0.5)
         setSliderRange('tp_c3', 20, c3_base - 0.5, 'txt_max_tp_c3');
         setSliderValue('tp_c3', c3_tp_default);
-        setSliderRange('sl_c3', c3_base + 0.5, 110, 'txt_min_sl_c3');
+        setSliderRange('sl_c3', c3_base + 0.5, 130, 'txt_min_sl_c3');
         setSliderValue('sl_c3', c3_sl_default);
 
         // C4: Set range and default value (NO BUFFER as requested: TP to 79, SL from 92)
         setSliderRange('tp_c4', 20, c3_base - 1.0, 'txt_max_tp_c4');
         setSliderValue('tp_c4', c4_tp_default);
-        setSliderRange('sl_c4', c4_base, 110, 'txt_min_sl_c4');
+        setSliderRange('sl_c4', c4_base, 130, 'txt_min_sl_c4');
         setSliderValue('sl_c4', c4_sl_default);
 
         console.log('✅ Slider ranges and defaults updated with 0.5 buffer');
@@ -2300,7 +2331,7 @@ function setSliderValue(inputId, value) {
 
     // Clamp value to min/max
     const min = parseFloat(input.min) || 20;
-    const max = parseFloat(input.max) || 110;
+    const max = parseFloat(input.max) || 130;
     value = Math.max(min, Math.min(max, value));
 
     input.value = value;
@@ -2350,7 +2381,7 @@ async function optimizeCase(caseId, metric = 'total') {
             tpMin: parseFloat(tpSlider.min) || 20,
             tpMax: parseFloat(tpSlider.max) || 100,
             slMin: parseFloat(slSlider.min) || 50,
-            slMax: parseFloat(slSlider.max) || 110
+            slMax: parseFloat(slSlider.max) || 130
         };
 
         // 3. Pre-calculate Hit Maps for each trade

@@ -10,7 +10,7 @@ import aiohttp
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 
-from config import REST_BASE_URL, MARGIN_PER_TRADE, MIN_AVAILABLE_MARGIN, TIMEFRAME, CANDLE_LIMIT
+from config import REST_BASE_URL, MARGIN_PER_TRADE, MAX_MARGIN_PER_TRADE, TARGET_PROFIT, LEVERAGE, COMMISSION_RATE, MIN_AVAILABLE_MARGIN, TIMEFRAME, CANDLE_LIMIT
 from fibonacci import calculate_zigzag, find_valid_fibonacci_swing, determine_trading_case
 from logger import setup_logger
 
@@ -525,9 +525,26 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
         case_4_max = 0.90
     
     # Obtener precio fresco para registrar 'creation_price' precisa
-    fresh_price = await scanner.get_current_price(result.symbol)
-    if not fresh_price:
+    if not fresh_price or fresh_price == 0.0:
          fresh_price = result.current_price if hasattr(result, 'current_price') else 0.0
+
+    # --- Cálculo de Margen Dinámico con Comisiones ---
+    def calculate_margin(entry_price, tp_price):
+        # Qty = Target / ( (Entry - TP) - (Entry + TP) * Rate )
+        price_diff = entry_price - tp_price
+        comm_factor = (entry_price + tp_price) * COMMISSION_RATE
+        effective_diff = price_diff - comm_factor
+        
+        if effective_diff <= 0: return MARGIN_PER_TRADE
+        
+        qty = TARGET_PROFIT / effective_diff
+        calc_margin = (qty * entry_price) / LEVERAGE
+        
+        # Aplicar límite máximo de margen
+        if calc_margin > MAX_MARGIN_PER_TRADE:
+            return MAX_MARGIN_PER_TRADE
+            
+        return calc_margin
 
     if case_num == 4:
         # Caso 4: MARKET
@@ -550,7 +567,7 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             symbol=result.symbol,
             side=OrderSide.SELL,
             current_price=fresh_price,
-            margin=margin_per_trade,
+            margin=calculate_margin(fresh_price, tp_price),
             take_profit=tp_price,
             stop_loss=sl_price,
             strategy_case=case_num,
@@ -577,7 +594,7 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             symbol=result.symbol,
             side=OrderSide.SELL,
             price=limit_price,
-            margin=margin_per_trade,
+            margin=calculate_margin(limit_price, tp_price),
             take_profit=tp_price,
             stop_loss=sl_price,
             strategy_case=case_num,
@@ -608,10 +625,9 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             symbol=result.symbol,
             side=OrderSide.SELL,
             price=limit_price,
-            margin=margin_per_trade,
+            margin=calculate_margin(limit_price, tp_price),
             take_profit=tp_price,
             stop_loss=sl_price,
-
             strategy_case=1,
             fib_high=result.fib_levels.get('high'),
             fib_low=result.fib_levels.get('low'),

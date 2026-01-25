@@ -10,10 +10,10 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 from config import (
-    INITIAL_BALANCE, LEVERAGE, MARGIN_PER_TRADE,
+    INITIAL_BALANCE, LEVERAGE, MARGIN_PER_TRADE, MAX_MARGIN_PER_TRADE, TARGET_PROFIT, COMMISSION_RATE,
     DEFAULT_SYMBOL, WS_BASE_URL, REST_BASE_URL,
     TIMEFRAME, CANDLE_LIMIT, TRADES_FILE,
-    TOP_PAIRS_LIMIT, RSI_THRESHOLD, FIRST_SCAN_DELAY, SCAN_INTERVAL
+    TOP_PAIRS_LIMIT, RSI_THRESHOLD, FIRST_SCAN_DELAY, SCAN_INTERVAL, MIN_AVAILABLE_MARGIN
 )
 from paper_trading import PaperTradingAccount, OrderSide
 from fibonacci import (
@@ -107,6 +107,10 @@ class FibonacciTradingBot:
         """Ejecutar lógica de trading según el caso"""
         if not self.current_swing or not self.current_swing.is_valid:
             return
+            
+        if self.account.get_available_margin() < MIN_AVAILABLE_MARGIN:
+            # Silencioso en el log de consola por cada tick, pero bloquea ejecucion
+            return
         
         case = determine_trading_case(current_price, self.current_swing)
         
@@ -151,6 +155,32 @@ class FibonacciTradingBot:
         level_68 = levels.get('68', fib_low + fib_range * 0.68)  # Caso 1: LIMIT SELL al 68%
         level_786 = levels["78.6"]
         
+        # --- Cálculo de Margen Dinámico con Comisiones ---
+        def calculate_required_margin(entry_price, tp_price):
+            # Beneficio Neto = Qty * (Entry - TP) - Comisiones
+            # Comisiones = Qty * (Entry + TP) * Rate
+            # Qty = Target / ( (Entry - TP) - (Entry + TP) * Rate )
+            
+            price_diff = entry_price - tp_price
+            comm_factor = (entry_price + tp_price) * COMMISSION_RATE
+            
+            effective_diff = price_diff - comm_factor
+            
+            if effective_diff <= 0: return MARGIN_PER_TRADE * 2 # Evitar división por cero o negativo
+            
+            qty = TARGET_PROFIT / effective_diff
+            calc_margin = (qty * entry_price) / LEVERAGE
+            
+            # Aplicar límite máximo de margen
+            if calc_margin > MAX_MARGIN_PER_TRADE:
+                return MAX_MARGIN_PER_TRADE
+                
+            return calc_margin
+
+        margin_c1 = calculate_required_margin(level_68, tp_c1)
+        margin_c3 = calculate_required_margin(current_price, tp_c3)
+        # --------------------------------------------------------
+        
         print(f"\n🎯 CASO {case} detectado | Precio: ${current_price:.4f}")
         print(f"   Niveles: 61.8%=${level_618:.4f} | 78.6%=${level_786:.4f}")
         
@@ -160,7 +190,7 @@ class FibonacciTradingBot:
                 symbol=self.symbol,
                 side=OrderSide.SELL,
                 price=level_68,  # LIMIT SELL al 68%
-                margin=MARGIN_PER_TRADE,
+                margin=margin_c1,
                 take_profit=tp_c1,  # TP desde shared_config
                 stop_loss=sl_c1     # SL desde shared_config
             )
@@ -170,7 +200,7 @@ class FibonacciTradingBot:
                     symbol=self.symbol,
                     side=OrderSide.SELL,
                     price=level_786,
-                    margin=MARGIN_PER_TRADE,
+                    margin=margin_c1, # Usamos el mismo margen para simplificar
                     take_profit=tp_c1,   # TP desde shared_config
                     stop_loss=sl_c1      # SL desde shared_config
                     # linked_order_id eliminado - ya no se usan órdenes vinculadas
@@ -186,7 +216,7 @@ class FibonacciTradingBot:
                 symbol=self.symbol,
                 side=OrderSide.SELL,
                 current_price=current_price,
-                margin=MARGIN_PER_TRADE,
+                margin=margin_c3,
                 take_profit=tp_c3,  # TP desde shared_config
                 stop_loss=sl_c3     # SL desde shared_config
             )

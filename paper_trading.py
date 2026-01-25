@@ -347,16 +347,11 @@ class PaperTradingAccount:
         if updated:
             self._save_trades()  # Persistir cambios en JSON
     
-    def place_limit_order(self, symbol: str, side: OrderSide, price: float, 
-                          margin: float, take_profit: float, 
-                          stop_loss: Optional[float] = None,
-                          strategy_case: int = 0,
-                          fib_high: Optional[float] = None,
-                          fib_low: Optional[float] = None,
-                          entry_fib_level: Optional[float] = None,
-                          current_price: Optional[float] = None) -> Optional[Order]:
-        """Colocar orden límite (sin límite de margen en paper trading)"""
-        # Límite de margen eliminado para paper trading ilimitado
+        # Verificar margen disponible
+        from config import MIN_AVAILABLE_MARGIN
+        if self.get_available_margin() < MIN_AVAILABLE_MARGIN:
+            print(f"⚠️ No hay suficiente margen disponible para colocar orden límite en {symbol}")
+            return None
         
         # Calcular cantidad basada en margen y apalancamiento
         notional_value = margin * self.leverage
@@ -410,8 +405,12 @@ class PaperTradingAccount:
                            fib_high: Optional[float] = None,
                            fib_low: Optional[float] = None,
                            entry_fib_level: Optional[float] = None) -> Optional[Position]:
-        """Colocar orden de mercado (ejecución inmediata) - sin límite de margen"""
-        # Límite de margen eliminado para paper trading ilimitado
+        """Colocar orden de mercado (ejecución inmediata)"""
+        # Verificar margen disponible
+        from config import MIN_AVAILABLE_MARGIN
+        if self.get_available_margin() < MIN_AVAILABLE_MARGIN:
+            print(f"⚠️ No hay suficiente margen disponible para orden de mercado en {symbol}")
+            return None
         
         # Calcular cantidad
         notional_value = margin * self.leverage

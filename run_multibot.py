@@ -5,19 +5,6 @@ import os
 import signal
 import json
 
-# Configuración de estrategias específicas
-STRATEGY_2H = {
-    "c1": {"tp": 0.585, "sl": 0.86},
-    "c3": {"tp": 0.69, "sl": 1.08},
-    "c4": {"tp": 0.655, "sl": 1.055}
-}
-
-STRATEGY_4H = {
-    "c1": {"tp": 0.53, "sl": 0.915},
-    "c3": {"tp": 0.73, "sl": 1.055},
-    "c4": {"tp": 0.69, "sl": 0.965}
-}
-
 # Configuración de las instancias
 INSTANCES = [
     {
@@ -25,8 +12,7 @@ INSTANCES = [
             "BOT_TIMEFRAME": "2h",
             "BOT_TRADES_FILE": "trades_2h.json",
             "BOT_WEB_PORT": "8082",
-            "ENABLE_TELEGRAM": "False",
-            "BOT_STRATEGIES_OVERRIDE": json.dumps(STRATEGY_2H)
+            "ENABLE_TELEGRAM": "False"
         },
         "name": "Bot 2H"
     },
@@ -35,8 +21,7 @@ INSTANCES = [
             "BOT_TIMEFRAME": "4h",
             "BOT_TRADES_FILE": "trades_4h.json",
             "BOT_WEB_PORT": "8083",
-            "ENABLE_TELEGRAM": "False",
-            "BOT_STRATEGIES_OVERRIDE": json.dumps(STRATEGY_4H)
+            "ENABLE_TELEGRAM": "False"
         },
         "name": "Bot 4H"
     }

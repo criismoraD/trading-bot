@@ -3,11 +3,14 @@
         "case_1_min": 0.50,
         "case_1_max_3_min": 0.63,
         "case_3_max_4_min": 0.80,
-        "case_4_max": 0.92,
+        "case_4_max": 0.91,
         "initial_balance": 1000,
-        "margin_per_trade": 2.0,
+        "margin_per_trade": 1.0,
+        "max_margin_per_trade": 100.0,
         "min_available_margin": 2.0,
-        "leverage": 10,
+        "leverage": 50,
+        "target_profit": 1.0,
+        "commission_rate": 0.0006,
         "max_simultaneous_operations": 9999,
         "c1_cancel_below": 0.2,
         "c3_cancel_below": 0.2,
@@ -15,16 +18,16 @@
     },
     "strategies": {
         "c1": {
-            "tp": 0.53,
-            "sl": 0.915
+            "tp": 0.55,
+            "sl": 0.90
         },
         "c3": {
-            "tp": 0.73,
-            "sl": 1.055
+            "tp": 0.7,
+            "sl": 1.01
         },
         "c4": {
-            "tp": 0.69,
-            "sl": 0.965
+            "tp": 0.77,
+            "sl": 1.25
         }
     },
     "fibonacci": {
@@ -57,9 +60,9 @@
     "scanner": {
         "rsi_threshold": 75,
         "first_scan_delay": 2,
-        "scan_interval": 30,
+        "scan_interval": 10,
         "target_pairs": [],
-        "timeframe": "4h",
+        "timeframe": "2h",
         "top_pairs_limit": 650,
         "candle_limit": 2000
     }
