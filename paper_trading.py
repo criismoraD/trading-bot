@@ -58,6 +58,7 @@ class Order:
     current_price: float = 0.0  # Precio actual del mercado (vivo/informativo)
     creation_price: float = 0.0 # Precio de mercado al momento de crear la orden
     creation_fib_level: Optional[float] = None # Nivel Fibonacci del mercado al crear
+    estimated_commission: float = 0.0 # Comisión estimada al momento de crear la orden
     
     def to_dict(self) -> dict:
         return {
@@ -76,17 +77,14 @@ class Order:
             "filled_at": self.filled_at,
             "closed_at": self.closed_at,
             "pnl": self.pnl,
-            # linked_order_id eliminado del registro
-            "strategy_case": self.strategy_case,
-            "fib_high": self.fib_high,
-            "fib_low": self.fib_low,
             "strategy_case": self.strategy_case,
             "fib_high": self.fib_high,
             "fib_low": self.fib_low,
             "entry_fib_level": self.entry_fib_level,
             "current_price": self.current_price,
             "creation_price": self.creation_price,
-            "creation_fib_level": self.creation_fib_level
+            "creation_fib_level": self.creation_fib_level,
+            "estimated_commission": self.estimated_commission
         }
 
 @dataclass
@@ -113,6 +111,7 @@ class Position:
     opened_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     # Fecha de creación original (cuando fue orden pendiente)
     created_at: Optional[str] = None
+    estimated_commission: float = 0.0 # Comisión estimada
     
     def calculate_pnl(self, current_price: float) -> float:
         """Calcular PnL no realizado y actualizar precios extremos"""
@@ -262,7 +261,8 @@ class PaperTradingAccount:
             "creation_fib_level": pos.creation_fib_level,
             "executions": pos.executions,
             "opened_at": pos.opened_at,
-            "created_at": pos.created_at
+            "created_at": pos.created_at,
+            "estimated_commission": pos.estimated_commission
         }
     
     def _save_trades(self):
@@ -353,7 +353,8 @@ class PaperTradingAccount:
                           fib_high: Optional[float] = None,
                           fib_low: Optional[float] = None,
                           entry_fib_level: Optional[float] = None,
-                          current_price: Optional[float] = None) -> Optional[Order]:
+                          current_price: Optional[float] = None,
+                          estimated_commission: float = 0.0) -> Optional[Order]:
         """Colocar una orden límite"""
         # Verificar margen disponible
         from config import MIN_AVAILABLE_MARGIN
@@ -395,7 +396,8 @@ class PaperTradingAccount:
             fib_low=fib_low,
             entry_fib_level=entry_fib_level,
             creation_price=current_price if current_price else 0.0,
-            creation_fib_level=creation_fib_level
+            creation_fib_level=creation_fib_level,
+            estimated_commission=estimated_commission
         )
         
         self.pending_orders[order.id] = order
@@ -412,7 +414,8 @@ class PaperTradingAccount:
                            strategy_case: int = 0,
                            fib_high: Optional[float] = None,
                            fib_low: Optional[float] = None,
-                           entry_fib_level: Optional[float] = None) -> Optional[Position]:
+                           entry_fib_level: Optional[float] = None,
+                           estimated_commission: float = 0.0) -> Optional[Position]:
         """Colocar orden de mercado (ejecución inmediata)"""
         # Verificar margen disponible
         from config import MIN_AVAILABLE_MARGIN
@@ -463,7 +466,8 @@ class PaperTradingAccount:
                 "type": "MARKET",
                 "time": datetime.now().isoformat()
             }],
-            created_at=datetime.now(timezone.utc).isoformat() # Para market order, creado y abierto es igual
+            created_at=datetime.now(timezone.utc).isoformat(), # Para market order, creado y abierto es igual
+            estimated_commission=estimated_commission
         )
         self.open_positions[order_id] = position
         
@@ -529,7 +533,8 @@ class PaperTradingAccount:
                 "type": "LIMIT",
                 "time": datetime.now(timezone.utc).isoformat()
             }],
-            created_at=order.created_at # Conservar fecha original de la orden
+            created_at=order.created_at, # Conservar fecha original de la orden
+            estimated_commission=order.estimated_commission
         )
         
         self.open_positions[order_id] = position

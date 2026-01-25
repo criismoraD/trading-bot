@@ -56,6 +56,16 @@
                     </label>
                     <span class="mode-label" id="modeLabelVisor">👁️ Visor</span>
                 </div>
+
+                <!-- Commission Toggle -->
+                <div class="flex items-center gap-2 bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-700/50">
+                    <label class="toggle-switch" style="width: 32px; height: 16px;">
+                        <input type="checkbox" id="includeCommissions" onchange="runSimulation()" checked>
+                        <span class="toggle-slider" style="border-radius: 16px;"></span>
+                    </label>
+                    <span class="text-[10px] text-slate-400 font-semibold uppercase">Comisiones</span>
+                </div>
+
                 <!-- File input -->
                 <div class="file-input-wrapper">
                     <button class="file-input-btn">📂 Cargar JSON</button>

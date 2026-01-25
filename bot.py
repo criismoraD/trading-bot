@@ -155,36 +155,54 @@ class FibonacciTradingBot:
         level_68 = levels.get('68', fib_low + fib_range * 0.68)  # Caso 1: LIMIT SELL al 68%
         level_786 = levels["78.6"]
         
-        # --- Cálculo de Margen Dinámico con Comisiones ---
-        def calculate_required_margin(entry_price, tp_price):
-            # Beneficio Neto = Qty * (Entry - TP) - Comisiones
-            # Comisiones = Qty * (Entry + TP) * Rate
-            # Qty = Target / ( (Entry - TP) - (Entry + TP) * Rate )
-            
-            price_diff = entry_price - tp_price
-            comm_factor = (entry_price + tp_price) * COMMISSION_RATE
-            
-            effective_diff = price_diff - comm_factor
-            
-            if effective_diff <= 0: return MARGIN_PER_TRADE * 2 # Evitar división por cero o negativo
-            
-            qty = TARGET_PROFIT / effective_diff
-            calc_margin = (qty * entry_price) / LEVERAGE
-            
-            # Aplicar límite máximo de margen
-            if calc_margin > MAX_MARGIN_PER_TRADE:
-                return MAX_MARGIN_PER_TRADE
+        # --- Nueva Lógica: Ganancia Bruta y Protección de Comisiones ---
+        def calculate_trade_params(entry_price, tp_price):
+            """
+            Calcula Qty para Ganancia Bruta = TARGET_PROFIT
+            Retorna (Qty, Margin, Estimated_Commission, Allowed)
+            """
+            price_diff = abs(entry_price - tp_price)
+            if price_diff == 0:
+                print(f"⚠️ Error: Diferencia de precio 0 en {self.symbol}")
+                return 0, 0, 0, False
                 
-            return calc_margin
+            # 1. Calcular Qty para Ganancia Bruta (TARGET_PROFIT = $1)
+            # Ganancia Bruta = Qty * |Entry - TP|
+            qty = TARGET_PROFIT / price_diff
+            
+            # 2. Calcular Margin Requerido
+            margin = (qty * entry_price) / LEVERAGE
+            
+            # 3. Calcular Comisión Estimada (Apertura + Cierre)
+            # Asumimos peor caso: Taker en Open (si es Market) y Maker en Close (TP Limit)
+            # O Maker/Maker si es Limit. Para seguridad usamos COMMISSION_RATE general
+            est_commission = qty * (entry_price + tp_price) * COMMISSION_RATE
+            
+            # 4. Regla de Protección: Comisión < 50% de la Ganancia Bruta
+            # Si ganamos $1, no queremos pagar más de $0.50 en comisiones
+            if est_commission > (TARGET_PROFIT / 2):
+                print(f"🚫 {self.symbol}: Comisión alta (${est_commission:.4f}) vs Profit (${TARGET_PROFIT})")
+                return qty, margin, est_commission, False
+                
+            if margin > MAX_MARGIN_PER_TRADE:
+                 qty = (MAX_MARGIN_PER_TRADE * LEVERAGE) / entry_price
+                 margin = MAX_MARGIN_PER_TRADE
+                 est_commission = qty * (entry_price + tp_price) * COMMISSION_RATE
+            
+            return qty, margin, est_commission, True
 
-        margin_c1 = calculate_required_margin(level_68, tp_c1)
-        margin_c3 = calculate_required_margin(current_price, tp_c3)
+        # Calcular parámetros para C1 y C3
+        qty_c1, margin_c1, comm_c1, allowed_c1 = calculate_trade_params(level_68, tp_c1)
+        qty_c3, margin_c3, comm_c3, allowed_c3 = calculate_trade_params(current_price, tp_c3)
         # --------------------------------------------------------
         
         print(f"\n🎯 CASO {case} detectado | Precio: ${current_price:.4f}")
         print(f"   Niveles: 61.8%=${level_618:.4f} | 78.6%=${level_786:.4f}")
         
         if case == 1:
+            if not allowed_c1:
+                return
+
             # Precio < 68%: Orden límite LIMIT SELL en 68%
             order1 = self.account.place_limit_order(
                 symbol=self.symbol,
@@ -192,7 +210,8 @@ class FibonacciTradingBot:
                 price=level_68,  # LIMIT SELL al 68%
                 margin=margin_c1,
                 take_profit=tp_c1,  # TP desde shared_config
-                stop_loss=sl_c1     # SL desde shared_config
+                stop_loss=sl_c1,     # SL desde shared_config
+                estimated_commission=comm_c1
             )
             
             if order1:
@@ -202,7 +221,8 @@ class FibonacciTradingBot:
                     price=level_786,
                     margin=margin_c1, # Usamos el mismo margen para simplificar
                     take_profit=tp_c1,   # TP desde shared_config
-                    stop_loss=sl_c1      # SL desde shared_config
+                    stop_loss=sl_c1,     # SL desde shared_config
+                    estimated_commission=comm_c1
                     # linked_order_id eliminado - ya no se usan órdenes vinculadas
                 )
             
@@ -211,6 +231,9 @@ class FibonacciTradingBot:
         # Caso 2 eliminado - ya no existe
         
         elif case == 3:
+            if not allowed_c3:
+                return
+
             # Precio >= 78.6%: Mercado con TP/SL desde shared_config
             self.account.place_market_order(
                 symbol=self.symbol,
@@ -218,7 +241,8 @@ class FibonacciTradingBot:
                 current_price=current_price,
                 margin=margin_c3,
                 take_profit=tp_c3,  # TP desde shared_config
-                stop_loss=sl_c3     # SL desde shared_config
+                stop_loss=sl_c3,     # SL desde shared_config
+                estimated_commission=comm_c3
             )
             
             self.last_case_executed = 3
@@ -692,8 +716,8 @@ async def main():
                 side_color = C_RED if pos.side.value == 'SHORT' else C_GREEN
                 case_str = f"C{pos.strategy_case}" if pos.strategy_case else "??"
                 
-                # Línea 1: Symbol, Case, Side, Qty
-                print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{pos.symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}{pos.side.value:<5}{C_RESET} │ Qty: {C_WHITE}{pos.quantity:.3f}{C_RESET}{' '*25}{C_CYAN}│{C_RESET}")
+                # Línea 1: Symbol, Case, Side, Qty, Current/Price
+                print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{pos.symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}{pos.side.value:<5}{C_RESET} │ Qty: {C_WHITE}{pos.quantity:.3f}{C_RESET} │ Margin: {C_WHITE}${pos.margin:.2f}{C_RESET}{' '*8}{C_CYAN}│{C_RESET}")
                 # Línea 2: Entry, Now, TP, PnL
                 print(f"{C_CYAN}│{C_RESET}      Entry: {C_WHITE}${pos.entry_price:.4f}{C_RESET} │ Now: {C_WHITE}${current:.4f}{C_RESET} │ {pnl_color_pos}PnL: ${calculated_pnl:>.4f}{C_RESET}{' '*8}{C_CYAN}│{C_RESET}")
                 
@@ -712,7 +736,7 @@ async def main():
                 case_str = f"C{order.strategy_case}" if order.strategy_case else "??"
                 
                 # Línea 1
-                print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{order.symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}LIMIT {order.side.value}{C_RESET} │ Qty: {C_WHITE}{order.quantity:.2f}{C_RESET}{' '*21}{C_CYAN}│{C_RESET}")
+                print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{order.symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}LIMIT {order.side.value}{C_RESET} │ Qty: {C_WHITE}{order.quantity:.2f}{C_RESET} │ Margin: {C_WHITE}${order.margin:.2f}{C_RESET}{' '*4}{C_CYAN}│{C_RESET}")
                 # Línea 2
                 print(f"{C_CYAN}│{C_RESET}      Price: {C_WHITE}${order.price:.4f}{C_RESET} │ TP: {C_WHITE}${order.take_profit:.4f}{C_RESET}{' '*30}{C_CYAN}│{C_RESET}")
                 

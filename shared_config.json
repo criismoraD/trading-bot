@@ -60,7 +60,7 @@
     "scanner": {
         "rsi_threshold": 75,
         "first_scan_delay": 2,
-        "scan_interval": 10,
+        "scan_interval": 30,
         "target_pairs": [],
         "timeframe": "2h",
         "top_pairs_limit": 650,

@@ -25,7 +25,7 @@ CHATS_FILE = "telegram_chats.json"
 
 # Configuración de los bots a monitorear
 BOTS_CONFIG = [
-
+    {"name": "Bot 1H", "file": "trades_1h.json", "emoji": "🕐"},
     {"name": "Bot 2H", "file": "trades_2h.json", "emoji": "🕑"},
     {"name": "Bot 4H", "file": "trades_4h.json", "emoji": "🕓"}
 ]
@@ -149,7 +149,13 @@ class MultiTelegramBot:
             pnl_emoji = "🟢" if pnl >= 0 else "🔴"
             balance_trend = "📈"  # Simplificado
             
-            margin_balance = status['balance'] + pnl
+            # Calcular margin_balance usando los valores redondeados para asegurar consistencia visual
+            # Esto evita reportes donde Balance + PnL != Margin por diferencias de decimales ocultos
+            balance_display = status['balance']
+            pnl_display = pnl
+            
+            # Usar la misma precisión que se muestra en el mensaje (.2f y .4f)
+            margin_balance = round(balance_display, 2) + round(pnl_display, 4)
             
             report += f"\n├ Balance: <code>${status['balance']:.2f}</code> {balance_trend}"
             report += f"\n├ PnL Flotante: <code>${pnl:.4f}</code> {pnl_emoji}"

@@ -529,23 +529,46 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
     if not fresh_price or fresh_price == 0.0:
          fresh_price = result.current_price if hasattr(result, 'current_price') else 0.0
 
-    # --- Cálculo de Margen Dinámico con Comisiones ---
-    def calculate_margin(entry_price, tp_price):
-        # Qty = Target / ( (Entry - TP) - (Entry + TP) * Rate )
-        price_diff = entry_price - tp_price
-        comm_factor = (entry_price + tp_price) * COMMISSION_RATE
-        effective_diff = price_diff - comm_factor
-        
-        if effective_diff <= 0: return MARGIN_PER_TRADE
-        
-        qty = TARGET_PROFIT / effective_diff
-        calc_margin = (qty * entry_price) / LEVERAGE
-        
-        # Aplicar límite máximo de margen
-        if calc_margin > MAX_MARGIN_PER_TRADE:
-            return MAX_MARGIN_PER_TRADE
+    # --- Nueva Lógica: Ganancia Bruta y Protección de Comisiones ---
+    def calculate_trade_params(entry_price, tp_price):
+        """
+        Calcula Qty para Ganancia Bruta = TARGET_PROFIT
+        Retorna (Qty, Margin, Estimated_Commission, Allowed)
+        """
+        price_diff = abs(entry_price - tp_price)
+        if price_diff == 0:
+            return 0, 0, 0, False
             
-        return calc_margin
+        # 1. Calcular Qty para Ganancia Bruta (TARGET_PROFIT = $1)
+        # Ganancia Bruta = Qty * |Entry - TP|
+        # Qty = TARGET_PROFIT / |Entry - TP|
+        qty = TARGET_PROFIT / price_diff
+        
+        # 2. Calcular Margin Requerido
+        margin = (qty * entry_price) / LEVERAGE
+        
+        # 3. Calcular Comisión Estimada (Apertura + Cierre)
+        # Asumimos peor caso: Taker en Open (si es Market) y Maker en Close (TP Limit)
+        # O Maker/Maker si es Limit. Para seguridad usamos un promedio o el peor caso.
+        # Simplificación: Usamos COMMISSION_RATE general (0.06% = 0.0006)
+        # Comm = Qty * (Entry + TP) * Rate
+        est_commission = qty * (entry_price + tp_price) * COMMISSION_RATE
+        
+        # 4. Regla de Protección: Comisión < 50% de la Ganancia Bruta
+        # Si ganamos $1, no queremos pagar más de $0.50 en comisiones
+        if est_commission > (TARGET_PROFIT / 2):
+            print(f"   🚫 {result.symbol}: Comisión alta (${est_commission:.4f}) vs Profit (${TARGET_PROFIT})")
+            return qty, margin, est_commission, False
+            
+        if margin > MAX_MARGIN_PER_TRADE:
+             # Ajustar al máximo margen permitido (reducir Qty)
+             # Esto reducirá la ganancia bruta esperada, pero es un límite duro de seguridad
+             qty = (MAX_MARGIN_PER_TRADE * LEVERAGE) / entry_price
+             margin = MAX_MARGIN_PER_TRADE
+             # Recalcular comisión
+             est_commission = qty * (entry_price + tp_price) * COMMISSION_RATE
+        
+        return qty, margin, est_commission, True
 
     if case_num == 4:
         # Caso 4: MARKET
@@ -564,16 +587,23 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
         tp_price = result.fib_levels.get('low', 0) + fib_range * c4_config['tp']
         sl_price = result.fib_levels.get('low', 0) + fib_range * c4_config['sl'] if c4_config.get('sl') else None
         
+        # Calcular parámetros
+        qty, margin, est_comm, allowed = calculate_trade_params(fresh_price, tp_price)
+        
+        if not allowed:
+            return False, None, None
+
         position = account.place_market_order(
             symbol=result.symbol,
             side=OrderSide.SELL,
             current_price=fresh_price,
-            margin=calculate_margin(fresh_price, tp_price),
+            margin=margin,
             take_profit=tp_price,
             stop_loss=sl_price,
             strategy_case=case_num,
             fib_high=result.fib_levels.get('high'),
-            fib_low=result.fib_levels.get('low')
+            fib_low=result.fib_levels.get('low'),
+            estimated_commission=est_comm
         )
         if position:
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
@@ -591,17 +621,24 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
         tp_price = result.fib_levels.get('low', 0) + fib_range * c3_config['tp']
         sl_price = result.fib_levels.get('low', 0) + fib_range * c3_config['sl'] if c3_config.get('sl') else None
         
+        # Calcular parámetros
+        qty, margin, est_comm, allowed = calculate_trade_params(limit_price, tp_price)
+        
+        if not allowed:
+            return False, None, None
+            
         order = account.place_limit_order(
             symbol=result.symbol,
             side=OrderSide.SELL,
             price=limit_price,
-            margin=calculate_margin(limit_price, tp_price),
+            margin=margin,
             take_profit=tp_price,
             stop_loss=sl_price,
             strategy_case=case_num,
             fib_high=result.fib_levels.get('high'),
             fib_low=result.fib_levels.get('low'),
-            current_price=fresh_price
+            current_price=fresh_price,
+            estimated_commission=est_comm
         )
         if order:
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
@@ -622,17 +659,24 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
         # LIMIT SELL al nivel configurado
         limit_price = result.fib_levels.get('low', 0) + fib_range * case_1_max_3_min
         
+        # Calcular parámetros
+        qty, margin, est_comm, allowed = calculate_trade_params(limit_price, tp_price)
+        
+        if not allowed:
+            return False, None, None
+            
         order = account.place_limit_order(
             symbol=result.symbol,
             side=OrderSide.SELL,
             price=limit_price,
-            margin=calculate_margin(limit_price, tp_price),
+            margin=margin,
             take_profit=tp_price,
             stop_loss=sl_price,
             strategy_case=1,
             fib_high=result.fib_levels.get('high'),
             fib_low=result.fib_levels.get('low'),
-            current_price=fresh_price
+            current_price=fresh_price,
+            estimated_commission=est_comm
         )
         if order:
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""

@@ -714,6 +714,9 @@ function runSimulation() {
             }
         }
 
+        // Check commission toggle state
+        const useComms = document.getElementById('includeCommissions')?.checked ?? true;
+
         if (candlesForSim) {
             const simResult = simulateTradePath(t, tpPrice, slPrice, candlesForSim);
             if (simResult) {
@@ -721,16 +724,26 @@ function runSimulation() {
                     status = "SL ❌";
                     const grossLoss = (t.entry_price - slPrice) * dynamicQty;
                     const fees = (t.entry_price + slPrice) * dynamicQty * commRate;
-                    rPnl = grossLoss - fees;
+                    rPnl = grossLoss - (useComms ? fees : 0);
                     isClosed = true; css = "bg-loss"; fPnl = 0; hitSL = true;
                 } else if (simResult.status.includes('TP')) {
-                    status = "TP ✅"; rPnl = targetProfitVal; isClosed = true; css = "bg-win"; fPnl = 0;
+                    status = "TP ✅"; 
+                    // Si ganamos, el Target Profit ya es ganancia bruta ($1)
+                    // Si comisiones ACTIVADAS: Restamos comms. Net = 1 - fees
+                    // Si comisiones DESACTIVADAS: Net = 1
+                    
+                    // Nota: targetProfitVal es la ganancia bruta objetivo ($1)
+                    // Fees totales: Apertura + Cierre
+                     const fees = (t.entry_price + tpPrice) * dynamicQty * commRate;
+                    rPnl = targetProfitVal - (useComms ? fees : 0);
+                    
+                    isClosed = true; css = "bg-win"; fPnl = 0;
                 } else {
                     status = "RUN ⏳";
                     const currentPrice = simResult.lastPrice;
                     const grossPnL = (t.entry_price - currentPrice) * dynamicQty;
                     const fees = (t.entry_price + currentPrice) * dynamicQty * commRate;
-                    fPnl = grossPnL - fees;
+                    fPnl = grossPnL - (useComms ? fees : 0);
                     css = "bg-run"; isClosed = false; rPnl = 0;
                 }
             } else {
