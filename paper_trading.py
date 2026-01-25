@@ -439,8 +439,7 @@ class PaperTradingAccount:
         order_id = self._generate_order_id()
         position_side = PositionSide.SHORT if side == OrderSide.SELL else PositionSide.LONG
         
-        # Detener monitoreo de posiciones cerradas del mismo par
-        self._stop_monitoring_symbol(symbol)
+        
         
         # Crear nueva posición (sin fusión - cada trade es independiente)
         position = Position(
