@@ -112,6 +112,7 @@ class Position:
     # Fecha de creación original (cuando fue orden pendiente)
     created_at: Optional[str] = None
     estimated_commission: float = 0.0 # Comisión estimada
+    opening_fee: float = 0.0 # Comisión real cobrada al abrir
     
     def calculate_pnl(self, current_price: float) -> float:
         """Calcular PnL no realizado y actualizar precios extremos"""
@@ -175,9 +176,6 @@ class PaperTradingAccount:
         self.cancelled_history: List[dict] = []  # Historial de órdenes canceladas
         self.order_counter = 0
         
-        # === Monitoreo de posiciones cerradas (seguimiento de precio post-cierre) ===
-        self.closed_positions_monitoring: Dict[str, dict] = {}  # {order_id: {symbol, close_price, price_history: [{price, time}]}}
-        
         # === Control de guardado para evitar exceso de escrituras ===
         self._last_save_time = 0  # Timestamp del último guardado
         self._save_interval = 1.0  # Intervalo mínimo entre guardados (segundos)
@@ -227,7 +225,6 @@ class PaperTradingAccount:
         # Siempre reiniciar - no cargar historial anterior
         self.trade_history = []
         self.balance = self.initial_balance
-        self.closed_positions_monitoring = {}
         self.stats = {
             "max_simultaneous_positions": 0,
             "max_simultaneous_orders": 0,
@@ -262,7 +259,8 @@ class PaperTradingAccount:
             "executions": pos.executions,
             "opened_at": pos.opened_at,
             "created_at": pos.created_at,
-            "estimated_commission": pos.estimated_commission
+            "estimated_commission": pos.estimated_commission,
+            "opening_fee": pos.opening_fee
         }
     
     def _save_trades(self):
@@ -277,13 +275,12 @@ class PaperTradingAccount:
                 "balance": self.balance,
                 "initial_balance": self.initial_balance,
                 "leverage": self.leverage,
-                "history": self.trade_history,
-                "cancelled_history": self.cancelled_history,
                 "stats": self.stats,
                 "open_positions": {k: self._serialize_position(v) for k, v in self.open_positions.items()},
                 "pending_orders": {k: v.to_dict() for k, v in self.pending_orders.items()},
+                "history": self.trade_history,
+                "cancelled_history": self.cancelled_history,
                 "equity_history": self.equity_history,  # Histórico de balance total
-                "closed_positions_monitoring": self.closed_positions_monitoring,  # Persistir monitoreo post-cierre
                 "last_updated": datetime.now(timezone.utc).isoformat()
             }
             with open(self.trades_file, 'w') as f:
@@ -317,14 +314,16 @@ class PaperTradingAccount:
         margin_balance = self.balance + unrealized_pnl
         
         # Nuevos valores solicitados
+        used_margin = sum(pos.margin for pos in self.open_positions.values()) + sum(order.margin for order in self.pending_orders.values())
         active_ops = len(self.open_positions) + len(self.pending_orders)
-        drawdown = self.initial_balance - margin_balance
+        drawdown = margin_balance - self.initial_balance
 
         point = {
             "time": datetime.now(timezone.utc).isoformat(),
             "balance": round(self.balance, 2),
             "unrealized_pnl": round(unrealized_pnl, 4),
             "equity": round(margin_balance, 2),
+            "used_margin": round(used_margin, 2),
             "active_operations_count": active_ops,
             "balance_drawdown": round(drawdown, 2)
         }
@@ -475,6 +474,7 @@ class PaperTradingAccount:
         notional_value = quantity * current_price
         fee = notional_value * TAKER_FEE
         self.balance -= fee
+        position.opening_fee = fee
             
         self._save_trades()
         
@@ -543,6 +543,7 @@ class PaperTradingAccount:
         notional_value = position.quantity * fill_price
         fee = notional_value * MAKER_FEE
         self.balance -= fee
+        position.opening_fee = fee
             
         self.update_max_simultaneous()  # Track máximo simultáneo
         self._save_trades()
@@ -600,15 +601,6 @@ class PaperTradingAccount:
 
     # Logic removed: _update_closed_positions_price method
     
-    def _stop_monitoring_symbol(self, symbol: str):
-        """Detener monitoreo de precios post-cierre para un par cuando se abre nueva operación"""
-        orders_to_remove = [
-            order_id for order_id, data in self.closed_positions_monitoring.items()
-            if data["symbol"] == symbol
-        ]
-        for order_id in orders_to_remove:
-            del self.closed_positions_monitoring[order_id]
-
     def check_pending_orders(self, symbol: str, current_price: float):
         """Verificar si se activan órdenes pendientes (Limit Orders)"""
         orders_to_fill = []
@@ -733,6 +725,7 @@ class PaperTradingAccount:
         
         # Guardar en historial
         trade_record = {
+            "trade_index": len(self.trade_history),
             "order_id": order_id,
             "symbol": position.symbol,
             "side": position.side.value if hasattr(position.side, 'value') else position.side,
@@ -753,16 +746,12 @@ class PaperTradingAccount:
             "executions": position.executions,  # Historial de ejecuciones
             "opened_at": position.opened_at,  # Fecha de entrada (cuando se abrió/ejecutó)
             "created_at": position.created_at, # Fecha de creación original (scanner)
-            "closed_at": datetime.now(timezone.utc).isoformat()
+            "closed_at": datetime.now(timezone.utc).isoformat(),
+            "opening_fee": round(position.opening_fee, 4),
+            "closing_fee": round(closing_fee, 4),
+            "real_profit_usdt": round(pnl - position.opening_fee - closing_fee, 4)
         }
         self.trade_history.append(trade_record)
-        
-        # Iniciar monitoreo post-cierre
-        self.closed_positions_monitoring[order_id] = {
-            "symbol": position.symbol,
-            "close_price": close_price,
-            "history_index": len(self.trade_history) - 1  # Índice en trade_history para actualizar
-        }
         
         # Función de cancelar órdenes vinculadas eliminada - ya no se usan
         

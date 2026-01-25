@@ -559,8 +559,6 @@ async def main():
                             if account.pending_orders:
                                 new_needed.update(order.symbol.lower() for order in account.pending_orders.values())
                             # También incluir símbolos con monitoreo post-cierre activo
-                            if account.closed_positions_monitoring:
-                                new_needed.update(data.get("symbol", "").lower() for data in account.closed_positions_monitoring.values())
                             if new_needed != current_symbols_set:
                                 break # Salir para reconectar
                             
@@ -579,8 +577,8 @@ async def main():
                                     if account.pending_orders:
                                         account.check_pending_orders(symbol, price)
                                     # Actualizar precios post-cierre para monitoreo
-                                    if account.closed_positions_monitoring:
-                                        account._update_closed_positions_price(symbol, price)
+                                    if account.pending_orders:
+                                        account.check_pending_orders(symbol, price)
                                         
                             except asyncio.TimeoutError:
                                 # Bybit ping
@@ -800,8 +798,6 @@ async def main():
             if account.pending_orders:
                 active_symbols.update(order.symbol for order in account.pending_orders.values())
             # También incluir símbolos con monitoreo post-cierre
-            if account.closed_positions_monitoring:
-                active_symbols.update(data.get("symbol", "") for data in account.closed_positions_monitoring.values())
             
             if active_symbols:
                 for symbol in list(active_symbols):
