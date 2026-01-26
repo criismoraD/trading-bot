@@ -47,33 +47,38 @@
                 </div>
             </div>
             <div class="flex items-center gap-4">
-                <!-- Mode Switch -->
-                <div class="mode-switch-container">
-                    <span class="mode-label active" id="modeLabelAnalyzer">📊 Analizador</span>
-                    <label class="mode-switch">
-                        <input type="checkbox" id="modeSwitch" onchange="switchMode()">
-                        <span class="slider"></span>
-                    </label>
-                    <span class="mode-label" id="modeLabelVisor">👁️ Visor</span>
+                <!-- Navigation Buttons -->
+                <div class="flex items-center gap-2">
+                    <button onclick="window.open('index.html', '_blank')"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 hover:bg-slate-700 border border-slate-600/50 text-slate-300">
+                        <span>👁️</span> Visor
+                    </button>
+                    <button onclick="window.open('dashboard_pro.html', '_blank')"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 hover:bg-slate-700 border border-slate-600/50 text-slate-300">
+                        <span>📊</span> Dashboard
+                    </button>
                 </div>
 
-                <!-- Commission Toggle -->
-                <div class="flex items-center gap-2 bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-700/50">
-                    <label class="toggle-switch" style="width: 32px; height: 16px;">
-                        <input type="checkbox" id="includeCommissions" onchange="runSimulation()" checked>
-                        <span class="toggle-slider" style="border-radius: 16px;"></span>
-                    </label>
-                    <span class="text-[10px] text-slate-400 font-semibold uppercase">Comisiones</span>
-                </div>
 
-                <!-- File input -->
-                <div class="file-input-wrapper">
-                    <button class="file-input-btn">📂 Cargar JSON</button>
-                    <input type="file" id="fileInput" accept=".json" />
+
+                <!-- File Selector -->
+                <div class="flex items-center gap-2">
+                    <select id="jsonFileSelector"
+                        class="bg-slate-800 text-slate-200 border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-cyan-500/50 cursor-pointer"
+                        style="background-color: #1e293b; color: #e2e8f0;">
+                        <option value="trades.json">trades.json</option>
+                        <option value="trades_2h.json">trades_2h.json</option>
+                        <option value="trades_4h.json">trades_4h.json</option>
+                    </select>
+                    <button id="serverRefreshBtn"
+                        class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1"
+                        style="background: rgba(0, 212, 255, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue);"
+                        onclick="loadFromServer()">
+                        <span>🔄</span>
+                    </button>
+                    <!-- Inputs ocultos para mantener compatibilidad si algo lo requiere -->
+                    <input type="file" id="fileInput" accept=".json" class="hidden" />
                 </div>
-                <button id="refreshBtn" class="hidden px-4 py-2 text-sm font-semibold rounded-lg transition-all"
-                    style="background: rgba(0, 212, 255, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue);"
-                    onclick="manualRefresh()">🔄 Actualizar</button>
             </div>
         </div>
 
@@ -87,7 +92,17 @@
                     <div class="card card-glow-blue p-3">
                         <div class="flex justify-between items-center mb-3">
                             <h3 class="section-header mb-0 text-xs">Config. por Caso</h3>
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-4">
+                                <!-- Commission Toggle Moved Here -->
+                                <div class="flex items-center gap-2">
+                                    <label class="toggle-switch" style="width: 28px; height: 14px;">
+                                        <input type="checkbox" id="includeCommissions" onchange="runSimulation()"
+                                            checked>
+                                        <span class="toggle-slider" style="border-radius: 14px;"></span>
+                                    </label>
+                                    <span class="text-[10px] text-slate-400 font-semibold">Comisiones</span>
+                                </div>
+                                <div class="h-4 w-px bg-slate-700"></div>
                                 <button onclick="resetDefaults()"
                                     class="text-xs text-cyan-400 hover:text-cyan-300 transition-colors font-medium">⟲
                                     Reiniciar</button>
@@ -696,7 +711,51 @@
                     localStorage.setItem('botNotes_v3', noteArea.value);
                 });
             }
+
+            // Iniciar carga automática
+            loadFromServer();
         });
+
+        async function loadFromServer() {
+            const selector = document.getElementById('jsonFileSelector');
+            const filename = selector.value;
+            const btn = document.getElementById('serverRefreshBtn');
+
+            // Animación visual
+            btn.innerHTML = '<span>⏳</span>';
+            btn.disabled = true;
+
+            try {
+                // Cache busting para asegurar datos frescos
+                const response = await fetch(filename + '?t=' + new Date().getTime());
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+                const data = await response.json();
+
+                // Procesar datos (asumiendo que analisis_bot_v3.js expone processData o similar, 
+                // pero como es externo, simularemos la carga del file input)
+
+                // Hack: Asignamos los datos a una variable global o llamamos a la función de procesamiento
+                // Si el JS externo usa window.rawData o similar, lo asignamos.
+                // Si no, tendremos que adaptar el JS externo.
+                // Por ahora, asumiremos que existe una función global 'loadDataFromObject' 
+                // que inyectaremos en el JS externo en el siguiente paso.
+
+                if (typeof loadDataFromObject === 'function') {
+                    loadDataFromObject(data);
+                } else {
+                    console.error("La función loadDataFromObject no está definida en analisis_bot_v3.js");
+                    alert("Error: Necesitas actualizar analisis_bot_v3.js para soportar carga directa.");
+                }
+
+            } catch (error) {
+                console.error('Error loading data:', error);
+                alert('Error al cargar datos del servidor. Asegúrate de ejecutar esto en un servidor local (http://localhost...). ' + error.message);
+            } finally {
+                btn.innerHTML = '<span>🔄</span>';
+                btn.disabled = false;
+            }
+        }
     </script>
     <script src="analisis_bot_v3.js?v=3.1"></script>
 </body>

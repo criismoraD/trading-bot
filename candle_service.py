@@ -27,7 +27,8 @@ CORS(app)  # Allow cross-origin requests from the HTML analyzer
 
 # Configuration
 DB_PATH = "candles.db"
-TRADES_JSON_PATH = "trades.json"
+# List of trade files to scan for symbols
+TRADES_FILES = ["trades.json", "trades_2h.json", "trades_4h.json"]
 BYBIT_API_BASE = "https://api.bybit.com/v5/market/kline"
 DEFAULT_SYNC_DAYS = 2  # Sync 2 days of data by default (can be changed via API)
 CANDLES_PER_REQUEST = 1000  # Bybit API limit
@@ -216,33 +217,36 @@ def sync_symbol(symbol: str, days: int = DEFAULT_SYNC_DAYS) -> dict:
     return result
 
 def get_symbols_from_trades() -> set:
-    """Extract unique symbols from trades.json."""
+    """Extract unique symbols from all trades JSON files."""
     symbols = set()
     
-    if not os.path.exists(TRADES_JSON_PATH):
-        print(f"⚠️ {TRADES_JSON_PATH} not found")
-        return symbols
-    
-    try:
-        with open(TRADES_JSON_PATH, 'r') as f:
-            data = json.load(f)
+    for file_path in TRADES_FILES:
+        if not os.path.exists(file_path):
+            print(f"⚠️ {file_path} not found")
+            continue
         
-        if "history" in data:
-            for trade in data["history"]:
-                if "symbol" in trade:
-                    symbols.add(trade["symbol"])
-        
-        if "open_positions" in data:
-            for trade in data["open_positions"].values():
-                if "symbol" in trade:
-                    symbols.add(trade["symbol"])
-        
-        if "pending_orders" in data:
-            for order in data["pending_orders"].values():
-                if "symbol" in order:
-                    symbols.add(order["symbol"])
-    except Exception as e:
-        print(f"❌ Error reading trades.json: {e}")
+        try:
+            print(f"📄 Scanning {file_path}...")
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            
+            if "history" in data:
+                for trade in data["history"]:
+                    if "symbol" in trade:
+                        symbols.add(trade["symbol"])
+            
+            if "open_positions" in data:
+                for trade in data["open_positions"].values():
+                    if "symbol" in trade:
+                        symbols.add(trade["symbol"])
+            
+            if "pending_orders" in data:
+                for order in data["pending_orders"].values():
+                    if "symbol" in order:
+                        symbols.add(order["symbol"])
+                        
+        except Exception as e:
+            print(f"❌ Error reading {file_path}: {e}")
     
     return symbols
 
@@ -382,7 +386,7 @@ def sync_all():
     
     symbols = get_symbols_from_trades()
     if not symbols:
-        return jsonify({"error": "No symbols found in trades.json"}), 400
+        return jsonify({"error": "No symbols found in trade files"}), 400
     
     results = []
     for symbol in sorted(symbols):
@@ -475,7 +479,7 @@ if __name__ == "__main__":
         """Run sync for all symbols with parallel connections."""
         symbols = get_symbols_from_trades()
         if not symbols:
-            print("⚠️ No symbols found in trades.json")
+            print("⚠️ No symbols found in trade files")
             return
         
         print(f"🔄 Syncing {len(symbols)} symbols ({args.days} days, {PARALLEL_CONNECTIONS} parallel)...")

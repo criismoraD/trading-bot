@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Dashboard Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0a0e17;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --text-primary: #ffffff;
+            --text-secondary: #a0aec0;
+            --accent-color: #4a90e2;
+            --success-color: #48bb78;
+            --danger-color: #f56565;
+            --warning-color: #ed8936;
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            background-image:
+                radial-gradient(circle at 20% 20%, rgba(74, 144, 226, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(72, 187, 120, 0.05) 0%, transparent 40%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: var(--bg-color);
+            /* Fondo explícito para exportación */
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #4a90e2, #48bb78);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .selector-container {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        select {
+            background: #1a202c;
+            color: white;
+            border: 1px solid var(--glass-border);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            outline: none;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .btn-export {
+            background: linear-gradient(135deg, #4a90e2, #357abd);
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-export:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+            filter: brightness(1.1);
+        }
+
+        .btn-export:active {
+            transform: translateY(0);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+        }
+
+        .chart-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            height: 400px;
+            /* Altura fija para evitar estiramiento infinito */
+            position: relative;
+            /* Necesario para que Chart.js responda bien */
+        }
+
+        .chart-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: var(--text-secondary);
+        }
+
+        .full-width {
+            grid-column: span 2;
+        }
+
+        .table-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-top: 2rem;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        th {
+            text-align: left;
+            color: var(--text-secondary);
+            font-weight: 600;
+            padding: 1rem;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .case-tag {
+            background: rgba(74, 144, 226, 0.2);
+            color: #4a90e2;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        @media (max-width: 1024px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .full-width {
+                grid-column: span 1;
+            }
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 14, 23, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(74, 144, 226, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--accent-color);
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .up {
+            color: var(--success-color);
+        }
+
+        .down {
+            color: var(--danger-color);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="logo">TRADER DASHBOARD PRO</div>
+            <div class="selector-container">
+                <button class="btn-export" id="btnExport">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Exportar PDF
+                </button>
+                <label for="dataSelector" style="margin-left: 1rem;">Origen de Datos:</label>
+                <select id="dataSelector">
+                    <option value="trades.json">Trades (Default)</option>
+                    <option value="trades_2h.json">Trades 2h</option>
+                    <option value="trades_4h.json">Trades 4h</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-label">Balance Actual</div>
+                <div class="stat-value" id="currentBalance">$-.--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Win Rate</div>
+                <div class="stat-value" id="winRate">-.--%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Trades</div>
+                <div class="stat-value" id="totalTrades">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Max Drawdown</div>
+                <div class="stat-value down" id="maxDrawdown">-.--%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Profit Total</div>
+                <div class="stat-value" id="totalProfit">$-.--</div>
+            </div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-container full-width">
+                <div class="chart-title">Balance & Equity</div>
+                <canvas id="balanceChart"></canvas>
+            </div>
+            <div class="chart-container full-width">
+                <div class="chart-title">Used Margin & Active Operations</div>
+                <canvas id="marginChart"></canvas>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <div class="chart-title">Resultados por Caso de Estrategia</div>
+            <table id="caseTable">
+                <thead>
+                    <tr>
+                        <th>Caso</th>
+                        <th>Trades</th>
+                        <th>Wins</th>
+                        <th>Losses</th>
+                        <th>Win Rate</th>
+                        <th>Profit Bruto</th>
+                    </tr>
+                </thead>
+                <tbody id="caseTableBody">
+                    <!-- Dynamic content -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let balanceChart = null;
+        let marginChart = null;
+
+        const dataSelector = document.getElementById('dataSelector');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const btnExport = document.getElementById('btnExport');
+
+        btnExport.addEventListener('click', () => {
+            const element = document.querySelector('.container');
+            const opt = {
+                margin: 0,
+                filename: `Trading_Report_${dataSelector.value.split('.')[0]}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                    scale: 2,
+                    backgroundColor: '#0a0e17',
+                    useCORS: true,
+                    letterRendering: true
+                },
+                jsPDF: { unit: 'in', format: 'a3', orientation: 'landscape' }
+            };
+
+            // Ocultar temporalmente el selector y el botón para el PDF
+            const selectorContainer = document.querySelector('.selector-container');
+            const originalDisplay = selectorContainer.style.display;
+            selectorContainer.style.display = 'none';
+
+            // Aplicar fondo forzado al elemento
+            const originalBg = element.style.backgroundColor;
+            element.style.backgroundColor = '#0a0e17';
+
+            html2pdf().from(element).set(opt).save().then(() => {
+                selectorContainer.style.display = originalDisplay;
+                element.style.backgroundColor = originalBg;
+            });
+        });
+
+        async function loadData(filename) {
+            if (window.location.protocol === 'file:') {
+                showProtocolError();
+                return;
+            }
+            loadingOverlay.style.display = 'flex';
+            try {
+                // Agregar timestamp para evitar cache del navegador
+                const cacheBuster = `?t=${new Date().getTime()}`;
+                const response = await fetch(filename + cacheBuster);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+                updateDashboard(data);
+            } catch (error) {
+                console.error('Error loading data:', error);
+                alert('Error al cargar los datos. Asegúrate de que el servidor web esté corriendo y los archivos JSON existan.');
+            } finally {
+                loadingOverlay.style.display = 'none';
+            }
+        }
+
+        function showProtocolError() {
+            const container = document.querySelector('.container');
+            container.innerHTML = `
+                <div style="background: rgba(245, 101, 101, 0.1); border: 1px solid #f56565; padding: 2rem; border-radius: 16px; margin-top: 2rem; text-align: center;">
+                    <h2 style="color: #f56565;">⚠️ Error de Seguridad del Navegador (CORS)</h2>
+                    <p>No se pueden cargar los archivos JSON directamente abriendo el archivo HTML (protocolo <code>file://</code>).</p>
+                    <p>Para solucionar esto, debes servir el dashboard a través de un servidor local.</p>
+                    <div style="background: #1a202c; padding: 1rem; border-radius: 8px; margin: 1.5rem 0; text-align: left; font-family: monospace;">
+                        python web_server.py
+                    </div>
+                    <p>Luego accede a: <a href="http://localhost:8080/dashboard_pro.html" style="color: #4a90e2;">http://localhost:8080/dashboard_pro.html</a></p>
+                </div>
+            `;
+        }
+
+        function updateDashboard(data) {
+            // Update Stats
+            const initialBalance = data.initial_balance || 1000;
+            const currentBalance = data.balance || initialBalance;
+            const totalProfit = currentBalance - initialBalance;
+            const stats = data.stats || {};
+            const winRate = stats.total_trades > 0
+                ? (stats.winning_trades / stats.total_trades * 100).toFixed(2)
+                : 0;
+
+            document.getElementById('currentBalance').textContent = `$${currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('winRate').textContent = `${winRate}%`;
+            document.getElementById('totalTrades').textContent = stats.total_trades || 0;
+            document.getElementById('totalProfit').textContent = `$${totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('totalProfit').className = `stat-value ${totalProfit >= 0 ? 'up' : 'down'}`;
+
+            // Calculate Max Drawdown from equity_history
+            let maxDDAmount = 0;
+            if (data.equity_history && data.equity_history.length > 0) {
+                let peak = -Infinity;
+                data.equity_history.forEach(point => {
+                    const equity = point.equity;
+                    if (equity > peak) peak = equity;
+                    const dd = peak - equity;
+                    if (dd > maxDDAmount) maxDDAmount = dd;
+                });
+            }
+            document.getElementById('maxDrawdown').textContent = `-$${maxDDAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+            initCharts(data);
+            updateCaseStats(data);
+        }
+
+        function updateCaseStats(data) {
+            const history = data.history || [];
+            const cases = {};
+
+            history.forEach(trade => {
+                const caseId = trade.strategy_case || 'N/A';
+                if (!cases[caseId]) {
+                    cases[caseId] = {
+                        count: 0,
+                        wins: 0,
+                        losses: 0,
+                        profit: 0
+                    };
+                }
+                cases[caseId].count++;
+                if (trade.pnl > 0) cases[caseId].wins++;
+                else if (trade.pnl < 0) cases[caseId].losses++;
+                cases[caseId].profit += trade.pnl || 0;
+            });
+
+            const tbody = document.getElementById('caseTableBody');
+            tbody.innerHTML = '';
+
+            Object.keys(cases).sort().forEach(caseId => {
+                const stats = cases[caseId];
+                const wr = stats.count > 0 ? (stats.wins / stats.count * 100).toFixed(2) : 0;
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><span class="case-tag">Caso ${caseId}</span></td>
+                    <td>${stats.count}</td>
+                    <td class="up">${stats.wins}</td>
+                    <td class="down">${stats.losses}</td>
+                    <td>${wr}%</td>
+                    <td class="${stats.profit >= 0 ? 'up' : 'down'}">$${stats.profit.toFixed(2)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function initCharts(data) {
+            const ctxBalance = document.getElementById('balanceChart').getContext('2d');
+            const ctxMargin = document.getElementById('marginChart').getContext('2d');
+
+            // Destroy previous charts
+            if (balanceChart) balanceChart.destroy();
+            if (marginChart) marginChart.destroy();
+
+            const history = data.equity_history || [];
+            const labels = history.map(h => {
+                const date = new Date(h.time);
+                return date.toLocaleString('es-ES', {
+                    day: '2-digit',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            });
+            const balanceData = history.map(h => h.balance);
+            const equityData = history.map(h => h.equity);
+            const startBalance = data.initial_balance || 1000;
+            const initialBalanceLine = labels.map(() => startBalance);
+            const marginData = history.map(h => h.used_margin || 0);
+            const opsCountData = history.map(h => h.active_operations_count || 0);
+
+            // Calculate drawdown amount for each point
+            let peak = -Infinity;
+            const ddData = history.map(h => {
+                const equity = h.equity;
+                if (equity > peak) peak = equity;
+                return -(peak - equity);
+            });
+
+            // Base charts
+            balanceChart = new Chart(ctxBalance, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Equity',
+                            data: equityData,
+                            borderColor: '#4a90e2',
+                            backgroundColor: 'rgba(74, 144, 226, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Balance',
+                            data: balanceData,
+                            borderColor: '#48bb78',
+                            borderDash: [5, 5],
+                            tension: 0,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Inicial ($1000)',
+                            data: initialBalanceLine,
+                            borderColor: 'rgba(255, 255, 255, 0.3)',
+                            borderDash: [2, 2],
+                            tension: 0,
+                            pointRadius: 0,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            grid: { color: 'rgba(255, 255, 255, 0.15)' },
+                            title: { display: true, text: 'USD', color: '#a0aec0' }
+                        },
+                        x: {
+                            display: true,
+                            grid: { display: false },
+                            ticks: {
+                                color: '#718096',
+                                maxRotation: 45,
+                                autoSkip: true,
+                                maxTicksLimit: 10
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#a0aec0' } }
+                    }
+                }
+            });
+
+            marginChart = new Chart(ctxMargin, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Used Margin (USD)',
+                            data: marginData,
+                            borderColor: '#ed8936',
+                            backgroundColor: 'rgba(237, 137, 54, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Active Ops Count',
+                            data: opsCountData,
+                            borderColor: '#a0aec0',
+                            backgroundColor: 'transparent',
+                            borderDash: [2, 2],
+                            tension: 0,
+                            pointRadius: 0,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            grid: { color: 'rgba(255, 255, 255, 0.15)' },
+                            title: { display: true, text: 'USD', color: '#ed8936' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            grid: { drawOnChartArea: false },
+                            title: { display: true, text: 'Ops Count', color: '#a0aec0' },
+                            suggestedMin: 0,
+                            ticks: { stepSize: 1 }
+                        },
+                        x: {
+                            display: true,
+                            grid: { display: false },
+                            ticks: {
+                                color: '#718096',
+                                maxRotation: 45,
+                                autoSkip: true,
+                                maxTicksLimit: 10
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { color: '#a0aec0' } }
+                    }
+                }
+            });
+        }
+
+        dataSelector.addEventListener('change', (e) => loadData(e.target.value));
+
+        // Initial load
+        loadData(dataSelector.value);
+    </script>
+</body>
+
+</html>

@@ -158,7 +158,8 @@ class WebServer:
             self.thread.start()
             self.running = True
             print(f"🌐 Servidor web iniciado en http://localhost:{self.port}")
-            print(f"📊 Accede a: http://localhost:{self.port}/analisis_bot_v3.html")
+            print(f"📊 Análisis Antiguo: http://localhost:{self.port}/analisis_bot_v3.html")
+            print(f"🚀 Dashboard Pro:    http://localhost:{self.port}/dashboard_pro.html")
         except OSError as e:
             print(f"❌ Error iniciando servidor: {e}")
             print(f"   Probablemente el puerto {self.port} está en uso")

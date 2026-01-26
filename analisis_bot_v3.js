@@ -216,7 +216,7 @@ async function downloadFromMV() {
         // Procesar los datos
         rawData = data;
         document.getElementById('dashboard').classList.remove('hidden');
-        document.getElementById('refreshBtn').classList.remove('hidden');
+        document.getElementById('dashboard').classList.remove('hidden');
         runSimulation();
 
         btn.innerHTML = '<span>✅</span> Cargado!';
@@ -454,46 +454,34 @@ function applySharedConfig() {
     }
 }
 
-async function autoLoadTradesJson() {
-    const filesToTry = ['/trades.json'];
-    for (const fileName of filesToTry) {
-        try {
-            const response = await fetch(fileName + '?nocache=' + Date.now(), { cache: 'no-store' });
-            if (response.ok) {
-                rawData = await response.json();
-                document.getElementById('dashboard').classList.remove('hidden');
-                document.getElementById('refreshBtn').classList.remove('hidden');
+// ========== DATA LOADING FROM SERVER ==========
+window.loadDataFromObject = function (data) {
+    if (!data) return;
+    try {
+        rawData = data;
+        document.getElementById('dashboard').classList.remove('hidden');
 
-                // Extract all trades for bulk fetch
-                let allTradesForFetch = [];
-                if (rawData.history) allTradesForFetch = allTradesForFetch.concat(rawData.history);
-                if (rawData.open_positions) allTradesForFetch = allTradesForFetch.concat(Object.values(rawData.open_positions));
-                if (rawData.pending_orders) allTradesForFetch = allTradesForFetch.concat(Object.values(rawData.pending_orders));
+        // Extract all trades for bulk fetch
+        let allTradesForFetch = [];
+        if (rawData.history) allTradesForFetch = allTradesForFetch.concat(rawData.history);
+        if (rawData.open_positions) allTradesForFetch = allTradesForFetch.concat(Object.values(rawData.open_positions));
+        if (rawData.pending_orders) allTradesForFetch = allTradesForFetch.concat(Object.values(rawData.pending_orders));
 
-                // 1. Initial simulation (quick render with limited info)
-                runSimulation();
+        // 1. Initial simulation (quick render with limited info)
+        runSimulation();
 
-                // 2. Fetch all candles in background then re-simulate
-                await bulkFetchCandles(allTradesForFetch);
+        // 2. Fetch all candles in background then re-simulate
+        bulkFetchCandles(allTradesForFetch).then(() => {
+            // 3. Re-run simulation with full market data
+            runSimulation();
+        });
 
-                // 3. Re-run simulation with full market data
-                runSimulation();
-
-                console.log('✅ Cargado:', fileName);
-                return;
-            }
-        } catch (e) { console.error("Error loading/processing " + fileName, e); }
+        console.log("✅ Data loaded from server object");
+    } catch (err) {
+        console.error("Error processing server data", err);
+        alert("Error al procesar datos del servidor");
     }
-}
-
-async function manualRefresh() {
-    const btn = document.getElementById('refreshBtn');
-    btn.innerHTML = '⏳...';
-    btn.disabled = true;
-    await autoLoadTradesJson();
-    btn.innerHTML = '🔄 Actualizar';
-    btn.disabled = false;
-}
+};
 
 document.getElementById('fileInput').addEventListener('change', function (e) {
     const file = e.target.files[0];
@@ -727,16 +715,16 @@ function runSimulation() {
                     rPnl = grossLoss - (useComms ? fees : 0);
                     isClosed = true; css = "bg-loss"; fPnl = 0; hitSL = true;
                 } else if (simResult.status.includes('TP')) {
-                    status = "TP ✅"; 
+                    status = "TP ✅";
                     // Si ganamos, el Target Profit ya es ganancia bruta ($1)
                     // Si comisiones ACTIVADAS: Restamos comms. Net = 1 - fees
                     // Si comisiones DESACTIVADAS: Net = 1
-                    
+
                     // Nota: targetProfitVal es la ganancia bruta objetivo ($1)
                     // Fees totales: Apertura + Cierre
-                     const fees = (t.entry_price + tpPrice) * dynamicQty * commRate;
+                    const fees = (t.entry_price + tpPrice) * dynamicQty * commRate;
                     rPnl = targetProfitVal - (useComms ? fees : 0);
-                    
+
                     isClosed = true; css = "bg-win"; fPnl = 0;
                 } else {
                     status = "RUN ⏳";
