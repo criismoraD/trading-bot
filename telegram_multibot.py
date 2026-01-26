@@ -26,7 +26,8 @@ CHATS_FILE = "telegram_chats.json"
 # Configuración de los bots a monitorear
 BOTS_CONFIG = [
     {"name": "Bot 2H", "file": "trades_2h.json", "emoji": "🕑"},
-    {"name": "Bot 4H", "file": "trades_4h.json", "emoji": "🕓"}
+    {"name": "Bot 4H", "file": "trades_4h.json", "emoji": "🕓"},
+    {"name": "Bot 2H (GTP)", "file": "trades_2h_gtp.json", "emoji": "🎯"}
 ]
 
 class MultiTelegramBot:

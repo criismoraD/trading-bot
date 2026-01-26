@@ -14,7 +14,8 @@
         "max_simultaneous_operations": 9999,
         "c1_cancel_below": 0.2,
         "c3_cancel_below": 0.3,
-        "simulate_pending_orders": true
+        "simulate_pending_orders": true,
+        "global_take_profit_usd": 0
     },
     "strategies": {
         "c1": {

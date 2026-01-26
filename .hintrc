@@ -1,0 +1,23 @@
+{
+  "extends": [
+    "development"
+  ],
+  "hints": {
+    "axe/forms": [
+      "default",
+      {
+        "label": "off",
+        "select-name": "off"
+      }
+    ],
+    "no-inline-styles": "off",
+    "compat-api/css": [
+      "default",
+      {
+        "ignore": [
+          "backdrop-filter"
+        ]
+      }
+    ]
+  }
+}

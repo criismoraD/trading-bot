@@ -812,6 +812,46 @@ async def main():
                         if account.pending_orders:
                             account.check_pending_orders(symbol, price)
             
+            # --- 1.1 CHECK GLOBAL EQUITY TAKE PROFIT ---
+            try:
+                # 1. Intentar leer desde variable de entorno (prioridad alta)
+                env_gtp = os.getenv("GLOBAL_TAKE_PROFIT_USD")
+                if env_gtp is not None:
+                    global_tp_usd = float(env_gtp)
+                else:
+                    # 2. Leer desde configuración compartida (si no hay env var)
+                    with open('shared_config.json', 'r') as f:
+                        sh_cfg = json.load(f)
+                        global_tp_usd = sh_cfg.get('trading', {}).get('global_take_profit_usd', 0.0)
+            except:
+                global_tp_usd = 0.0
+
+            if global_tp_usd > 0:
+                # Calcular Equity actual
+                current_equity = account.get_margin_balance() # Balance + Unrealized PnL
+                target_equity = account.balance + global_tp_usd
+                
+                if current_equity >= target_equity:
+                    print_monitor_realtime(0)
+                    msg = f"💰 META GLOBAL ALCANZADA: Equidad ${current_equity:.2f} >= Balance ${account.balance:.2f} + ${global_tp_usd}"
+                    logger.info(msg)
+                    print(f"\n{msg}")
+                    
+                    # Cerrar todo
+                    account.close_all_positions(price_cache, reason="Global Take Profit")
+                    account.cancel_all_orders(reason="Global Take Profit Cleanup")
+                    
+                    # Notificar Telegram
+                    if TELEGRAM_TOKEN and enable_telegram:
+                         asyncio.create_task(telegram_bot.broadcast_message(f"🚀 <b>GLOBAL TAKE PROFIT</b>\n{msg}\nTodas las operaciones cerradas."))
+                    
+                    print(f"⏳ Esperando 30 segundos para reiniciar ciclo...")
+                    await asyncio.sleep(30)
+                    
+                    # Forzar reinicio de escaneo inmediato
+                    scan_countdown = 0
+                    last_scan_result = "Reiniciando tras Global TP..."
+
             # --- REGISTRO DE EQUITY (Cada 60s) ---
             equity_timer += 1
             if equity_timer >= 60:

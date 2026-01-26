@@ -12,7 +12,8 @@ INSTANCES = [
             "BOT_TIMEFRAME": "2h",
             "BOT_TRADES_FILE": "trades_2h.json",
             "BOT_WEB_PORT": "8082",
-            "ENABLE_TELEGRAM": "False"
+            "ENABLE_TELEGRAM": "False",
+            "GLOBAL_TAKE_PROFIT_USD": "0"
         },
         "name": "Bot 2H"
     },
@@ -21,9 +22,20 @@ INSTANCES = [
             "BOT_TIMEFRAME": "4h",
             "BOT_TRADES_FILE": "trades_4h.json",
             "BOT_WEB_PORT": "8083",
-            "ENABLE_TELEGRAM": "False"
+            "ENABLE_TELEGRAM": "False",
+            "GLOBAL_TAKE_PROFIT_USD": "0"
         },
         "name": "Bot 4H"
+    },
+    {
+        "env": {
+            "BOT_TIMEFRAME": "2h",
+            "BOT_TRADES_FILE": "trades_2h_gtp.json",
+            "BOT_WEB_PORT": "8084",
+            "ENABLE_TELEGRAM": "False",
+            "GLOBAL_TAKE_PROFIT_USD": "10"
+        },
+        "name": "Bot 2H (GTP)"
     }
 ]
 

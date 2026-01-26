@@ -774,7 +774,7 @@ class PaperTradingAccount:
     
     # _cancel_linked_orders eliminado - ya no se usan órdenes vinculadas
     
-    def cancel_order(self, order_id: str):
+    def cancel_order(self, order_id: str, reason: str = "Manual Cancel"):
         """Cancelar una orden pendiente"""
         if order_id in self.pending_orders:
             order = self.pending_orders.pop(order_id)
@@ -783,9 +783,43 @@ class PaperTradingAccount:
             # Registrar cancelación
             self.stats["cancelled_orders"] = self.stats.get("cancelled_orders", 0) + 1
             
+            # Guardar historial de cancelación
+            cancel_record = order.to_dict()
+            cancel_record["cancelled_at"] = datetime.now(timezone.utc).isoformat()
+            cancel_record["cancel_reason"] = reason
+            self.cancelled_history.append(cancel_record)
+            
             self._save_trades()
-            print(f"🚫 Orden cancelada: {order.id}")
+            print(f"🚫 Orden cancelada: {order.id} | Motivo: {reason}")
     
+    def close_all_positions(self, price_cache: Dict[str, float], reason: str = "Global Close"):
+        """Cerrar todas las posiciones abiertas"""
+        if not self.open_positions:
+            return
+            
+        print(f"\n☢️  CERRANDO TODAS LAS POSICIONES ({len(self.open_positions)}): {reason}")
+        # Iterar sobre una copia de las claves porque _close_position modifica el diccionario
+        for order_id in list(self.open_positions.keys()):
+            pos = self.open_positions[order_id]
+            # Usar precio del cache si está disponible, sino usar el último guardado en la posición
+            price = price_cache.get(pos.symbol, pos.current_price)
+            
+            # Si precio es 0, intentar usar precio entrada como fallback (evitar crash)
+            if price <= 0:
+                price = pos.entry_price 
+            
+            self._close_position(order_id, price, reason)
+
+    def cancel_all_orders(self, reason: str = "Global Cancel"):
+        """Cancelar todas las órdenes pendientes"""
+        if not self.pending_orders:
+            return
+
+        print(f"\n🚫 CANCELANDO TODAS LAS ÓRDENES ({len(self.pending_orders)}): {reason}")
+        # Iterar sobre copia de claves
+        for order_id in list(self.pending_orders.keys()):
+            self.cancel_order(order_id, reason=reason)
+
     def get_status(self) -> dict:
         """Obtener estado actual de la cuenta"""
         total_unrealized_pnl = sum(pos.unrealized_pnl for pos in self.open_positions.values())
