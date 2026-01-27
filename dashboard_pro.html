@@ -270,9 +270,12 @@
                 </button>
                 <label for="dataSelector" style="margin-left: 1rem;">Origen de Datos:</label>
                 <select id="dataSelector">
-                    <option value="trades.json">Trades (Default)</option>
+                    <option value="trades_V2_2h.json">Trades V2 2h</option>
+                    <option value="trades_V2_4h.json">Trades V2 4h</option>
+                    <option value="trades_V2_2h_gtp.json">Trades V2 2h GTP</option>
                     <option value="trades_2h.json">Trades 2h</option>
                     <option value="trades_4h.json">Trades 4h</option>
+                    <option value="trades.json">Trades.json</option>
                 </select>
             </div>
         </header>
@@ -492,7 +495,8 @@
                     day: '2-digit',
                     month: 'short',
                     hour: '2-digit',
-                    minute: '2-digit'
+                    minute: '2-digit',
+                    second: '2-digit'
                 });
             });
             const balanceData = history.map(h => h.balance);
@@ -563,7 +567,7 @@
                                 color: '#718096',
                                 maxRotation: 45,
                                 autoSkip: true,
-                                maxTicksLimit: 10
+                                maxTicksLimit: 25
                             }
                         }
                     },
@@ -628,7 +632,7 @@
                                 color: '#718096',
                                 maxRotation: 45,
                                 autoSkip: true,
-                                maxTicksLimit: 10
+                                maxTicksLimit: 25
                             }
                         }
                     },

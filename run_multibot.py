@@ -10,7 +10,7 @@ INSTANCES = [
     {
         "env": {
             "BOT_TIMEFRAME": "2h",
-            "BOT_TRADES_FILE": "trades_2h.json",
+            "BOT_TRADES_FILE": "trades_V2_2h.json",
             "BOT_WEB_PORT": "8082",
             "ENABLE_TELEGRAM": "False",
             "GLOBAL_TAKE_PROFIT_USD": "0"
@@ -20,7 +20,7 @@ INSTANCES = [
     {
         "env": {
             "BOT_TIMEFRAME": "4h",
-            "BOT_TRADES_FILE": "trades_4h.json",
+            "BOT_TRADES_FILE": "trades_V2_4h.json",
             "BOT_WEB_PORT": "8083",
             "ENABLE_TELEGRAM": "False",
             "GLOBAL_TAKE_PROFIT_USD": "0"
@@ -30,7 +30,7 @@ INSTANCES = [
     {
         "env": {
             "BOT_TIMEFRAME": "2h",
-            "BOT_TRADES_FILE": "trades_2h_gtp.json",
+            "BOT_TRADES_FILE": "trades_V2_2h_gtp.json",
             "BOT_WEB_PORT": "8084",
             "ENABLE_TELEGRAM": "False",
             "GLOBAL_TAKE_PROFIT_USD": "10"

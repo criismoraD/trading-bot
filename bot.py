@@ -813,27 +813,47 @@ async def main():
                             account.check_pending_orders(symbol, price)
             
             # --- 1.1 CHECK GLOBAL EQUITY TAKE PROFIT ---
+            # --- 1.1 CHECK GLOBAL EQUITY TAKE PROFIT ---
             try:
                 # 1. Intentar leer desde variable de entorno (prioridad alta)
                 env_gtp = os.getenv("GLOBAL_TAKE_PROFIT_USD")
                 if env_gtp is not None:
                     global_tp_usd = float(env_gtp)
                 else:
-                    # 2. Leer desde configuración compartida (si no hay env var)
-                    with open('shared_config.json', 'r') as f:
-                        sh_cfg = json.load(f)
-                        global_tp_usd = sh_cfg.get('trading', {}).get('global_take_profit_usd', 0.0)
-            except:
+                    # 2. Cachear lectura de archivo para evitar bloqueos por I/O frecuente
+                    current_time = time.time()
+                    # Inicializar variables estáticas si no existen
+                    if not hasattr(main, "last_config_check"):
+                        main.last_config_check = 0
+                        main.cached_global_tp = 0.0
+                    
+                    # Chequear archivo cada 2 segundos enviando I/O excesivo
+                    if current_time - main.last_config_check > 2.0:
+                        try:
+                            with open('shared_config.json', 'r') as f:
+                                sh_cfg = json.load(f)
+                                main.cached_global_tp = sh_cfg.get('trading', {}).get('global_take_profit_usd', 0.0)
+                            main.last_config_check = current_time
+                        except Exception as e:
+                            logger.error(f"Error leyendo shared_config.json: {e}")
+                            print(f"⚠️ Error leyendo config: {e}")
+                    
+                    global_tp_usd = main.cached_global_tp
+
+            except Exception as e:
+                logger.error(f"Error general en Global TP check: {e}")
                 global_tp_usd = 0.0
 
             if global_tp_usd > 0:
-                # Calcular Equity actual
-                current_equity = account.get_margin_balance() # Balance + Unrealized PnL
-                target_equity = account.balance + global_tp_usd
+                # Calcular Equity actual usando precios en tiempo real
+                current_equity = account.get_margin_balance(price_cache) # Balance + Unrealized PnL
+                # Meta basada en Initial Balance para que sea relativa al inicio del ciclo
+                target_equity = account.initial_balance + global_tp_usd
                 
-                if current_equity >= target_equity:
+                # Solo actuar si hay posiciones u órdenes (evitar bucle infinito si ya se alcanzó la meta)
+                if current_equity >= target_equity and (account.open_positions or account.pending_orders):
                     print_monitor_realtime(0)
-                    msg = f"💰 META GLOBAL ALCANZADA: Equidad ${current_equity:.2f} >= Balance ${account.balance:.2f} + ${global_tp_usd}"
+                    msg = f"💰 META GLOBAL ALCANZADA: Equidad ${current_equity:.2f} >= Inicial ${account.initial_balance:.2f} + ${global_tp_usd}"
                     logger.info(msg)
                     print(f"\n{msg}")
                     
@@ -841,9 +861,13 @@ async def main():
                     account.close_all_positions(price_cache, reason="Global Take Profit")
                     account.cancel_all_orders(reason="Global Take Profit Cleanup")
                     
+                    # Reiniciar ciclo: el nuevo balance inicial es el balance actual tras cerrar todo
+                    account.initial_balance = account.balance
+                    logger.info(f"🔄 Ciclo reiniciado. Nuevo balance inicial: ${account.initial_balance:.2f}")
+                    
                     # Notificar Telegram
                     if TELEGRAM_TOKEN and enable_telegram:
-                         asyncio.create_task(telegram_bot.broadcast_message(f"🚀 <b>GLOBAL TAKE PROFIT</b>\n{msg}\nTodas las operaciones cerradas."))
+                         asyncio.create_task(telegram_bot.broadcast_message(f"🚀 <b>GLOBAL TAKE PROFIT</b>\n{msg}\nTodas las operaciones cerradas. Nuevo ciclo iniciado."))
                     
                     print(f"⏳ Esperando 30 segundos para reiniciar ciclo...")
                     await asyncio.sleep(30)
