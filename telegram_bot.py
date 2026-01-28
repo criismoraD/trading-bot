@@ -405,10 +405,15 @@ Tu chat ha sido registrado para recibir notificaciones.
             await self.send_message(chat_id, self.format_report())
 
         elif command == "/download":
-            # Usar el archivo configurado
-            success = await self.send_document(chat_id, TRADES_FILE, caption=f"📂 Historial de Trades ({TRADES_FILE})")
-            if not success:
-                logger.error(f"Falla al descargar {TRADES_FILE} para chat {chat_id}")
+            # Enviar trades.json (Paper Trading)
+            await self.send_document(chat_id, TRADES_FILE, caption=f"📂 Historial Paper Trading ({TRADES_FILE})")
+            
+            # Enviar trades_real.json (Real Trading)
+            real_trades_file = "trades_real.json"
+            if os.path.exists(real_trades_file):
+                await self.send_document(chat_id, real_trades_file, caption=f"📂 Historial Real Trading ({real_trades_file})")
+            else:
+                 await self.send_message(chat_id, f"⚠️ No se encontró el archivo de trading real ({real_trades_file})")
         
         elif command == "/stop":
             await self.broadcast_message("🛑 <b>BOT DETENIDO</b>\nEl sistema se está apagando por comando remoto.")
