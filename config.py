@@ -24,10 +24,21 @@ TARGET_PROFIT = _trading.get("target_profit", 1.0)
 COMMISSION_RATE = _trading.get("commission_rate", 0.0006) # Comisión promedio (0.06%)
 MIN_AVAILABLE_MARGIN = _trading.get("min_available_margin", 3.0)
 
+# Trading Mode: "paper" or "real"
+TRADING_MODE = _trading.get("mode", "paper")
+
+# Bybit Configuration (from shared_config.json and .env)
+_bybit = _trading.get("bybit", {})
+BYBIT_TESTNET = _bybit.get("testnet", True)
+BYBIT_INITIAL_BALANCE = _bybit.get("initial_balance", 100)
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
+BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
+
 # Scanner (desde shared_config o defaults)
 _scanner = _shared_config.get("scanner", {})
 TOP_PAIRS_LIMIT = _scanner.get("top_pairs_limit", 200)
 RSI_THRESHOLD = _scanner.get("rsi_threshold", 0)
+RSI_TIMEFRAME = _scanner.get("rsi_timeframe", "5m")
 SCAN_INTERVAL = _scanner.get("scan_interval", 30)
 FIRST_SCAN_DELAY = _scanner.get("first_scan_delay", 5)  # Primer escaneo en 5 segundos
 CANDLE_LIMIT = _scanner.get("candle_limit", 1000)

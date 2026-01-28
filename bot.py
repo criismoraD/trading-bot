@@ -13,7 +13,8 @@ from config import (
     INITIAL_BALANCE, LEVERAGE, MARGIN_PER_TRADE, MAX_MARGIN_PER_TRADE, TARGET_PROFIT, COMMISSION_RATE,
     DEFAULT_SYMBOL, WS_BASE_URL, REST_BASE_URL,
     TIMEFRAME, CANDLE_LIMIT, TRADES_FILE,
-    TOP_PAIRS_LIMIT, RSI_THRESHOLD, FIRST_SCAN_DELAY, SCAN_INTERVAL, MIN_AVAILABLE_MARGIN
+    TOP_PAIRS_LIMIT, RSI_THRESHOLD, FIRST_SCAN_DELAY, SCAN_INTERVAL, MIN_AVAILABLE_MARGIN,
+    TRADING_MODE, BYBIT_API_KEY, BYBIT_API_SECRET, BYBIT_TESTNET, BYBIT_INITIAL_BALANCE
 )
 from paper_trading import PaperTradingAccount, OrderSide
 from fibonacci import (
@@ -446,18 +447,43 @@ async def main():
     logger.info("🚀 INICIANDO BOT DE TRADING FIBONACCI")
     logger.info("=" * 60)
     
-    # Crear cuenta paper trading
-    account = PaperTradingAccount(
-        initial_balance=INITIAL_BALANCE,
-        leverage=LEVERAGE,
-        trades_file=TRADES_FILE
-    )
+    # Crear cuenta según modo de trading
+    if TRADING_MODE == "real":
+        # Modo REAL: Usar Bybit API
+        if not BYBIT_API_KEY or not BYBIT_API_SECRET:
+            logger.error("❌ BYBIT_API_KEY y BYBIT_API_SECRET no configurados en .env")
+            print("❌ ERROR: Configura BYBIT_API_KEY y BYBIT_API_SECRET en tu archivo .env")
+            return
+        
+        from real_trading import RealTradingAccount
+        account = RealTradingAccount(
+            api_key=BYBIT_API_KEY,
+            api_secret=BYBIT_API_SECRET,
+            testnet=False,  # Use demo mode, not testnet
+            demo=True,      # Bybit Demo Trading (api-demo.bybit.com)
+            leverage=LEVERAGE,
+            trades_file="trades_real.json"
+        )
+        mode_text = "DEMO" if True else ("TESTNET" if BYBIT_TESTNET else "MAINNET")
+        logger.info(f"🔴 MODO REAL ACTIVADO - Bybit {mode_text}")
+        print(f"\n⚠️  MODO REAL ACTIVADO - Bybit {mode_text}")
+        print(f"💰 Balance: ${account.balance:.2f}")
+    else:
+        # Modo PAPER (default)
+        account = PaperTradingAccount(
+            initial_balance=INITIAL_BALANCE,
+            leverage=LEVERAGE,
+            trades_file=TRADES_FILE
+        )
+        logger.info("📝 MODO PAPER TRADING ACTIVADO")
     
     # Inicializar calculadora de métricas
-    performance_calculator.initial_balance = INITIAL_BALANCE
+    initial_balance = account.balance if TRADING_MODE == "real" else INITIAL_BALANCE
+    performance_calculator.initial_balance = initial_balance
     
-    # Mostrar menú de inicio (antes del loop async)
-    show_startup_menu(account)
+    # Mostrar menú de inicio (antes del loop async) - solo para paper trading
+    if TRADING_MODE != "real":
+        show_startup_menu(account)
     
     # Iniciar servidor HTTP en hilo separado (puerto 8000 - archivos generales)
     http_thread = threading.Thread(target=start_http_server, daemon=True)
@@ -490,7 +516,10 @@ async def main():
     if account.open_positions:
         active_pairs.update(pos.symbol for pos in account.open_positions.values())
     if account.pending_orders:
-        active_pairs.update(order.symbol for order in account.pending_orders.values())
+        active_pairs.update(
+            (order.get('symbol') if isinstance(order, dict) else order.symbol)
+            for order in account.pending_orders.values()
+        )
         
     # Guardar pares activos para añadirlos después del fetch (no reemplazar el escaneo completo)
     scanner.active_pairs_to_include = set(active_pairs) if active_pairs else set()
@@ -528,7 +557,10 @@ async def main():
                 # Determinar qué símbolos necesitamos monitorear (Posiciones + Órdenes Pendientes)
                 needed_symbols = set(pos.symbol.lower() for pos in account.open_positions.values())
                 if account.pending_orders:
-                    needed_symbols.update(order.symbol.lower() for order in account.pending_orders.values())
+                    needed_symbols.update(
+                        (order.get('symbol').lower() if isinstance(order, dict) else order.symbol.lower())
+                        for order in account.pending_orders.values()
+                    )
                 
                 # Si no hay posiciones, dormir y reintentar luego
                 if not needed_symbols:
@@ -557,7 +589,10 @@ async def main():
                             # Verificar si necesitamos cambiar streams
                             new_needed = set(pos.symbol.lower() for pos in account.open_positions.values())
                             if account.pending_orders:
-                                new_needed.update(order.symbol.lower() for order in account.pending_orders.values())
+                                new_needed.update(
+                                    (order.get('symbol').lower() if isinstance(order, dict) else order.symbol.lower())
+                                    for order in account.pending_orders.values()
+                                )
                             # También incluir símbolos con monitoreo post-cierre activo
                             if new_needed != current_symbols_set:
                                 break # Salir para reconectar
@@ -674,7 +709,10 @@ async def main():
         now = datetime.now().strftime('%H:%M:%S')
         
         # Indicador de modo
-        mode_indicator = f"{C_GREEN}📝 PAPER TRADING{C_RESET}"
+        if TRADING_MODE == "real":
+            mode_indicator = f"{C_RED}🔴 REAL TRADING{C_RESET}"
+        else:
+            mode_indicator = f"{C_GREEN}📝 PAPER TRADING{C_RESET}"
         
         # ===== HEADER =====
         print(f"{C_BLUE}{'═'*74}{C_RESET}")
@@ -704,7 +742,7 @@ async def main():
         # Posiciones paper trading
         if account.open_positions:
             for order_id, pos in account.open_positions.items():
-                current = price_cache.get(pos.symbol, pos.current_price)
+                current = price_cache.get(pos.symbol, getattr(pos, 'current_price', pos.entry_price))
                 # Calcular PnL en tiempo real con el precio actual
                 if current and current > 0:
                     calculated_pnl = pos.calculate_pnl(current)
@@ -730,13 +768,31 @@ async def main():
             print(f"{C_CYAN}│ 📋 ÓRDENES LÍMITE{C_RESET}{' '*53}{C_CYAN}│{C_RESET}")
             print(f"{C_CYAN}├{'─'*72}┤{C_RESET}")
             for order_id, order in account.pending_orders.items():
-                side_color = C_RED if order.side.value == 'SELL' else C_GREEN
-                case_str = f"C{order.strategy_case}" if order.strategy_case else "??"
+                # Extract attributes safely for both Dict (Real) and Object (Paper)
+                if isinstance(order, dict):
+                    o_side = order.get('side', 'Sell')
+                    o_symbol = order.get('symbol', 'Unknown')
+                    o_case = order.get('strategy_case', 0)
+                    o_qty = float(order.get('quantity', 0))
+                    o_margin = float(order.get('margin', 0))
+                    o_price = float(order.get('price', 0))
+                    o_tp = float(order.get('take_profit', 0))
+                else:
+                    o_side = order.side.value if hasattr(order.side, 'value') else str(order.side)
+                    o_symbol = order.symbol
+                    o_case = order.strategy_case
+                    o_qty = order.quantity
+                    o_margin = order.margin
+                    o_price = order.price
+                    o_tp = order.take_profit
+
+                side_color = C_RED if str(o_side).upper() == 'SELL' else C_GREEN
+                case_str = f"C{o_case}" if o_case else "??"
                 
                 # Línea 1
-                print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{order.symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}LIMIT {order.side.value}{C_RESET} │ Qty: {C_WHITE}{order.quantity:.2f}{C_RESET} │ Margin: {C_WHITE}${order.margin:.2f}{C_RESET}{' '*4}{C_CYAN}│{C_RESET}")
+                print(f"{C_CYAN}│{C_RESET}  {C_WHITE}{o_symbol:<10}{C_RESET} {C_YELLOW}({case_str}){C_RESET} │ {side_color}LIMIT {o_side}{C_RESET} │ Qty: {C_WHITE}{o_qty:.2f}{C_RESET} │ Margin: {C_WHITE}${o_margin:.2f}{C_RESET}{' '*4}{C_CYAN}│{C_RESET}")
                 # Línea 2
-                print(f"{C_CYAN}│{C_RESET}      Price: {C_WHITE}${order.price:.4f}{C_RESET} │ TP: {C_WHITE}${order.take_profit:.4f}{C_RESET}{' '*30}{C_CYAN}│{C_RESET}")
+                print(f"{C_CYAN}│{C_RESET}      Price: {C_WHITE}${o_price:.4f}{C_RESET} │ TP: {C_WHITE}${o_tp:.4f}{C_RESET}{' '*30}{C_CYAN}│{C_RESET}")
                 
                 if order != list(account.pending_orders.values())[-1]:
                      print(f"{C_CYAN}│{' '*72}│{C_RESET}")
@@ -796,7 +852,10 @@ async def main():
             if account.open_positions:
                 active_symbols.update(pos.symbol for pos in account.open_positions.values())
             if account.pending_orders:
-                active_symbols.update(order.symbol for order in account.pending_orders.values())
+                active_symbols.update(
+                    (order.get('symbol') if isinstance(order, dict) else order.symbol)
+                    for order in account.pending_orders.values()
+                )
             # También incluir símbolos con monitoreo post-cierre
             
             if active_symbols:
@@ -888,14 +947,20 @@ async def main():
 
             # 2. Verificar si es hora de escanear
             if scan_countdown <= 0:
-                last_scan_result = "🔄 Escaneando..."
-                print_monitor_realtime(0)
-                
-                # Ejecutar escaneo
-                await run_priority_scan(scanner, account, MARGIN_PER_TRADE)
-                
-                last_scan_result = f"✅ Completado {datetime.now().strftime('%H:%M:%S')}"
-                scan_countdown = SCAN_INTERVAL
+                # Verificar margen ANTES de escanear
+                available_margin = account.get_available_margin()
+                if available_margin < MIN_AVAILABLE_MARGIN:
+                    last_scan_result = f"⏸️ Escaneo pausado (margen ${available_margin:.2f} < ${MIN_AVAILABLE_MARGIN})"
+                    scan_countdown = 10  # Reintentar en 10 segundos
+                else:
+                    last_scan_result = "🔄 Escaneando..."
+                    print_monitor_realtime(0)
+                    
+                    # Ejecutar escaneo
+                    await run_priority_scan(scanner, account, MARGIN_PER_TRADE)
+                    
+                    last_scan_result = f"✅ Completado {datetime.now().strftime('%H:%M:%S')}"
+                    scan_countdown = SCAN_INTERVAL
             
             # Mostrar monitor actualizado
             print_monitor_realtime(scan_countdown)

@@ -676,11 +676,11 @@ function runSimulation() {
         const commRate = sharedConfig?.trading?.commission_rate || 0.0006;
 
         // Qty = Target / ( (Entry - TP) - (Entry + TP) * Rate )
-        const priceDiffVal = t.entry_price - tpPrice;
-        const commFactorVal = (t.entry_price + tpPrice) * commRate;
-        const effectiveDiffVal = priceDiffVal - commFactorVal;
+        // MODIFICADO: Usar lógica de Ganancia Bruta (igual que el Bot)
+        // Antes restaba comisiones (Ganancia Neta), lo que inflaba el margen necesario.
+        const priceDiffVal = Math.abs(t.entry_price - tpPrice);
 
-        const dynamicQty = (effectiveDiffVal > 0) ? (targetProfitVal / effectiveDiffVal) : 0;
+        const dynamicQty = (priceDiffVal > 0) ? (targetProfitVal / priceDiffVal) : 0;
 
         // Calcular Margen Requerido (Margin = (Qty * Price) / Leverage)
         const currentLeverage = sharedConfig?.trading?.leverage || 10;
@@ -708,9 +708,15 @@ function runSimulation() {
         if (candlesForSim) {
             const simResult = simulateTradePath(t, tpPrice, slPrice, candlesForSim);
             if (simResult) {
+                const isLong = (t.side === 'LONG' || t.side === 'Buy');
+
                 if (simResult.status.includes('SL')) {
                     status = "SL ❌";
-                    const grossLoss = (t.entry_price - slPrice) * dynamicQty;
+                    // Calc Gross Loss correctly for Side
+                    const grossLoss = isLong ?
+                        (slPrice - t.entry_price) * dynamicQty :
+                        (t.entry_price - slPrice) * dynamicQty;
+
                     const fees = (t.entry_price + slPrice) * dynamicQty * commRate;
                     rPnl = grossLoss - (useComms ? fees : 0);
                     isClosed = true; css = "bg-loss"; fPnl = 0; hitSL = true;
@@ -729,7 +735,11 @@ function runSimulation() {
                 } else {
                     status = "RUN ⏳";
                     const currentPrice = simResult.lastPrice;
-                    const grossPnL = (t.entry_price - currentPrice) * dynamicQty;
+
+                    const grossPnL = isLong ?
+                        (currentPrice - t.entry_price) * dynamicQty :
+                        (t.entry_price - currentPrice) * dynamicQty;
+
                     const fees = (t.entry_price + currentPrice) * dynamicQty * commRate;
                     fPnl = grossPnL - (useComms ? fees : 0);
                     css = "bg-run"; isClosed = false; rPnl = 0;
@@ -1919,16 +1929,13 @@ function drawTradeLines(item) {
 function simulateTradePath(t, tpPrice, slPrice, candles) {
     if (!candles || candles.length === 0) return null;
 
-    // 1. Determine Candle Interval (Dynamic)
-    let intervalMinutes = 1; // Default
-    if (currentTimeframe === '1') intervalMinutes = 1;
-    else if (currentTimeframe === '5') intervalMinutes = 5;
-    else if (currentTimeframe === '15') intervalMinutes = 15;
-    else if (currentTimeframe === '60' || currentTimeframe.toLowerCase() === '1h') intervalMinutes = 60;
-    else if (currentTimeframe === '240' || currentTimeframe.toLowerCase() === '4h') intervalMinutes = 240;
-    else if (currentTimeframe === 'D' || currentTimeframe.toLowerCase() === '1d') intervalMinutes = 1440;
+    // 1. Determine Candle Interval DYNAMICALLY from actual data
+    let intervalSeconds = 60; // Default 1 min
+    if (candles.length >= 2) {
+        // Calculate from actual candle timestamps (much more reliable)
+        intervalSeconds = candles[1].time - candles[0].time;
+    }
 
-    const intervalSeconds = intervalMinutes * 60;
 
     // 2. Find Entry Candle
     const entryTimeStr = t.opened_at || t.entry_time || (t.executions && t.executions[0] ? t.executions[0].time : null);
@@ -1950,21 +1957,49 @@ function simulateTradePath(t, tpPrice, slPrice, candles) {
     // Fallback 2: If entry is newer than all candles
     if (startIndex === -1) {
         const lastCandle = candles[candles.length - 1];
-        return { status: "RUN ⏳", lastPrice: lastCandle.close, reason: "FUTURE_ENTRY" };
+        const lastPrice = lastCandle.close;
+        const lastTime = lastCandle.time;
+        const isLongEarly = (t.side === 'LONG' || t.side === 'Buy');
+
+        // Still apply FAILSAFE even for future entries (price may have moved past TP/SL)
+        if (isLongEarly) {
+            if ((slPrice !== Infinity && slPrice > 0) && (lastPrice <= slPrice)) {
+                return { status: "SL ❌", reason: "SL_FAILSAFE_FUTURE", lastPrice: slPrice, resultTime: lastTime };
+            }
+            if ((tpPrice > 0) && (lastPrice >= tpPrice)) {
+                return { status: "TP ✅", reason: "TP_FAILSAFE_FUTURE", lastPrice: tpPrice, resultTime: lastTime };
+            }
+        } else {
+            // SHORT
+            if ((slPrice !== Infinity && slPrice > 0) && (lastPrice >= slPrice)) {
+                return { status: "SL ❌", reason: "SL_FAILSAFE_FUTURE", lastPrice: slPrice, resultTime: lastTime };
+            }
+            if ((tpPrice > 0) && (lastPrice <= tpPrice)) {
+                return { status: "TP ✅", reason: "TP_FAILSAFE_FUTURE", lastPrice: tpPrice, resultTime: lastTime };
+            }
+        }
+        return { status: "RUN ⏳", lastPrice: lastPrice, reason: "FUTURE_ENTRY" };
     }
 
-    // 3. Simulation Loop (Strict SHORT Logic)
-    // SHORT: SL if High >= SL. TP if Low <= TP.
+    // 3. Simulation Loop
+    const isLong = (t.side === 'LONG' || t.side === 'Buy'); // Handle "Buy" just in case
+
     for (let i = startIndex; i < candles.length; i++) {
         const c = candles[i];
+        let slHit = false;
+        let tpHit = false;
 
-        // Ensure SL/TP are valid numbers
-        const slHit = (slPrice !== Infinity && slPrice > 0) && (c.high >= slPrice);
-        const tpHit = (tpPrice > 0) && (c.low <= tpPrice);
+        if (isLong) {
+            // LONG: SL if Low <= SL. TP if High >= TP.
+            slHit = (slPrice !== Infinity && slPrice > 0) && (c.low <= slPrice);
+            tpHit = (tpPrice > 0) && (c.high >= tpPrice);
+        } else {
+            // SHORT: SL if High >= SL. TP if Low <= TP.
+            slHit = (slPrice !== Infinity && slPrice > 0) && (c.high >= slPrice);
+            tpHit = (tpPrice > 0) && (c.low <= tpPrice);
+        }
 
         if (slHit && tpHit) {
-            // Both hit in same candle -> Assume WORST CASE (SL)
-            // Or prioritize based on open/close if granular, but Worst Case is safest for sim.
             return { status: "SL ❌", reason: "SL_CANDLE_BOTH", lastPrice: slPrice, resultTime: c.time };
         }
         if (slHit) {
@@ -1977,6 +2012,27 @@ function simulateTradePath(t, tpPrice, slPrice, candles) {
 
     // If loop finishes without hit:
     const lastPrice = candles[candles.length - 1].close;
+    const lastTime = candles[candles.length - 1].time;
+
+    // FAILSAFE
+    if (isLong) {
+        // LONG Failsafe
+        if ((slPrice !== Infinity && slPrice > 0) && (lastPrice <= slPrice)) {
+            return { status: "SL ❌", reason: "SL_FAILSAFE", lastPrice: slPrice, resultTime: lastTime };
+        }
+        if ((tpPrice > 0) && (lastPrice >= tpPrice)) {
+            return { status: "TP ✅", reason: "TP_FAILSAFE", lastPrice: tpPrice, resultTime: lastTime };
+        }
+    } else {
+        // SHORT Failsafe
+        if ((slPrice !== Infinity && slPrice > 0) && (lastPrice >= slPrice)) {
+            return { status: "SL ❌", reason: "SL_FAILSAFE", lastPrice: slPrice, resultTime: lastTime };
+        }
+        if ((tpPrice > 0) && (lastPrice <= tpPrice)) {
+            return { status: "TP ✅", reason: "TP_FAILSAFE", lastPrice: tpPrice, resultTime: lastTime };
+        }
+    }
+
     return { status: "RUN ⏳", reason: "END_OF_DATA", lastPrice: lastPrice };
 }
 
@@ -2385,9 +2441,14 @@ async function optimizeCase(caseId, metric = 'total') {
             slMax: parseFloat(slSlider.max) || 130
         };
 
+        // Get Global Config values for Dynamic Qty
+        const targetProfitVal = sharedConfig?.trading?.target_profit || 1.0;
+        const commRate = sharedConfig?.trading?.commission_rate || 0.0006;
+        const useComms = document.getElementById('includeCommissions')?.checked ?? true;
+
         // 3. Pre-calculate Hit Maps for each trade
         const tradeHitMaps = [];
-        const step = 0.5; // Precision 0.5% for 2D optimization to maintain speed
+        const step = 0.5; // Precision 0.5% for 2D optimization
 
         console.time("PreCalc");
         for (const t of trades) {
@@ -2444,6 +2505,7 @@ async function optimizeCase(caseId, metric = 'total') {
                 for (let k = activeSlTargets.length - 1; k >= 0; k--) {
                     if (c.high >= activeSlTargets[k].price) {
                         hits['sl_' + activeSlTargets[k].val] = c.time;
+                        // hits['sl_' + activeSlTargets[k].val + '_max'] = c.high; // Optional: store exact hit price
                         activeSlTargets.splice(k, 1);
                     }
                 }
@@ -2468,7 +2530,8 @@ async function optimizeCase(caseId, metric = 'total') {
                 fibEntryLevel = (t.entry_price - fibLow) / range;
             }
 
-            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price, quantity: t.quantity, fibEntryLevel });
+            // Store minimal needed data. Quantity is calculated effectively inside the loop.
+            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price, fibEntryLevel });
         }
         console.timeEnd("PreCalc");
 
@@ -2478,19 +2541,17 @@ async function optimizeCase(caseId, metric = 'total') {
         let bestCombo = { tp: limits.tpMin, sl: limits.slMin };
 
 
-
         for (let tp = limits.tpMin; tp <= limits.tpMax; tp = parseFloat((tp + step).toFixed(1))) {
             for (let sl = limits.slMin; sl <= limits.slMax; sl = parseFloat((sl + step).toFixed(1))) {
 
                 let currentPnL = 0;
 
                 for (const tradeData of tradeHitMaps) {
-                    const { t, hits, range, fibLow, entryPrice, quantity, fibEntryLevel } = tradeData;
+                    const { t, hits, range, fibLow, entryPrice, fibEntryLevel } = tradeData;
 
                     // IGNORE RULE: If Entry is worse than SL, ignore trade (PnL = 0)
                     if (fibEntryLevel >= sl / 100) continue;
 
-                    const slKey = 'sl_' + tp; // ERROR IN LOGIC, fixed below
                     const slKeyReal = 'sl_' + sl;
                     const tpKeyReal = 'tp_' + tp;
 
@@ -2517,14 +2578,22 @@ async function optimizeCase(caseId, metric = 'total') {
                     const priceTP = fibLow + range * (tp / 100);
                     const priceSL = fibLow + range * (sl / 100);
 
+                    // Dynamic Quantity Calculation (Crucial Fix)
+                    const priceDiffVal = Math.abs(entryPrice - priceTP);
+                    const dynamicQty = (priceDiffVal > 0) ? (targetProfitVal / priceDiffVal) : 0;
+
                     // Calc PnL
                     if (result === 'SL') {
-                        rPnl = (entryPrice - priceSL) * quantity;
-                        // Closed: 2x comm
+                        // Loss
+                        const grossLoss = (entryPrice - priceSL) * dynamicQty;
+                        const fees = (entryPrice + priceSL) * dynamicQty * commRate;
+                        rPnl = grossLoss - (useComms ? fees : 0);
 
                     } else if (result === 'TP') {
-                        rPnl = (entryPrice - priceTP) * quantity;
-                        // Closed: 2x comm
+                        // Win - Gross is usually TargetProfitVal
+                        // Gross PnL = (Entry - TP) * Qty = (Entry - TP) * (Target / (Entry - TP)) = Target
+                        const fees = (entryPrice + priceTP) * dynamicQty * commRate;
+                        rPnl = targetProfitVal - (useComms ? fees : 0);
 
                     } else {
                         // RUN - Calc Floating if metric is 'total'
@@ -2534,9 +2603,9 @@ async function optimizeCase(caseId, metric = 'total') {
                                 if (candles && candles.length > 0) tradeData.lastPrice = candles[candles.length - 1].close;
                                 else tradeData.lastPrice = entryPrice;
                             }
-                            fPnl = (entryPrice - tradeData.lastPrice) * quantity;
-                            // Open: 1x comm
-
+                            const grossPnL = (entryPrice - tradeData.lastPrice) * dynamicQty;
+                            const fees = (entryPrice + tradeData.lastPrice) * dynamicQty * commRate;
+                            fPnl = grossPnL - (useComms ? fees : 0);
                         }
                     }
 
@@ -2550,6 +2619,7 @@ async function optimizeCase(caseId, metric = 'total') {
                 if (currentPnL > bestPnL) {
                     bestPnL = currentPnL;
                     bestCombo = { tp, sl };
+                    // Optimization: Early exit if we found a "perfect" run? No, need global max.
                 }
             }
         }
@@ -2627,6 +2697,11 @@ async function optimizeTP(caseId, metric = 'total', btnElement) {
         };
         const currentSL = parseInt(slSlider.value) || 100;
 
+        // Get Global Config values for Dynamic Qty
+        const targetProfitVal = sharedConfig?.trading?.target_profit || 1.0;
+        const commRate = sharedConfig?.trading?.commission_rate || 0.0006;
+        const useComms = document.getElementById('includeCommissions')?.checked ?? true;
+
         // 3. Pre-calculate Hit Maps for each trade
         const tradeHitMaps = [];
 
@@ -2695,7 +2770,7 @@ async function optimizeTP(caseId, metric = 'total', btnElement) {
                 if (activeTpTargets.length === 0 && activeSlTargets.length === 0) break;
             }
 
-            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price, quantity: t.quantity });
+            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price });
         }
         console.timeEnd("PreCalcTP");
 
@@ -2708,8 +2783,11 @@ async function optimizeTP(caseId, metric = 'total', btnElement) {
         for (let tp = limits.tpMin; tp <= limits.tpMax; tp = parseFloat((tp + 0.5).toFixed(1))) {
             let currentPnL = 0;
 
+            // Pre-calculate Loop specific prices for dynamic qty
+            // Actually must do per trade because ranges differ
+
             for (const tradeData of tradeHitMaps) {
-                const { t, hits, range, fibLow, entryPrice, quantity } = tradeData;
+                const { t, hits, range, fibLow, entryPrice } = tradeData;
 
                 // Check if SL was hit
                 let timeSL = hits['sl'];
@@ -2736,10 +2814,20 @@ async function optimizeTP(caseId, metric = 'total', btnElement) {
                 const priceTP = fibLow + range * (tp / 100);
                 const priceSL = fibLow + range * (currentSL / 100);
 
+                // Dynamic Quantity Calculation
+                const priceDiffVal = Math.abs(entryPrice - priceTP);
+                const dynamicQty = (priceDiffVal > 0) ? (targetProfitVal / priceDiffVal) : 0;
+
+
                 if (result === 'SL') {
-                    rPnl = (entryPrice - priceSL) * quantity;
+                    const grossLoss = (entryPrice - priceSL) * dynamicQty;
+                    const fees = (entryPrice + priceSL) * dynamicQty * commRate;
+                    rPnl = grossLoss - (useComms ? fees : 0);
+
                 } else if (result === 'TP') {
-                    rPnl = (entryPrice - priceTP) * quantity;
+                    const fees = (entryPrice + priceTP) * dynamicQty * commRate;
+                    rPnl = targetProfitVal - (useComms ? fees : 0);
+
                 } else {
                     // RUN
                     if (metric === 'total') {
@@ -2748,7 +2836,9 @@ async function optimizeTP(caseId, metric = 'total', btnElement) {
                             if (candles && candles.length > 0) tradeData.lastPrice = candles[candles.length - 1].close;
                             else tradeData.lastPrice = entryPrice;
                         }
-                        fPnl = (entryPrice - tradeData.lastPrice) * quantity;
+                        const grossPnL = (entryPrice - tradeData.lastPrice) * dynamicQty;
+                        const fees = (entryPrice + tradeData.lastPrice) * dynamicQty * commRate;
+                        fPnl = grossPnL - (useComms ? fees : 0);
                     }
                 }
 
@@ -2827,6 +2917,11 @@ async function optimizeSL(caseId, metric = 'total', btnElement) {
         };
         const currentTP = parseFloat(tpSlider.value) || 50;
 
+        // Get Global Config values for Dynamic Qty
+        const targetProfitVal = sharedConfig?.trading?.target_profit || 1.0;
+        const commRate = sharedConfig?.trading?.commission_rate || 0.0006;
+        const useComms = document.getElementById('includeCommissions')?.checked ?? true;
+
         // 3. Pre-calculate Hit Maps for each trade
         const tradeHitMaps = [];
         const step = 0.5;
@@ -2904,7 +2999,7 @@ async function optimizeSL(caseId, metric = 'total', btnElement) {
                 fibEntryLevel = (t.entry_price - fibLow) / range;
             }
 
-            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price, quantity: t.quantity, fibEntryLevel });
+            tradeHitMaps.push({ t, hits, range, fibLow, entryPrice: t.entry_price, fibEntryLevel });
         }
         console.timeEnd("PreCalcSL");
 
@@ -2918,7 +3013,7 @@ async function optimizeSL(caseId, metric = 'total', btnElement) {
             let currentPnL = 0;
 
             for (const tradeData of tradeHitMaps) {
-                const { t, hits, range, fibLow, entryPrice, quantity, fibEntryLevel } = tradeData;
+                const { t, hits, range, fibLow, entryPrice, fibEntryLevel } = tradeData;
 
                 // IGNORE RULE: If Entry is worse than current SL, PnL = 0
                 if (fibEntryLevel >= sl / 100) continue;
@@ -2947,10 +3042,22 @@ async function optimizeSL(caseId, metric = 'total', btnElement) {
                 const priceTP = fibLow + range * (currentTP / 100);
                 const priceSL = fibLow + range * (sl / 100);
 
+                // Dynamic Quantity Calculation
+                // NOTE: Even though SL changes, Qty is determined by TP (which is fixed here)
+                // BUT we still need to calculate it to match runSimulation logic
+                const priceDiffVal = Math.abs(entryPrice - priceTP);
+                const dynamicQty = (priceDiffVal > 0) ? (targetProfitVal / priceDiffVal) : 0;
+
                 if (result === 'SL') {
-                    rPnl = (entryPrice - priceSL) * quantity;
+                    const grossLoss = (entryPrice - priceSL) * dynamicQty;
+                    const fees = (entryPrice + priceSL) * dynamicQty * commRate;
+                    rPnl = grossLoss - (useComms ? fees : 0);
+
                 } else if (result === 'TP') {
-                    rPnl = (entryPrice - priceTP) * quantity;
+                    // Win
+                    const fees = (entryPrice + priceTP) * dynamicQty * commRate;
+                    rPnl = targetProfitVal - (useComms ? fees : 0);
+
                 } else {
                     // RUN
                     if (metric === 'total') {
@@ -2959,7 +3066,9 @@ async function optimizeSL(caseId, metric = 'total', btnElement) {
                             if (candles && candles.length > 0) tradeData.lastPrice = candles[candles.length - 1].close;
                             else tradeData.lastPrice = entryPrice;
                         }
-                        fPnl = (entryPrice - tradeData.lastPrice) * quantity;
+                        const grossPnL = (entryPrice - tradeData.lastPrice) * dynamicQty;
+                        const fees = (entryPrice + tradeData.lastPrice) * dynamicQty * commRate;
+                        fPnl = grossPnL - (useComms ? fees : 0);
                     }
                 }
 
@@ -2980,7 +3089,7 @@ async function optimizeSL(caseId, metric = 'total', btnElement) {
         slSlider.value = bestSL;
         updateSliderValue(slSlider);
 
-        // Ensure SL toggle is ON
+        // Ensure SL is enabled
         const slCheck = document.getElementById(`sl_enabled_c${caseId}`);
         if (slCheck && !slCheck.checked) {
             slCheck.click();
@@ -2990,7 +3099,7 @@ async function optimizeSL(caseId, metric = 'total', btnElement) {
 
         // Show toast
         const toast = document.createElement('div');
-        toast.className = "fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded shadow-lg z-50 animate-bounce";
+        toast.className = "fixed top-4 right-4 bg-teal-600 text-white px-4 py-2 rounded shadow-lg z-50 animate-bounce";
         toast.innerHTML = `<b>SL C${caseId} Opt (${metricLabel})!</b><br>SL: ${bestSL}%<br>(TP fijo en ${currentTP}%)`;
         document.body.appendChild(toast);
         setTimeout(() => toast.remove(), 4000);

@@ -10,7 +10,7 @@ import aiohttp
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 
-from config import REST_BASE_URL, MARGIN_PER_TRADE, MAX_MARGIN_PER_TRADE, TARGET_PROFIT, LEVERAGE, COMMISSION_RATE, MIN_AVAILABLE_MARGIN, TIMEFRAME, CANDLE_LIMIT
+from config import REST_BASE_URL, MARGIN_PER_TRADE, MAX_MARGIN_PER_TRADE, TARGET_PROFIT, LEVERAGE, COMMISSION_RATE, MIN_AVAILABLE_MARGIN, TIMEFRAME, CANDLE_LIMIT, RSI_TIMEFRAME
 from fibonacci import calculate_zigzag, find_valid_fibonacci_swing, determine_trading_case
 from logger import setup_logger
 
@@ -70,6 +70,7 @@ class MarketScanner:
         self.top_n = top_n
         self.rsi_period = 14
         self.rsi_threshold = RSI_THRESHOLD  # Leer de config.py
+        self.rsi_timeframe = RSI_TIMEFRAME  # Leer de config.py
         self.pairs_cache: List[str] = []
         self.last_scan_results: Dict[str, ScanResult] = {}
     
@@ -244,17 +245,17 @@ class MarketScanner:
         debido al sistema de 2 caminos
         """
         try:
-            # === OPTIMIZACIÓN: Fetch paralelo de 5m (RSI) y TIMEFRAME (Fibo) ===
-            t5m_task = self.fetch_klines(session, symbol, '5m', 100)
+            # === OPTIMIZACIÓN: Fetch paralelo de RSI_TIMEFRAME (RSI) y TIMEFRAME (Fibo) ===
+            t_rsi_task = self.fetch_klines(session, symbol, self.rsi_timeframe, 100)
             tfibo_task = self.fetch_klines(session, symbol, TIMEFRAME, CANDLE_LIMIT)
             
-            candles_5m, candles = await asyncio.gather(t5m_task, tfibo_task)
+            candles_rsi, candles = await asyncio.gather(t_rsi_task, tfibo_task)
             
-            if not candles_5m:
-                # print(f"   [DEBUG] {symbol}: Sin velas 5m")
+            if not candles_rsi:
+                # print(f"   [DEBUG] {symbol}: Sin velas {self.rsi_timeframe}")
                 return None
             
-            rsi = self.calculate_rsi(candles_5m)
+            rsi = self.calculate_rsi(candles_rsi)
             
             # Filtrar por RSI
             if rsi < self.rsi_threshold:
@@ -372,7 +373,10 @@ class MarketScanner:
         if account.open_positions:
             active_symbols.update(pos.symbol for pos in account.open_positions.values())
         if account.pending_orders:
-            active_symbols.update(order.symbol for order in account.pending_orders.values())
+            active_symbols.update(
+                (order.get('symbol') if isinstance(order, dict) else order.symbol)
+                for order in account.pending_orders.values()
+            )
             
         if not active_symbols:
             return
@@ -478,7 +482,10 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                     
                     # Verificar duplicados - Solo 1 operación por símbolo
                     existing = any(p.symbol == result.symbol for p in account.open_positions.values())
-                    existing = existing or any(o.symbol == result.symbol for o in account.pending_orders.values())
+                    existing = existing or any(
+                        (o.get('symbol') if isinstance(o, dict) else o.symbol) == result.symbol 
+                        for o in account.pending_orders.values()
+                    )
                     if existing:
                         continue
                     
@@ -611,6 +618,8 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             order_placed = True
             order_id = position.order_id
             final_sl = sl_price
+        else:
+            print(f"   ❌ CASO 4 | {result.symbol}: Orden no colocada (ver logs para detalles)")
     
     elif case_num == 3:
         # Caso 3: LIMIT al nivel case_3_max_4_min (por defecto 79%)
@@ -644,7 +653,7 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
             print(f"   🟠 CASO 3 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
-            order_id = order.id
+            order_id = order['id'] if isinstance(order, dict) else order.id
             final_sl = sl_price
     
     # Caso 2 eliminado - ya no existe
@@ -682,7 +691,7 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
             print(f"   🟢 CASO 1 | {result.symbol}: LIMIT @ ${limit_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
-            order_id = order.id
+            order_id = order['id'] if isinstance(order, dict) else order.id
             final_sl = sl_price
     
     return order_placed, order_id, final_sl

@@ -99,8 +99,7 @@
                                 <!-- Commission Toggle Moved Here -->
                                 <div class="flex items-center gap-2">
                                     <label class="toggle-switch" style="width: 28px; height: 14px;">
-                                        <input type="checkbox" id="includeCommissions" onchange="runSimulation()"
-                                            checked>
+                                        <input type="checkbox" id="includeCommissions" onchange="runSimulation()">
                                         <span class="toggle-slider" style="border-radius: 14px;"></span>
                                     </label>
                                     <span class="text-[10px] text-slate-400 font-semibold">Comisiones</span>
@@ -154,7 +153,8 @@
                                             <button type="button" onclick="adjustSlider('tp_c1', -1)"
                                                 class="precision-btn">&lt;</button>
                                             <input type="range" id="tp_c1" value="51" min="0" max="61" step="0.5"
-                                                oninput="updateSliderValue(this); runSimulation();" class="flex-1">
+                                                oninput="updateSliderValue(this)" onchange="runSimulation()"
+                                                class="flex-1">
                                             <button type="button" onclick="adjustSlider('tp_c1', 1)"
                                                 class="precision-btn">&gt;</button>
                                             <button type="button" onclick="resetSlider('tp_c1', 51)" class="reset-btn"
@@ -179,7 +179,8 @@
                                             <button type="button" onclick="adjustSlider('sl_c1', -1)"
                                                 class="precision-btn">&lt;</button>
                                             <input type="range" id="sl_c1" value="67" min="62" max="120" step="0.5"
-                                                oninput="updateSliderValue(this); runSimulation();" class="flex-1">
+                                                oninput="updateSliderValue(this)" onchange="runSimulation()"
+                                                class="flex-1">
                                             <button type="button" onclick="adjustSlider('sl_c1', 1)"
                                                 class="precision-btn">&gt;</button>
                                             <button type="button" onclick="resetSlider('sl_c1', 67)" class="reset-btn"
@@ -231,7 +232,8 @@
                                             <button type="button" onclick="adjustSlider('tp_c3', -1)"
                                                 class="precision-btn">&lt;</button>
                                             <input type="range" id="tp_c3" value="61" min="0" max="78" step="0.5"
-                                                oninput="updateSliderValue(this); runSimulation();" class="flex-1">
+                                                oninput="updateSliderValue(this)" onchange="runSimulation()"
+                                                class="flex-1">
                                             <button type="button" onclick="adjustSlider('tp_c3', 1)"
                                                 class="precision-btn">&gt;</button>
                                             <button type="button" onclick="resetSlider('tp_c3', 61)" class="reset-btn"
@@ -256,7 +258,8 @@
                                             <button type="button" onclick="adjustSlider('sl_c3', -1)"
                                                 class="precision-btn">&lt;</button>
                                             <input type="range" id="sl_c3" value="92" min="79" max="120" step="0.5"
-                                                oninput="updateSliderValue(this); runSimulation();" class="flex-1">
+                                                oninput="updateSliderValue(this)" onchange="runSimulation()"
+                                                class="flex-1">
                                             <button type="button" onclick="adjustSlider('sl_c3', 1)"
                                                 class="precision-btn">&gt;</button>
                                             <button type="button" onclick="resetSlider('sl_c3', 92)" class="reset-btn"
@@ -306,7 +309,8 @@
                                             <button type="button" onclick="adjustSlider('tp_c4', -1)"
                                                 class="precision-btn">&lt;</button>
                                             <input type="range" id="tp_c4" value="50" min="0" max="78" step="0.5"
-                                                oninput="updateSliderValue(this); runSimulation();" class="flex-1">
+                                                oninput="updateSliderValue(this)" onchange="runSimulation()"
+                                                class="flex-1">
                                             <button type="button" onclick="adjustSlider('tp_c4', 1)"
                                                 class="precision-btn">&gt;</button>
                                             <button type="button" onclick="resetSlider('tp_c4', 50)" class="reset-btn"
@@ -331,7 +335,8 @@
                                             <button type="button" onclick="adjustSlider('sl_c4', -1)"
                                                 class="precision-btn">&lt;</button>
                                             <input type="range" id="sl_c4" value="95" min="90" max="120" step="0.5"
-                                                oninput="updateSliderValue(this); runSimulation();" class="flex-1">
+                                                oninput="updateSliderValue(this)" onchange="runSimulation()"
+                                                class="flex-1">
                                             <button type="button" onclick="adjustSlider('sl_c4', 1)"
                                                 class="precision-btn">&gt;</button>
                                             <button type="button" onclick="resetSlider('sl_c4', 95)" class="reset-btn"

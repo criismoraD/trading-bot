@@ -247,6 +247,21 @@
         .down {
             color: var(--danger-color);
         }
+
+        .date-range {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+        }
+
+        .date-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
     </style>
 </head>
 
@@ -257,7 +272,10 @@
 
     <div class="container">
         <header>
-            <div class="logo">TRADER DASHBOARD PRO</div>
+            <div>
+                <div class="logo">TRADER DASHBOARD PRO</div>
+                <div class="date-range" id="dateRange">Loading dates...</div>
+            </div>
             <div class="selector-container">
                 <button class="btn-export" id="btnExport">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -325,6 +343,7 @@
                         <th>Losses</th>
                         <th>Win Rate</th>
                         <th>Profit Bruto</th>
+                        <th>Profit Factor</th>
                     </tr>
                 </thead>
                 <tbody id="caseTableBody">
@@ -439,6 +458,37 @@
 
             initCharts(data);
             updateCaseStats(data);
+            updateDateRange(data);
+        }
+
+        function updateDateRange(data) {
+            const startTime = data.equity_history && data.equity_history.length > 0 ? data.equity_history[0].time : null;
+            const lastUpdate = data.last_updated;
+
+            const formatDate = (dateStr) => {
+                if (!dateStr) return '-';
+                return new Date(dateStr).toLocaleString('es-ES', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+            };
+
+            const html = `
+                <div class="date-item" title="Inicio del Bot">
+                    <span style="color: var(--success-color)">●</span> 
+                    <span>Inicio: ${formatDate(startTime)}</span>
+                </div>
+                <div class="date-item" title="Última Actualización">
+                    <span style="color: var(--warning-color)">●</span> 
+                    <span>Actualizado: ${formatDate(lastUpdate)}</span>
+                </div>
+            `;
+
+            document.getElementById('dateRange').innerHTML = html;
         }
 
         function updateCaseStats(data) {
@@ -452,12 +502,19 @@
                         count: 0,
                         wins: 0,
                         losses: 0,
-                        profit: 0
+                        profit: 0,
+                        grossWin: 0,
+                        grossLoss: 0
                     };
                 }
                 cases[caseId].count++;
-                if (trade.pnl > 0) cases[caseId].wins++;
-                else if (trade.pnl < 0) cases[caseId].losses++;
+                if (trade.pnl > 0) {
+                    cases[caseId].wins++;
+                    cases[caseId].grossWin += trade.pnl;
+                } else if (trade.pnl < 0) {
+                    cases[caseId].losses++;
+                    cases[caseId].grossLoss += Math.abs(trade.pnl);
+                }
                 cases[caseId].profit += trade.pnl || 0;
             });
 
@@ -467,6 +524,15 @@
             Object.keys(cases).sort().forEach(caseId => {
                 const stats = cases[caseId];
                 const wr = stats.count > 0 ? (stats.wins / stats.count * 100).toFixed(2) : 0;
+
+                // Calculate Profit Factor
+                let pf = 0;
+                if (stats.grossLoss === 0) {
+                    pf = stats.grossWin > 0 ? '∞' : '0.00';
+                } else {
+                    pf = (stats.grossWin / stats.grossLoss).toFixed(2);
+                }
+
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td><span class="case-tag">Caso ${caseId}</span></td>
@@ -475,6 +541,7 @@
                     <td class="down">${stats.losses}</td>
                     <td>${wr}%</td>
                     <td class="${stats.profit >= 0 ? 'up' : 'down'}">$${stats.profit.toFixed(2)}</td>
+                    <td>${pf}</td>
                 `;
                 tbody.appendChild(row);
             });

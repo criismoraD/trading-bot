@@ -21,8 +21,8 @@ class OrderType(Enum):
     LIMIT = "LIMIT"
 
 class OrderSide(Enum):
-    BUY = "BUY"
-    SELL = "SELL"
+    BUY = "Buy"   # Bybit format
+    SELL = "Sell"  # Bybit format
 
 class OrderStatus(Enum):
     PENDING = "PENDING"
