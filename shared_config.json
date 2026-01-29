@@ -8,7 +8,7 @@
         "max_margin_per_trade": 100.0,
         "min_available_margin": 10,
         "leverage": 100,
-        "target_profit": 0.4,
+        "target_profit": 0.2,
         "commission_rate": 0.0002,
         "max_simultaneous_operations": 9999,
         "c1_cancel_below": 0.2,
