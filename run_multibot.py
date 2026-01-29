@@ -54,16 +54,30 @@ def run_bots():
             print(f"❌ Error: No se encuentra {script}")
             continue
 
-        # Comando para lanzar en una nueva ventana (Windows)
-        cmd = f'start "{instance["name"]}" cmd /k python {script}'
-        
-        print(f"   ▶️  Lanzando TRADING: {instance['name']} (Mode: {instance['env']['BOT_TRADING_MODE']})")
-        subprocess.Popen(cmd, shell=True, env=instance_env)
+        # Detectar OS y construir comando
+        if os.name == 'nt':
+            # Windows: Nueva ventana
+            cmd = f'start "{instance["name"]}" cmd /k python {script}'
+            subprocess.Popen(cmd, shell=True, env=instance_env)
+        else:
+            # Linux/Mac: Background process con nohup
+            log_file = f"{instance['name'].lower()}.log"
+            cmd = f"nohup python {script} > {log_file} 2>&1 &"
+            print(f"   ▶️  Lanzando en background (logs en {log_file})...")
+            subprocess.Popen(cmd, shell=True, env=instance_env)
+            
         time.sleep(2) # Pausa entre lanzamientos
 
     # 2. Lanzar el Monitor de Telegram
     print(f"   ▶️  Lanzando MONITOR: {monitor_bot['name']}")
-    subprocess.Popen(f'start "{monitor_bot["name"]}" cmd /k python {monitor_bot["script"]}', shell=True, env=base_env)
+    
+    if os.name == 'nt':
+        subprocess.Popen(f'start "{monitor_bot["name"]}" cmd /k python {monitor_bot["script"]}', shell=True, env=base_env)
+    else:
+        log_file = "telegram_monitor.log"
+        cmd = f"nohup python {monitor_bot['script']} > {log_file} 2>&1 &"
+        print(f"   ▶️  Monitor en background (logs en {log_file})")
+        subprocess.Popen(cmd, shell=True, env=base_env)
 
     print("\n✅ Todos los procesos han sido lanzados en ventanas separadas.")
     print("⚠️  Cierra las ventanas individuales para detener cada componente.")
