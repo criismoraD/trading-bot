@@ -500,7 +500,6 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
                     
                     if order_placed:
                         orders_placed += 1
-                        break # Stop processing other results for this symbol (prevent duplicates)
 
             
             # Pausa eliminada para máxima velocidad

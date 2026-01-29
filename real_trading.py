@@ -265,6 +265,10 @@ class RealTradingAccount:
                     self.cancelled_history = data.get("cancelled_history", [])
                     self.equity_history = data.get("equity_history", [])
                     self.stats = data.get("stats", self.stats)
+                    # Ensure all keys exist (migration for old files)
+                    if "wins" not in self.stats: self.stats["wins"] = 0
+                    if "losses" not in self.stats: self.stats["losses"] = 0
+                    if "cancelled_orders" not in self.stats: self.stats["cancelled_orders"] = 0
                     
                     # Load open positions
                     positions_data = data.get("open_positions", {})
