@@ -42,7 +42,8 @@ _scanner = _shared_config.get("scanner", {})
 TOP_PAIRS_LIMIT = _scanner.get("top_pairs_limit", 200)
 RSI_THRESHOLD = _scanner.get("rsi_threshold", 0)
 RSI_TIMEFRAME = _scanner.get("rsi_timeframe", "5m")
-SCAN_INTERVAL = _scanner.get("scan_interval", 30)
+env_scan_interval = os.getenv("BOT_SCAN_INTERVAL")
+SCAN_INTERVAL = int(env_scan_interval) if env_scan_interval else _scanner.get("scan_interval", 30)
 FIRST_SCAN_DELAY = _scanner.get("first_scan_delay", 5)  # Primer escaneo en 5 segundos
 CANDLE_LIMIT = _scanner.get("candle_limit", 1000)
 

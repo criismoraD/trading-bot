@@ -12,7 +12,8 @@ trading_bots = [
             "BOT_TRADING_MODE": "real",
             "BOT_TRADES_FILE": "trades_real.json",
             "BOT_TIMEFRAME": "2h",
-            "TELEGRAM_COMMANDS_ENABLED": "false"
+            "TELEGRAM_COMMANDS_ENABLED": "false",
+            "BOT_SCAN_INTERVAL": "15"
         }
     },
     {
@@ -22,7 +23,8 @@ trading_bots = [
             "BOT_TRADING_MODE": "paper",
             "BOT_TRADES_FILE": "trades_V2_2h.json",
             "BOT_TIMEFRAME": "2h",
-            "TELEGRAM_COMMANDS_ENABLED": "false"
+            "TELEGRAM_COMMANDS_ENABLED": "false",
+            "BOT_SCAN_INTERVAL": "30"
         }
     }
 ]
