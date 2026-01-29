@@ -30,7 +30,7 @@ DB_PATH = "candles.db"
 # List of trade files to scan for symbols
 TRADES_FILES = ["trades_real.json", "trades_V2_2h.json"]
 BYBIT_API_BASE = "https://api.bybit.com/v5/market/kline"
-DEFAULT_SYNC_DAYS = 2  # Sync 2 days of data by default (can be changed via API)
+DEFAULT_SYNC_DAYS = 4  # Sync 4 days of data by default (can be changed via API)
 CANDLES_PER_REQUEST = 1000  # Bybit API limit
 PARALLEL_CONNECTIONS = 10  # Number of parallel API requests (safe for Bybit)
 
