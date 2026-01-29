@@ -920,6 +920,39 @@ class RealTradingAccount:
         if current > self.stats.get("max_simultaneous", 0):
             self.stats["max_simultaneous"] = current
     
+    def record_equity_point(self, current_prices: Dict[str, float] = None):
+        """Record equity point for history chart (mirrors PaperTradingAccount)"""
+        unrealized_pnl = self.get_unrealized_pnl(current_prices)
+        margin_balance = self.balance + unrealized_pnl
+        
+        # Calculate used margin
+        used_margin_pos = sum(pos.margin for pos in self.open_positions.values())
+        used_margin_ord = sum(float(order.get("margin", 0)) for order in self.pending_orders.values())
+        used_margin = used_margin_pos + used_margin_ord
+        
+        active_ops = len(self.open_positions) + len(self.pending_orders)
+        
+        # Drawdown calculation
+        drawdown = margin_balance - self.initial_balance
+        
+        point = {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "balance": round(self.balance, 2),
+            "unrealized_pnl": round(unrealized_pnl, 4),
+            "equity": round(margin_balance, 2),
+            "used_margin": round(used_margin, 2),
+            "active_operations_count": active_ops,
+            "balance_drawdown": round(drawdown, 2)
+        }
+        
+        self.equity_history.append(point)
+        # Keep limit
+        if len(self.equity_history) > 10000:
+            self.equity_history.pop(0)
+            
+        # Force save
+        self._save_trades()
+
     def update_positions_pnl(self, current_prices: Dict[str, float]):
         """Update PnL for all positions"""
         for pos in self.open_positions.values():
