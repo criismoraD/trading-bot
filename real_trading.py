@@ -241,8 +241,22 @@ class RealTradingAccount:
                 for symbol in list(self.open_positions.keys()):
                     if symbol not in active_symbols_api:
                         # Position closed externally?
-                        logger.info(f"Position {symbol} not found in Bybit, removing from local state")
-                        del self.open_positions[symbol]
+                        logger.info(f"Position {symbol} not found in Bybit, recording as closed")
+                        # Try to get close price from cache or use entry price as fallback
+                        close_price = self.price_cache.get(symbol, self.open_positions[symbol].entry_price)
+                        # We use the order_id key which is stored in the dictionary
+                        # Note: open_positions uses symbol as key based on line 221, but let's verify usage in loop
+                        # logic at line 241 says: for symbol in list(self.open_positions.keys())
+                        # So the key is the symbol.
+                        # But wait, _record_closed_position expects 'order_id' as the key if open_positions uses order_id? 
+                        # Let's check how open_positions is keyed.
+                        # Line 221: self.open_positions[symbol] = ... 
+                        # So it is keyed by symbol.
+                        # However, _record_closed_position implementation (line 626) takes 'order_id'.
+                        # Line 628 checks: if order_id not in self.open_positions: return
+                        # So _record_closed_position expects the dictionary key.
+                        # Since the dictionary key is 'symbol' (from line 221), we should pass 'symbol' as the first arg.
+                        self._record_closed_position(symbol, close_price, "Closed Externally/TP/SL")
             
             logger.info(f"💰 Balance: ${self.balance:.2f} | Available: ${self.available_margin:.2f} | Open: {len(self.open_positions)}")
             self._last_sync = now
@@ -265,10 +279,6 @@ class RealTradingAccount:
                     self.cancelled_history = data.get("cancelled_history", [])
                     self.equity_history = data.get("equity_history", [])
                     self.stats = data.get("stats", self.stats)
-                    # Ensure all keys exist (migration for old files)
-                    if "wins" not in self.stats: self.stats["wins"] = 0
-                    if "losses" not in self.stats: self.stats["losses"] = 0
-                    if "cancelled_orders" not in self.stats: self.stats["cancelled_orders"] = 0
                     
                     # Load open positions
                     positions_data = data.get("open_positions", {})
@@ -645,7 +655,7 @@ class RealTradingAccount:
         # Add to history
         trade_record = {
             "trade_index": len(self.trade_history),
-            "order_id": position.order_id,  # Use actual order ID from position object
+            "order_id": order_id,
             "symbol": position.symbol,
             "side": position.side.value,
             "entry_price": position.entry_price,
@@ -762,33 +772,13 @@ class RealTradingAccount:
                             if status in ["Filled", "PartiallyFilled"]:
                                 self._handle_filled_order(order_id, local_order, filled_order)
                             elif status == "Cancelled":
-                                # Record to cancelled history before deleting
-                                self.cancelled_history.append({
-                                    "order_id": order_id,
-                                    "symbol": local_order.get("symbol"),
-                                    "side": local_order.get("side"),
-                                    "price": local_order.get("price"),
-                                    "quantity": local_order.get("quantity"),
-                                    "reason": "Sync: Cancelled on Bybit",
-                                    "cancelled_at": datetime.now(timezone.utc).isoformat()
-                                })
                                 del self.pending_orders[order_id]
                                 self._save_trades()
                         else:
                              # Not found? Maybe manual cancel or rejected
-                             self.cancelled_history.append({
-                                "order_id": order_id,
-                                "symbol": local_order.get("symbol"),
-                                "side": local_order.get("side"),
-                                "price": local_order.get("price"),
-                                "quantity": local_order.get("quantity"),
-                                "reason": "Sync: Order not found (Manual/Rejected)",
-                                "cancelled_at": datetime.now(timezone.utc).isoformat()
-                             })
                              del self.pending_orders[order_id]
                              self._save_trades()
-                    except Exception as e:
-                        logger.error(f"Error handling missing order {order_id}: {e}")
+                    except:
                         del self.pending_orders[order_id]
             
             # 2. Check for "Ghost" orders (TP/SL) that shouldn't be here
@@ -865,16 +855,6 @@ class RealTradingAccount:
             )
             
             if result.get("retCode") == 0:
-                # Add to cancelled history
-                self.cancelled_history.append({
-                    "order_id": order_id,
-                    "symbol": order.get("symbol"),
-                    "side": order.get("side"),
-                    "price": order.get("price"),
-                    "quantity": order.get("quantity"),
-                    "reason": reason,
-                    "cancelled_at": datetime.now(timezone.utc).isoformat()
-                })
                 del self.pending_orders[order_id]
                 self.stats["cancelled_orders"] += 1
                 self._save_trades()
@@ -884,6 +864,18 @@ class RealTradingAccount:
                 
         except Exception as e:
             logger.error(f"Cancel order exception: {e}")
+
+        # Record in cancelled history
+        self.cancelled_history.append({
+            "order_id": order_id,
+            "symbol": order.get("symbol"),
+            "reason": reason,
+            "cancelled_at": datetime.now(timezone.utc).isoformat(),
+            "strategy_case": order.get("strategy_case", 0),
+            "price": order.get("price"),
+            "quantity": order.get("quantity")
+        })
+        self._save_trades()
     
     def close_all_positions(self, price_cache: Dict[str, float], reason: str = "Global Close"):
         """Close all open positions"""
@@ -959,24 +951,14 @@ class RealTradingAccount:
         unrealized_pnl = self.get_unrealized_pnl(current_prices)
         margin_balance = self.balance + unrealized_pnl
         
-        # Calculate used margin
-        used_margin_pos = sum(pos.margin for pos in self.open_positions.values())
-        used_margin_ord = sum(float(order.get("margin", 0)) for order in self.pending_orders.values())
-        used_margin = used_margin_pos + used_margin_ord
-        
         active_ops = len(self.open_positions) + len(self.pending_orders)
-        
-        # Drawdown calculation
-        drawdown = margin_balance - self.initial_balance
         
         point = {
             "time": datetime.now(timezone.utc).isoformat(),
             "balance": round(self.balance, 2),
             "unrealized_pnl": round(unrealized_pnl, 4),
             "equity": round(margin_balance, 2),
-            "used_margin": round(used_margin, 2),
-            "active_operations_count": active_ops,
-            "balance_drawdown": round(drawdown, 2)
+            "active_operations_count": active_ops
         }
         
         self.equity_history.append(point)
@@ -1038,25 +1020,6 @@ class RealTradingAccount:
             "cancelled": self.cancelled_history[-20:]
         }
     
-    def record_equity_point(self, price_cache: Dict[str, float] = None):
-        """Record equity point for tracking (compatibility with PaperTradingAccount)"""
-        if not hasattr(self, 'equity_history'):
-            self.equity_history = []
-        
-        # Sync balance from Bybit
-        self._sync_account()
-        
-        unrealized = self.get_unrealized_pnl(price_cache) if price_cache else 0
-        equity = self.balance + unrealized
-        
-        point = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "balance": self.balance,
-            "unrealized_pnl": unrealized,
-            "equity": equity
-        }
-        self.equity_history.append(point)
-        
         # Keep only last 1000 points
         if len(self.equity_history) > 1000:
             self.equity_history = self.equity_history[-1000:]

@@ -578,7 +578,7 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
         return qty, margin, est_commission, True
 
     if case_num == 4:
-        # Caso 4: MARKET ORDER (Revertido a Market por solicitud)
+        # Caso 4: MARKET ORDER (ejecución inmediata en zona C4)
         if not fresh_price or fresh_price == 0.0:
             return False, None, None
         
@@ -587,15 +587,15 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
         
         # Validar zona (79% - 90%)
         if fresh_price < level_case4_min or fresh_price >= level_case4_max:
-             # print(f"   ⚠️ {result.symbol}: Precio fuera de zona C4")
-             return False, None, None
+            print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C4")
+            return False, None, None
         
         # TP y SL desde configuración
         c4_config = strategies.get('c4', {'tp': 0.65, 'sl': 1.265})
         tp_price = result.fib_levels.get('low', 0) + fib_range * c4_config['tp']
         sl_price = result.fib_levels.get('low', 0) + fib_range * c4_config['sl'] if c4_config.get('sl') else None
         
-        # Calcular parámetros
+        # Calcular parámetros (Usamos fresh_price para Market Order)
         qty, margin, est_comm, allowed = calculate_trade_params(fresh_price, tp_price)
         
         if not allowed:
@@ -618,7 +618,12 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
             print(f"   🔴 CASO 4 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
-            order_id = order.order_id # Order object in Real, or dict... check return type
+            
+            if isinstance(order, dict):
+                order_id = order.get('id') or order.get('order_id')
+            else:
+                order_id = getattr(order, 'id', getattr(order, 'order_id', None))
+                
             final_sl = sl_price
         else:
             print(f"   ❌ CASO 4 | {result.symbol}: Orden no colocada (ver logs)")

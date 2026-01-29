@@ -471,12 +471,12 @@ async def main():
         account = RealTradingAccount(
             api_key=BYBIT_API_KEY,
             api_secret=BYBIT_API_SECRET,
-            testnet=False,  # Use demo mode, not testnet
-            demo=True,      # Bybit Demo Trading (api-demo.bybit.com)
+            testnet=BYBIT_TESTNET,  # Configured in shared_config.json
+            demo=False,             # Disable 'Demo Trading' environment specific mode
             leverage=LEVERAGE,
             trades_file="trades_real.json"
         )
-        mode_text = "DEMO" if True else ("TESTNET" if BYBIT_TESTNET else "MAINNET")
+        mode_text = "TESTNET" if BYBIT_TESTNET else "MAINNET"
         logger.info(f"🔴 MODO REAL ACTIVADO - Bybit {mode_text}")
         print(f"\n⚠️  MODO REAL ACTIVADO - Bybit {mode_text}")
         print(f"💰 Balance: ${account.balance:.2f}")
