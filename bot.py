@@ -622,9 +622,10 @@ async def main():
                                         continue
                                         
                                     # Bybit ticker format: {"topic":"tickers.BTCUSDT","data":{"symbol":"BTCUSDT","lastPrice":"..."}}
-                                    if 'data' in data and 'symbol' in data.get('data', {}):
-                                        symbol = data['data']['symbol']
-                                        price = float(data['data']['lastPrice'])
+                                    data_content = data.get('data', {})
+                                    if 'symbol' in data_content and 'lastPrice' in data_content:
+                                        symbol = data_content['symbol']
+                                        price = float(data_content['lastPrice'])
                                         price_cache[symbol] = price
                                         
                                         # Debug (solo 1 de cada 50 para no spamear, o si hay cambio significativo)
@@ -642,8 +643,9 @@ async def main():
                                     # print("Ping enviado")
                                     continue
                                 except Exception as e:
-                                    print(f"❌ Error leyendo WS: {e}")
-                                    break # Reconectar
+                                    logger.error(f"Error WS loop: {e}")
+                                    # No desconectar por error de parsing esporádico
+                                    continue
                     except Exception as e:
                          print(f"❌ Error conexión WebSocket: {e}")
                          await asyncio.sleep(2)
