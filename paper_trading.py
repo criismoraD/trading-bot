@@ -615,12 +615,14 @@ class PaperTradingAccount:
             # Leer configuración de cancelación
             cancel_c1 = 0.382
             cancel_c3 = 0.50
+            cancel_c4 = 0.79
             try:
                 with open('shared_config.json', 'r') as f:
                     cfg = json.load(f)
                     trading_cfg = cfg.get('trading', {})
                     cancel_c1 = trading_cfg.get('c1_cancel_below', 0.382)
                     cancel_c3 = trading_cfg.get('c3_cancel_below', 0.50)
+                    cancel_c4 = trading_cfg.get('c4_cancel_below', 0.79)
             except:
                 pass
 
@@ -638,6 +640,10 @@ class PaperTradingAccount:
                     # Caso 3: Cancelar si baja al nivel configurado
                     if order.strategy_case == 3 and current_fib <= cancel_c3:
                         cancel_reason = f"Precio tocó {cancel_c3*100}% (C3 anulado)"
+
+                    # Caso 4: Cancelar si baja al nivel configurado (79%)
+                    if order.strategy_case == 4 and current_fib <= cancel_c4:
+                        cancel_reason = f"Precio tocó {cancel_c4*100}% (C4 anulado)"
 
             if cancel_reason:
                 orders_to_fill.append((order, "CANCEL", cancel_reason))

@@ -1,8 +1,8 @@
 {
     "trading": {
         "case_1_min": 0.50,
-        "case_1_max_3_min": 0.618,
-        "case_3_max_4_min": 0.786,
+        "case_1_max_3_min": 0.63,
+        "case_3_max_4_min": 0.79,
         "case_4_max": 0.93,
         "initial_balance": 1000,
         "max_margin_per_trade": 100.0,
@@ -13,6 +13,7 @@
         "max_simultaneous_operations": 9999,
         "c1_cancel_below": 0.2,
         "c3_cancel_below": 0.3,
+        "c4_cancel_below": 0.79,
         "simulate_pending_orders": true,
         "global_take_profit_usd": 0,
         "mode": "real",

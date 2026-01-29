@@ -682,15 +682,17 @@ class RealTradingAccount:
         """Check pending orders - Cancel zone detection via WebSocket"""
         self.price_cache[symbol] = current_price
         
-        # Load cancel zone config
+                # Load cancel zone config
         cancel_c1 = 0.2
         cancel_c3 = 0.3
+        cancel_c4 = 0.79
         try:
             with open('shared_config.json', 'r') as f:
                 cfg = json.load(f)
                 trading_cfg = cfg.get('trading', {})
                 cancel_c1 = trading_cfg.get('c1_cancel_below', 0.2)
                 cancel_c3 = trading_cfg.get('c3_cancel_below', 0.3)
+                cancel_c4 = trading_cfg.get('c4_cancel_below', 0.79)
         except:
             pass
         
@@ -716,6 +718,10 @@ class RealTradingAccount:
                     # C3: Cancel if price drops to cancel zone  
                     if strategy_case == 3 and current_fib <= cancel_c3:
                         orders_to_cancel.append((order_id, f"Precio tocó {cancel_c3*100}% (C3 anulado)"))
+
+                    # C4: Cancel if price drops to cancel zone (79%)
+                    if strategy_case == 4 and current_fib <= cancel_c4:
+                        orders_to_cancel.append((order_id, f"Precio tocó {cancel_c4*100}% (C4 anulado)"))
         
         # Cancel orders via API
         for order_id, reason in orders_to_cancel:

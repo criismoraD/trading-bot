@@ -594,8 +594,8 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
         # Calcular nivel actual exacto
         current_fib_pct = (fresh_price - result.fib_levels.get('low', 0)) / fib_range
         
-        # Target: 3% más arriba
-        target_fib_pct = current_fib_pct + 0.03 
+        # Target: 1% más arriba
+        target_fib_pct = current_fib_pct + 0.01 
         limit_price = result.fib_levels.get('low', 0) + fib_range * target_fib_pct
         
         # TP y SL desde configuración
