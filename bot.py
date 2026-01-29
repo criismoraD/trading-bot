@@ -582,61 +582,76 @@ async def main():
 
                 # Si los símbolos cambiaron, reconectar
                 if needed_symbols != current_symbols_set:
-                    # print(f"🔄 Actualizando streams de precios: {needed_symbols}")
                     current_symbols_set = needed_symbols
+                    logger.info(f"🔄 Iniciando conexión WebSocket para {len(current_symbols_set)} pares: {current_symbols_set}")
+                    print(f"🔌 Conectando WS para: {', '.join(current_symbols_set)}")
                     
                     # Bybit WebSocket - formato: tickers.BTCUSDT
                     args = [f"tickers.{s.upper()}" for s in needed_symbols]
                     ws_url = "wss://stream.bybit.com/v5/public/linear"
                     
-                    async with websockets.connect(ws_url) as ws:
-                        # Suscribirse a los tickers de Bybit
-                        subscribe_msg = {
-                            "op": "subscribe",
-                            "args": args
-                        }
-                        await ws.send(json.dumps(subscribe_msg))
-                        
-                        while True:
-                            # Verificar si necesitamos cambiar streams
-                            new_needed = set(pos.symbol.lower() for pos in account.open_positions.values())
-                            if account.pending_orders:
-                                new_needed.update(
-                                    (order.get('symbol').lower() if isinstance(order, dict) else order.symbol.lower())
-                                    for order in account.pending_orders.values()
-                                )
-                            # También incluir símbolos con monitoreo post-cierre activo
-                            if new_needed != current_symbols_set:
-                                break # Salir para reconectar
+                    try:
+                        async with websockets.connect(ws_url) as ws:
+                            # Suscribirse a los tickers de Bybit
+                            subscribe_msg = {
+                                "op": "subscribe",
+                                "args": args
+                            }
+                            await ws.send(json.dumps(subscribe_msg))
+                            print(f"📡 Suscripción enviada. Esperando datos...")
                             
-                            try:
-                                msg = await asyncio.wait_for(ws.recv(), timeout=5)
-                                data = json.loads(msg)
-                                # Bybit ticker format: {"topic":"tickers.BTCUSDT","data":{"symbol":"BTCUSDT","lastPrice":"..."}}
-                                if 'data' in data and 'symbol' in data.get('data', {}):
-                                    symbol = data['data']['symbol']
-                                    price = float(data['data']['lastPrice'])
-                                    price_cache[symbol] = price
+                            while True:
+                                # Verificar si necesitamos cambiar streams
+                                new_needed = set(pos.symbol.lower() for pos in account.open_positions.values())
+                                if account.pending_orders:
+                                    new_needed.update(
+                                        (order.get('symbol').lower() if isinstance(order, dict) else order.symbol.lower())
+                                        for order in account.pending_orders.values()
+                                    )
+                                # También incluir símbolos con monitoreo post-cierre activo
+                                if new_needed != current_symbols_set:
+                                    print(f"⚠️ Cambio en pares activos detectado. Reconectando...")
+                                    break # Salir para reconectar
+                                
+                                try:
+                                    msg = await asyncio.wait_for(ws.recv(), timeout=5)
+                                    data = json.loads(msg)
                                     
-                                    # Actualizar y Verificar en tiempo real
-                                    if account.open_positions:
-                                        account.check_positions(symbol, price)
-                                    if account.pending_orders:
-                                        account.check_pending_orders(symbol, price)
-                                    # Actualizar precios post-cierre para monitoreo
-                                    if account.pending_orders:
-                                        account.check_pending_orders(symbol, price)
+                                    # Ignorar mensajes de confirmación de suscripción
+                                    if "op" in data and data["op"] == "subscribe":
+                                        continue
                                         
-                            except asyncio.TimeoutError:
-                                # Bybit ping
-                                await ws.send(json.dumps({"op": "ping"}))
-                                continue
-                            except Exception:
-                                break # Reconectar
+                                    # Bybit ticker format: {"topic":"tickers.BTCUSDT","data":{"symbol":"BTCUSDT","lastPrice":"..."}}
+                                    if 'data' in data and 'symbol' in data.get('data', {}):
+                                        symbol = data['data']['symbol']
+                                        price = float(data['data']['lastPrice'])
+                                        price_cache[symbol] = price
+                                        
+                                        # Debug (solo 1 de cada 50 para no spamear, o si hay cambio significativo)
+                                        # print(f"Processing {symbol}: {price}")
+                                        
+                                        # Actualizar y Verificar en tiempo real
+                                        if account.open_positions:
+                                            account.check_positions(symbol, price)
+                                        if account.pending_orders:
+                                            account.check_pending_orders(symbol, price)
+                                            
+                                except asyncio.TimeoutError:
+                                    # Bybit ping
+                                    await ws.send(json.dumps({"op": "ping"}))
+                                    # print("Ping enviado")
+                                    continue
+                                except Exception as e:
+                                    print(f"❌ Error leyendo WS: {e}")
+                                    break # Reconectar
+                    except Exception as e:
+                         print(f"❌ Error conexión WebSocket: {e}")
+                         await asyncio.sleep(2)
                 else:
                     await asyncio.sleep(1)
 
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error fatal en loop WS: {e}")
                 await asyncio.sleep(5)
     
     def clear_screen():
