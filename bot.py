@@ -846,8 +846,17 @@ async def main():
             telegram_bot.scanner = scanner
             telegram_bot.price_cache = price_cache
             telegram_bot.running = True
-            asyncio.create_task(telegram_bot.run_polling_loop())
-            asyncio.create_task(telegram_bot.run_report_loop())
+            
+            # Controlar si este bot debe responder comandos/reportes o ser pasivo (solo alertas)
+            # En modo Multi-Bot, el monitor central maneja los comandos.
+            commands_enabled = os.getenv("TELEGRAM_COMMANDS_ENABLED", "true").lower() == "true"
+            
+            if commands_enabled:
+                logger.info("Telegram: Comandos y Reportes automáticos ACTIVADOS")
+                asyncio.create_task(telegram_bot.run_polling_loop())
+                asyncio.create_task(telegram_bot.run_report_loop())
+            else:
+                logger.info("Telegram: Modo PASIVO (Solo Alertas - Comandos manejados por MultiBot)")
             logger.info("Bot de Telegram iniciado - Envía /start a @criismorabot")
             # Notificación inmediata si hay chats autorizados
             await telegram_bot.broadcast_message("🚀 <b>BOT INICIADO</b>\nEl sistema está en línea y operando.")

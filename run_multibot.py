@@ -11,7 +11,8 @@ trading_bots = [
         "env": {
             "BOT_TRADING_MODE": "real",
             "BOT_TRADES_FILE": "trades_real.json",
-            "BOT_TIMEFRAME": "2h"
+            "BOT_TIMEFRAME": "2h",
+            "TELEGRAM_COMMANDS_ENABLED": "false"
         }
     },
     {
@@ -20,7 +21,8 @@ trading_bots = [
         "env": {
             "BOT_TRADING_MODE": "paper",
             "BOT_TRADES_FILE": "trades_V2_2h.json",
-            "BOT_TIMEFRAME": "2h"
+            "BOT_TIMEFRAME": "2h",
+            "TELEGRAM_COMMANDS_ENABLED": "false"
         }
     }
 ]
