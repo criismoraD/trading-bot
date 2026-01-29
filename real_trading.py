@@ -84,6 +84,15 @@ class RealTradingAccount:
         self.leverage = leverage
         self.trades_file = trades_file
         
+        # Load initial balance from config
+        self.initial_balance = 1000.0
+        try:
+             with open('shared_config.json', 'r') as f:
+                config = json.load(f)
+                self.initial_balance = float(config.get('trading', {}).get('initial_balance', 1000.0))
+        except Exception as e:
+            logger.error(f"Error loading initial_balance: {e}")
+        
         # Initialize Bybit client
         # demo=True uses api-demo.bybit.com (Bybit Demo Trading)
         # testnet=True uses api-testnet.bybit.com (old Testnet)
@@ -98,7 +107,9 @@ class RealTradingAccount:
         self.open_positions: Dict[str, RealPosition] = {}
         self.pending_orders: Dict[str, dict] = {}  # order_id -> order info
         self.trade_history: List[dict] = []
+        self.trade_history: List[dict] = []
         self.cancelled_history: List[dict] = []
+        self.equity_history: List[dict] = []
         
         # Stats
         self.stats = {
@@ -176,6 +187,29 @@ class RealTradingAccount:
                         # Preserve metadata from local state if exists
                         existing_pos = self.open_positions.get(symbol)
                         
+                        # Fix Case Loss: If not in open_positions, check if it was a pending order
+                        if not existing_pos:
+                             # Look for a pending order with same symbol
+                             for p_ord in list(self.pending_orders.values()):
+                                 if p_ord.get("symbol") == symbol:
+                                     # Found it! It was likely filled/modified externally
+                                     existing_pos = RealPosition(
+                                         symbol=symbol,
+                                         side=PositionSide.SHORT, # Placeholder, will be overwritten
+                                         entry_price=0,
+                                         quantity=0,
+                                         margin=0,
+                                         leverage=0,
+                                         take_profit=0,
+                                         strategy_case=p_ord.get("strategy_case", 0),
+                                         fib_high=p_ord.get("fib_high"),
+                                         fib_low=p_ord.get("fib_low"),
+                                         entry_fib_level=p_ord.get("entry_fib_level"),
+                                         opened_at=datetime.now(timezone.utc).isoformat(),
+                                         order_id=f"RECOVERED-{symbol}"
+                                     )
+                                     break
+                        
                         strategy_case = existing_pos.strategy_case if existing_pos else 0
                         fib_high = existing_pos.fib_high if existing_pos else None
                         fib_low = existing_pos.fib_low if existing_pos else None
@@ -229,6 +263,7 @@ class RealTradingAccount:
                     data = json.load(f)
                     self.trade_history = data.get("trade_history", [])
                     self.cancelled_history = data.get("cancelled_history", [])
+                    self.equity_history = data.get("equity_history", [])
                     self.stats = data.get("stats", self.stats)
                     
                     # Load open positions
@@ -272,6 +307,7 @@ class RealTradingAccount:
             data = {
                 "trade_history": self.trade_history,
                 "cancelled_history": self.cancelled_history,
+                "equity_history": self.equity_history,
                 "stats": self.stats,
                 "balance": self.balance,
                 "open_positions": {k: self._serialize_position(v) for k, v in self.open_positions.items()},
@@ -502,6 +538,11 @@ class RealTradingAccount:
                 # Get fill price from order info
                 fill_price = current_price  # Use current price as estimate
                 
+                # Recalculate fib level based on actual fill price
+                actual_fib_level = entry_fib_level
+                if fib_high and fib_low and (fib_high - fib_low) != 0:
+                     actual_fib_level = (fill_price - fib_low) / (fib_high - fib_low)
+
                 position = RealPosition(
                     symbol=symbol,
                     side=PositionSide.SHORT if side == OrderSide.SELL else PositionSide.LONG,
@@ -515,12 +556,12 @@ class RealTradingAccount:
                     strategy_case=strategy_case,
                     fib_high=fib_high,
                     fib_low=fib_low,
-                    entry_fib_level=entry_fib_level,
+                    entry_fib_level=actual_fib_level,
                     opened_at=datetime.now(timezone.utc).isoformat(),
                     bybit_order_id=order_id
                 )
                 
-                self.open_positions[order_id] = position
+                self.open_positions[symbol] = position
                 self._save_trades()
                 
                 log_trade("OPEN", symbol, side.value, fill_price, case=strategy_case)
@@ -607,6 +648,7 @@ class RealTradingAccount:
             "close_price": close_price,
             "quantity": position.quantity,
             "margin": position.margin,
+            "used_margin": position.margin,
             "pnl": pnl,
             "strategy_case": position.strategy_case,
             "reason": reason,
@@ -615,9 +657,20 @@ class RealTradingAccount:
             "take_profit": position.take_profit,
             "stop_loss": position.stop_loss,
             "opened_at": position.opened_at,
+            "entry_fib_level": position.entry_fib_level,
+            "opened_at": position.opened_at,
             "closed_at": datetime.now(timezone.utc).isoformat()
         }
         self.trade_history.append(trade_record)
+        
+        # Update Equity History
+        self.equity_history.append({
+            "timestamp": int(datetime.now(timezone.utc).timestamp()),
+            "balance": self.balance,
+            "equity": self.get_margin_balance(),
+            "pnl": pnl
+        })
+        
         self._save_trades()
         
         emoji = "💰" if pnl > 0 else "📉"
@@ -736,6 +789,14 @@ class RealTradingAccount:
         
         fill_price = float(bybit_order.get("avgPrice", local_order.get("price")))
         
+        # Recalculate fib level based on actual fill price
+        fib_high = local_order.get("fib_high")
+        fib_low = local_order.get("fib_low")
+        actual_fib_level = local_order.get("entry_fib_level")
+        
+        if fib_high and fib_low and (fib_high - fib_low) != 0:
+             actual_fib_level = (fill_price - fib_low) / (fib_high - fib_low)
+
         position = RealPosition(
             symbol=local_order["symbol"],
             side=PositionSide.SHORT if local_order["side"] == "Sell" else PositionSide.LONG,
@@ -747,14 +808,14 @@ class RealTradingAccount:
             stop_loss=local_order.get("stop_loss"),
             order_id=order_id,
             strategy_case=local_order.get("strategy_case", 0),
-            fib_high=local_order.get("fib_high"),
-            fib_low=local_order.get("fib_low"),
-            entry_fib_level=local_order.get("entry_fib_level"),
+            fib_high=fib_high,
+            fib_low=fib_low,
+            entry_fib_level=actual_fib_level,
             opened_at=datetime.now(timezone.utc).isoformat(),
             bybit_order_id=order_id
         )
         
-        self.open_positions[order_id] = position
+        self.open_positions[local_order["symbol"]] = position
         self._save_trades()
         
         log_trade("OPEN", local_order["symbol"], local_order["side"], fill_price, case=local_order.get("strategy_case", 0))

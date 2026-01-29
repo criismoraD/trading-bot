@@ -212,7 +212,11 @@ class FibonacciTradingBot:
                 margin=margin_c1,
                 take_profit=tp_c1,  # TP desde shared_config
                 stop_loss=sl_c1,     # SL desde shared_config
-                estimated_commission=comm_c1
+                estimated_commission=comm_c1,
+                strategy_case=1,
+                fib_high=self.current_swing.high.price,
+                fib_low=self.current_swing.low.price,
+                entry_fib_level=0.68
             )
             
             if order1:
@@ -223,7 +227,11 @@ class FibonacciTradingBot:
                     margin=margin_c1, # Usamos el mismo margen para simplificar
                     take_profit=tp_c1,   # TP desde shared_config
                     stop_loss=sl_c1,     # SL desde shared_config
-                    estimated_commission=comm_c1
+                    estimated_commission=comm_c1,
+                    strategy_case=1,
+                    fib_high=self.current_swing.high.price,
+                    fib_low=self.current_swing.low.price,
+                    entry_fib_level=0.786
                     # linked_order_id eliminado - ya no se usan órdenes vinculadas
                 )
             
@@ -243,7 +251,11 @@ class FibonacciTradingBot:
                 margin=margin_c3,
                 take_profit=tp_c3,  # TP desde shared_config
                 stop_loss=sl_c3,     # SL desde shared_config
-                estimated_commission=comm_c3
+                estimated_commission=comm_c3,
+                strategy_case=3,
+                fib_high=self.current_swing.high.price,
+                fib_low=self.current_swing.low.price,
+                entry_fib_level=(current_price - fib_low) / fib_range
             )
             
             self.last_case_executed = 3

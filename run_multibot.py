@@ -1,129 +1,68 @@
 import subprocess
-import time
 import sys
 import os
-import signal
-import json
+import time
 
-# Configuración de las instancias
-INSTANCES = [
+# Definir las configuraciones para cada instancia del BOT DE TRADING (bot.py)
+trading_bots = [
     {
+        "name": "REAL_TRADING",
+        "script": "bot.py",
         "env": {
-            "BOT_TIMEFRAME": "2h",
+            "BOT_TRADING_MODE": "real",
+            "BOT_TRADES_FILE": "trades_real.json",
+            "BOT_TIMEFRAME": "2h"
+        }
+    },
+    {
+        "name": "PAPER_V2_2H",
+        "script": "bot.py",
+        "env": {
+            "BOT_TRADING_MODE": "paper",
             "BOT_TRADES_FILE": "trades_V2_2h.json",
-            "BOT_WEB_PORT": "8082",
-            "ENABLE_TELEGRAM": "False",
-            "GLOBAL_TAKE_PROFIT_USD": "0"
-        },
-        "name": "Bot 2H"
-    },
-    {
-        "env": {
-            "BOT_TIMEFRAME": "4h",
-            "BOT_TRADES_FILE": "trades_V2_4h.json",
-            "BOT_WEB_PORT": "8083",
-            "ENABLE_TELEGRAM": "False",
-            "GLOBAL_TAKE_PROFIT_USD": "0"
-        },
-        "name": "Bot 4H"
-    },
-    {
-        "env": {
-            "BOT_TIMEFRAME": "2h",
-            "BOT_TRADES_FILE": "trades_V2_2h_gtp.json",
-            "BOT_WEB_PORT": "8084",
-            "ENABLE_TELEGRAM": "False",
-            "GLOBAL_TAKE_PROFIT_USD": "10"
-        },
-        "name": "Bot 2H (GTP)"
+            "BOT_TIMEFRAME": "2h"
+        }
     }
 ]
 
-processes = []
+# Configuración del MONITOR TELEGRAM
+monitor_bot = {
+    "name": "TELEGRAM_MONITOR",
+    "script": "telegram_multibot.py",
+    "env": {} # Usa .env normal
+}
 
-def signal_handler(sig, frame):
-    print("\n🛑 Deteniendo todos los bots...")
-    for p in processes:
-        p.terminate()
-    sys.exit(0)
+def run_bots():
+    # Obtener el entorno base actual
+    base_env = os.environ.copy()
+    
+    print(f"🚀 Iniciando Sistema Multi-Bot...")
+    print(f"=================================")
 
-def main():
-    # Registrar manejador de Ctrl+C
-    signal.signal(signal.SIGINT, signal_handler)
-
-    # Limpiar bandera de parada anterior si existe
-    if os.path.exists("stop_signal.flag"):
-        try:
-            os.remove("stop_signal.flag")
-        except:
-            pass
-
-    print("🚀 Iniciando Multi-Bot Launcher + Telegram Monitor...")
-    print("=====================================================")
-
-    # 1. Iniciar Bots de Trading
-    for i, instance in enumerate(INSTANCES):
-        env_vars = os.environ.copy()
-        env_vars.update(instance["env"])
+    # 1. Lanzar los Bots de Trading
+    for instance in trading_bots:
+        # Fusionar variables de entorno de la instancia
+        instance_env = base_env.copy()
+        instance_env.update(instance["env"])
         
-        print(f"▶ Iniciando {instance['name']} (Timeframe: {instance['env']['BOT_TIMEFRAME']}, Port: {instance['env']['BOT_WEB_PORT']})...")
+        script = instance["script"]
+        if not os.path.exists(script):
+            print(f"❌ Error: No se encuentra {script}")
+            continue
+
+        # Comando para lanzar en una nueva ventana (Windows)
+        cmd = f'start "{instance["name"]}" cmd /k python {script}'
         
-        if sys.platform == 'win32':
-            creation_flags = subprocess.CREATE_NEW_CONSOLE
-        else:
-            creation_flags = 0
+        print(f"   ▶️  Lanzando TRADING: {instance['name']} (Mode: {instance['env']['BOT_TRADING_MODE']})")
+        subprocess.Popen(cmd, shell=True, env=instance_env)
+        time.sleep(2) # Pausa entre lanzamientos
 
-        p = subprocess.Popen(
-            [sys.executable, "bot.py"],
-            env=env_vars,
-            cwd=os.getcwd(),
-            creationflags=creation_flags
-        )
-        processes.append(p)
-        time.sleep(2) # Dar tiempo a que arranque
+    # 2. Lanzar el Monitor de Telegram
+    print(f"   ▶️  Lanzando MONITOR: {monitor_bot['name']}")
+    subprocess.Popen(f'start "{monitor_bot["name"]}" cmd /k python {monitor_bot["script"]}', shell=True, env=base_env)
 
-    # 2. Iniciar Bot de Telegram Centralizado
-    print("▶ Iniciando Telegram Multi-Bot Monitor...")
-    if sys.platform == 'win32':
-        creation_flags = subprocess.CREATE_NEW_CONSOLE
-    else:
-        creation_flags = 0
-        
-    p_tele = subprocess.Popen(
-        [sys.executable, "telegram_multibot.py"],
-        env=os.environ.copy(),
-        cwd=os.getcwd(),
-        creationflags=creation_flags
-    )
-    processes.append(p_tele)
-
-    print("\n✅ Todos los sistemas iniciados.")
-
-    print("Tablero 2H: http://localhost:8082")
-    print("Tablero 4H: http://localhost:8083")
-    print("\nPresiona Ctrl+C para detener todo.")
-
-    # Mantener script vivo
-    while True:
-        time.sleep(1)
-        
-        # Verificar señal de parada desde Telegram
-        if os.path.exists("stop_signal.flag"):
-            print("\n🛑 Señal de parada recibida desde Telegram.")
-            try:
-                os.remove("stop_signal.flag")
-            except:
-                pass
-            signal_handler(None, None) # Mismo efecto que Ctrl+C
-
-        # Verificar si algún proceso murió
-        for i, p in enumerate(processes):
-            if p.poll() is not None:
-                # Si es el bot de telegram (último proceso), reiniciarlo si muere?
-                # Por ahora solo log
-                name = INSTANCES[i]['name'] if i < len(INSTANCES) else "Telegram Monitor"
-                if p.poll() != 0: # Solo si murió con error
-                     print(f"⚠️ {name} se ha cerrado inesperadamente.")
+    print("\n✅ Todos los procesos han sido lanzados en ventanas separadas.")
+    print("⚠️  Cierra las ventanas individuales para detener cada componente.")
 
 if __name__ == "__main__":
-    main()
+    run_bots()

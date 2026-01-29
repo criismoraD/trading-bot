@@ -25,7 +25,10 @@ COMMISSION_RATE = _trading.get("commission_rate", 0.0006) # Comisión promedio (
 MIN_AVAILABLE_MARGIN = _trading.get("min_available_margin", 3.0)
 
 # Trading Mode: "paper" or "real"
-TRADING_MODE = _trading.get("mode", "paper")
+# Trading Mode: "paper" or "real"
+# Prioridad: Variable de entorno > shared_config > default "paper"
+env_mode = os.getenv("BOT_TRADING_MODE")
+TRADING_MODE = env_mode if env_mode else _trading.get("mode", "paper")
 
 # Bybit Configuration (from shared_config.json and .env)
 _bybit = _trading.get("bybit", {})

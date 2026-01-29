@@ -24,10 +24,8 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHATS_FILE = "telegram_chats.json"
 
 # Configuración de los bots a monitorear
-BOTS_CONFIG = [
-    {"name": "Bot 2H", "file": "trades_V2_2h.json", "emoji": "🕑"},
-    {"name": "Bot 4H", "file": "trades_V2_4h.json", "emoji": "🕓"},
-    {"name": "Bot 2H (GTP)", "file": "trades_V2_2h_gtp.json", "emoji": "🎯"}
+    {"name": "Bot REAL", "file": "trades_real.json", "emoji": "🔴"},
+    {"name": "Bot 2H", "file": "trades_V2_2h.json", "emoji": "🕑"}
 ]
 
 class MultiTelegramBot:

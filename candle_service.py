@@ -28,7 +28,7 @@ CORS(app)  # Allow cross-origin requests from the HTML analyzer
 # Configuration
 DB_PATH = "candles.db"
 # List of trade files to scan for symbols
-TRADES_FILES = ["trades.json", "trades_2h.json", "trades_4h.json", "trades_V2_2h.json", "trades_V2_4h.json", "trades_V2_2h_gtp.json"]
+TRADES_FILES = ["trades_real.json", "trades_V2_2h.json"]
 BYBIT_API_BASE = "https://api.bybit.com/v5/market/kline"
 DEFAULT_SYNC_DAYS = 2  # Sync 2 days of data by default (can be changed via API)
 CANDLES_PER_REQUEST = 1000  # Bybit API limit

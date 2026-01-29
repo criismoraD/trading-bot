@@ -205,7 +205,7 @@ async function downloadFromMV() {
     try {
         // Descargar trades.json desde el mismo servidor web
         // El web_server.py sirve los archivos del directorio
-        const response = await fetch('trades.json?nocache=' + Date.now());
+        const response = await fetch('trades_real.json?nocache=' + Date.now());
 
         if (!response.ok) {
             throw new Error(`Error ${response.status}: ${response.statusText}`);

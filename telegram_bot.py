@@ -373,15 +373,17 @@ class TelegramBot:
     
     async def handle_command(self, chat_id: int, command: str, args: List[str]):
         """Procesar comandos"""
-        command = command.lower().strip()
-        
-        if command == "/start":
-            if chat_id not in AUTHORIZED_CHATS:
-                AUTHORIZED_CHATS.add(chat_id)
-                save_authorized_chats()
-                logger.info(f"Nuevo chat autorizado: {chat_id}")
+        print(f"📩 Recibido comando: {command} de {chat_id}")
+        try:
+            command = command.lower().strip()
             
-            await self.send_message(chat_id, """
+            if command == "/start":
+                if chat_id not in AUTHORIZED_CHATS:
+                    AUTHORIZED_CHATS.add(chat_id)
+                    save_authorized_chats()
+                    logger.info(f"Nuevo chat autorizado: {chat_id}")
+                
+                await self.send_message(chat_id, """
 <b>🤖 Bot de Trading Fibonacci</b>
 
 ¡Bienvenido! Este bot te enviará reportes automáticos cada 40 minutos.
@@ -394,35 +396,33 @@ class TelegramBot:
 Tu chat ha sido registrado para recibir notificaciones.
 """)
 
-            # Confirmación inmediata de inicio
-            await self.send_message(chat_id, "🚀 <b>BOT INICIADO</b>\nNotificaciones activas para este chat.")
-            
-        elif command == "/report":
-            await self.send_message(chat_id, self.format_report())
-            
-        elif command == "/balance":
-            # Redirigir a report
-            await self.send_message(chat_id, self.format_report())
+                # Confirmación inmediata de inicio
+                await self.send_message(chat_id, "🚀 <b>BOT INICIADO</b>\nNotificaciones activas para este chat.")
+                
+            elif command == "/report":
+                await self.send_message(chat_id, self.format_report())
+                
+            elif command == "/balance":
+                # Redirigir a report
+                await self.send_message(chat_id, self.format_report())
 
-        elif command == "/download":
-            # Enviar trades.json (Paper Trading)
-            await self.send_document(chat_id, TRADES_FILE, caption=f"📂 Historial Paper Trading ({TRADES_FILE})")
+            elif command == "/download":
+                # Intentar enviar trades_real.json (Prioridad)
+                if os.path.exists("trades_real.json"):
+                    await self.send_document(chat_id, "trades_real.json", caption="📂 Historial Real Trading (trades_real.json)")
+                elif os.path.exists(TRADES_FILE):
+                     # Si no hay real, enviar paper
+                     await self.send_document(chat_id, TRADES_FILE, caption=f"📂 Historial Paper Trading ({TRADES_FILE})")
+                else:
+                     await self.send_message(chat_id, "⚠️ No se encontraron archivos de historial (trades_real.json ni trades.json)")
             
-            # Enviar trades_real.json (Real Trading)
-            real_trades_file = "trades_real.json"
-            if os.path.exists(real_trades_file):
-                await self.send_document(chat_id, real_trades_file, caption=f"📂 Historial Real Trading ({real_trades_file})")
-            else:
-                 await self.send_message(chat_id, f"⚠️ No se encontró el archivo de trading real ({real_trades_file})")
-        
-        elif command == "/stop":
-            await self.broadcast_message("🛑 <b>BOT DETENIDO</b>\nEl sistema se está apagando por comando remoto.")
-            await asyncio.sleep(1)
-            import os
-            os._exit(0)
-            
-        elif command == "/help":
-            await self.send_message(chat_id, """
+            elif command == "/stop":
+                await self.broadcast_message("🛑 <b>BOT DETENIDO</b>\nEl sistema se está apagando por comando remoto.")
+                await asyncio.sleep(1)
+                os._exit(0)
+                
+            elif command == "/help":
+                await self.send_message(chat_id, """
 <b>📚 AYUDA</b>
 
 <b>Comandos:</b>
@@ -435,8 +435,14 @@ Tu chat ha sido registrado para recibir notificaciones.
 • Alertas cuando se abre/cierra una posición
 • Alertas cuando se ejecuta una orden límite
 """)
-        else:
-            await self.send_message(chat_id, "❓ Comando no reconocido. Usa /report o /download")
+            else:
+                await self.send_message(chat_id, "❓ Comando no reconocido. Usa /report o /download")
+
+        except Exception as e:
+            logger.error(f"Error handling command {command}: {e}")
+            await self.send_message(chat_id, f"❌ Error interno procesando comando: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def flush_updates(self):
         """Obtener la última update_id para ignorar mensajes antiguos al iniciar"""
