@@ -2,14 +2,14 @@
     "trading": {
         "case_1_min": 0.50,
         "case_1_max_3_min": 0.63,
-        "case_3_max_4_min": 0.79,
+        "case_3_max_4_min": 0.8,
         "case_4_max": 0.93,
-        "initial_balance": 1000,
+        "initial_balance": 100,
         "max_margin_per_trade": 100.0,
         "min_available_margin": 2.0,
-        "leverage": 100,
-        "target_profit": 1,
-        "commission_rate": 0.0002,
+        "leverage": 112,
+        "target_profit": 0.5,
+        "commission_rate": 0.0006,
         "max_simultaneous_operations": 9999,
         "c1_cancel_below": 0.2,
         "c3_cancel_below": 0.3,
@@ -19,7 +19,7 @@
         "mode": "real",
         "bybit": {
             "testnet": true,
-            "initial_balance": 1000
+            "initial_balance": 112
         }
     },
     "strategies": {
@@ -32,8 +32,8 @@
             "sl": 1.05
         },
         "c4": {
-            "tp": 0.65,
-            "sl": 1.265
+            "tp": 0.76,
+            "sl": 1.095
         }
     },
     "fibonacci": {

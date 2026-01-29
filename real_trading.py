@@ -641,7 +641,7 @@ class RealTradingAccount:
         # Add to history
         trade_record = {
             "trade_index": len(self.trade_history),
-            "order_id": order_id,
+            "order_id": position.order_id,  # Use actual order ID from position object
             "symbol": position.symbol,
             "side": position.side.value,
             "entry_price": position.entry_price,
@@ -758,13 +758,33 @@ class RealTradingAccount:
                             if status in ["Filled", "PartiallyFilled"]:
                                 self._handle_filled_order(order_id, local_order, filled_order)
                             elif status == "Cancelled":
+                                # Record to cancelled history before deleting
+                                self.cancelled_history.append({
+                                    "order_id": order_id,
+                                    "symbol": local_order.get("symbol"),
+                                    "side": local_order.get("side"),
+                                    "price": local_order.get("price"),
+                                    "quantity": local_order.get("quantity"),
+                                    "reason": "Sync: Cancelled on Bybit",
+                                    "cancelled_at": datetime.now(timezone.utc).isoformat()
+                                })
                                 del self.pending_orders[order_id]
                                 self._save_trades()
                         else:
                              # Not found? Maybe manual cancel or rejected
+                             self.cancelled_history.append({
+                                "order_id": order_id,
+                                "symbol": local_order.get("symbol"),
+                                "side": local_order.get("side"),
+                                "price": local_order.get("price"),
+                                "quantity": local_order.get("quantity"),
+                                "reason": "Sync: Order not found (Manual/Rejected)",
+                                "cancelled_at": datetime.now(timezone.utc).isoformat()
+                             })
                              del self.pending_orders[order_id]
                              self._save_trades()
-                    except:
+                    except Exception as e:
+                        logger.error(f"Error handling missing order {order_id}: {e}")
                         del self.pending_orders[order_id]
             
             # 2. Check for "Ghost" orders (TP/SL) that shouldn't be here
@@ -841,6 +861,16 @@ class RealTradingAccount:
             )
             
             if result.get("retCode") == 0:
+                # Add to cancelled history
+                self.cancelled_history.append({
+                    "order_id": order_id,
+                    "symbol": order.get("symbol"),
+                    "side": order.get("side"),
+                    "price": order.get("price"),
+                    "quantity": order.get("quantity"),
+                    "reason": reason,
+                    "cancelled_at": datetime.now(timezone.utc).isoformat()
+                })
                 del self.pending_orders[order_id]
                 self.stats["cancelled_orders"] += 1
                 self._save_trades()
