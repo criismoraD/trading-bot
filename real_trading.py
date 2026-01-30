@@ -321,7 +321,6 @@ class RealTradingAccount:
             data = {
                 "trade_history": self.trade_history,
                 "cancelled_history": self.cancelled_history,
-                "equity_history": self.equity_history,
                 "stats": self.stats,
                 "balance": self.balance,
                 "open_positions": {k: self._serialize_position(v) for k, v in self.open_positions.items()},
@@ -678,12 +677,12 @@ class RealTradingAccount:
         self.trade_history.append(trade_record)
         
         # Update Equity History
-        self.equity_history.append({
-            "timestamp": int(datetime.now(timezone.utc).timestamp()),
-            "balance": self.balance,
-            "equity": self.get_margin_balance(),
-            "pnl": pnl
-        })
+        # self.equity_history.append({
+        #     "timestamp": int(datetime.now(timezone.utc).timestamp()),
+        #     "balance": self.balance,
+        #     "equity": self.get_margin_balance(),
+        #     "pnl": pnl
+        # })
         
         self._save_trades()
         

@@ -450,6 +450,41 @@ def show_startup_menu(account):
     print(f"\n✅ Cuenta reseteada. Iniciando desde 0")
 
 
+def setup_target_profit():
+    """Preguntar y configurar target_profit al inicio"""
+    print("\n" + "="*60)
+    print("🎯 CONFIGURACIÓN DE TARGET PROFIT")
+    print("="*60)
+    
+    while True:
+        try:
+            user_input = input("Ingrese target_profit deseado (0.1 - 0.6): ").strip()
+            profit = float(user_input)
+            
+            if 0.1 <= profit <= 0.6:
+                try:
+                    # Leer config actual
+                    with open('shared_config.json', 'r') as f:
+                        config = json.load(f)
+                    
+                    # Actualizar valor
+                    config['trading']['target_profit'] = profit
+                    
+                    # Guardar config
+                    with open('shared_config.json', 'w') as f:
+                        json.dump(config, f, indent=4)
+                        
+                    print(f"✅ Target Profit actualizado a: {profit}")
+                    break
+                except Exception as e:
+                    print(f"❌ Error actualizando config: {e}")
+                    break
+            else:
+                print(f"⚠️ El valor debe estar entre 0.1 y 0.6 (Ingresado: {profit})")
+        except ValueError:
+            print("⚠️ Por favor ingrese un número válido")
+
+
 async def main():
     """Función principal del Bot de Trading Fibonacci"""
     from scanner import MarketScanner, run_priority_scan
@@ -458,6 +493,9 @@ async def main():
     logger.info("=" * 60)
     logger.info("🚀 INICIANDO BOT DE TRADING FIBONACCI")
     logger.info("=" * 60)
+
+    # Configurar Target Profit al inicio
+    setup_target_profit()
     
     # Crear cuenta según modo de trading
     if TRADING_MODE == "real":
