@@ -658,6 +658,15 @@ function runSimulation() {
             }
         }
 
+        // NUEVO FILTRO: Min Fib Entry (Simulado)
+        // Ignorar si entró en un fib MÁS BAJO que el especificado (ej: < 0.65)
+        const minFibInput = document.getElementById('minFibFilter');
+        const minFibVal = minFibInput && minFibInput.value ? parseFloat(minFibInput.value) / 100 : null;
+
+        if (minFibVal !== null && fibEntryLevel < minFibVal) {
+            isIgnored = true;
+        }
+
         let status = "", rPnl = 0, fPnl = 0, css = "";
         let isClosed = false;
 

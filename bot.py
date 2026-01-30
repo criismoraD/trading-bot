@@ -14,7 +14,9 @@ from config import (
     DEFAULT_SYMBOL, WS_BASE_URL, REST_BASE_URL,
     TIMEFRAME, CANDLE_LIMIT, TRADES_FILE,
     TOP_PAIRS_LIMIT, RSI_THRESHOLD, FIRST_SCAN_DELAY, SCAN_INTERVAL, MIN_AVAILABLE_MARGIN,
-    TRADING_MODE, BYBIT_API_KEY, BYBIT_API_SECRET, BYBIT_TESTNET, BYBIT_INITIAL_BALANCE
+    TRADING_MODE, BYBIT_API_KEY, BYBIT_API_SECRET, BYBIT_INITIAL_BALANCE,
+    BYBIT_REAL_API_KEY, BYBIT_REAL_API_SECRET, BYBIT_DEMO_API_KEY, BYBIT_DEMO_API_SECRET,
+    C_RED, C_YELLOW, C_GREEN, C_RESET, BYBIT_DEMO
 )
 from paper_trading import PaperTradingAccount, OrderSide
 from fibonacci import (
@@ -485,10 +487,34 @@ def setup_target_profit():
             print("⚠️ Por favor ingrese un número válido")
 
 
+def ask_trading_mode():
+    """Pregunta al usuario el modo de trading al inicio"""
+    print("\n" + "="*50)
+    print("   SELECCIONE MODO DE TRADING:")
+    print("="*50)
+    print(f"1. {C_RED}🔴 REAL (Mainnet){C_RESET}")
+    print(f"2. {C_YELLOW}🟠 DEMO (Bybit Demo Trading){C_RESET}")
+    print(f"3. {C_GREEN}📝 PAPER (Simulación Local){C_RESET}")
+    print("="*50)
+    
+    while True:
+        try:
+            choice = input("\nSeleccione una opción (1-3): ").strip()
+            if choice == "1":
+                return "real"
+            elif choice == "2":
+                return "demo"
+            elif choice == "3":
+                return "paper"
+            else:
+                print("⚠️ Opción inválida. Por favor ingrese 1, 2 o 3.")
+        except KeyboardInterrupt:
+            print("\nSaliendo...")
+            exit(0)
+
 async def main():
     """Función principal del Bot de Trading Fibonacci"""
     from scanner import MarketScanner, run_priority_scan
-    from config import SCAN_INTERVAL, MARGIN_PER_TRADE
     
     logger.info("=" * 60)
     logger.info("🚀 INICIANDO BOT DE TRADING FIBONACCI")
@@ -497,26 +523,57 @@ async def main():
     # Configurar Target Profit al inicio
     setup_target_profit()
     
-    # Crear cuenta según modo de trading
-    if TRADING_MODE == "real":
-        # Modo REAL: Usar Bybit API
-        if not BYBIT_API_KEY or not BYBIT_API_SECRET:
-            logger.error("❌ BYBIT_API_KEY y BYBIT_API_SECRET no configurados en .env")
-            print("❌ ERROR: Configura BYBIT_API_KEY y BYBIT_API_SECRET en tu archivo .env")
+    # Preguntar modo de trading al usuario
+    # (Sobrescribe la configuración de shared_config para la sesión actual)
+    selected_mode = ask_trading_mode()
+    
+    # Variables para conexión
+    active_api_key = ""
+    active_api_secret = ""
+    is_demo_mode = False
+    
+    # Configurar según selección
+    if selected_mode == "real":
+        active_api_key = BYBIT_REAL_API_KEY
+        active_api_secret = BYBIT_REAL_API_SECRET
+        is_demo_mode = False
+        TRADING_MODE_ACTIVE = "real"
+    elif selected_mode == "demo":
+        active_api_key = BYBIT_DEMO_API_KEY
+        active_api_secret = BYBIT_DEMO_API_SECRET
+        is_demo_mode = True
+        TRADING_MODE_ACTIVE = "demo"
+    else:
+        TRADING_MODE_ACTIVE = "paper"
+    
+    # Actualizar variable global para visualización
+    global TRADING_MODE
+    TRADING_MODE = TRADING_MODE_ACTIVE
+
+    # Crear cuenta según modo seleccionado
+    if TRADING_MODE_ACTIVE in ["real", "demo"]:
+        # Modo REAL/Connectado: Usar Bybit API
+        if not active_api_key or not active_api_secret:
+            logger.error(f"❌ API KEYS no configuradas para modo {selected_mode.upper()}")
+            print(f"❌ ERROR: Configura las API KEYS para {selected_mode.upper()} en tu archivo .env")
+            if selected_mode == "real":
+                print("Requerido: BYBIT_REAL_API_KEY / BYBIT_REAL_API_SECRET (o BYBIT_API_KEY)")
+            else:
+                print("Requerido: BYBIT_DEMO_API_KEY / BYBIT_DEMO_API_SECRET")
             return
         
         from real_trading import RealTradingAccount
         account = RealTradingAccount(
-            api_key=BYBIT_API_KEY,
-            api_secret=BYBIT_API_SECRET,
-            testnet=BYBIT_TESTNET,  # Configured in shared_config.json
-            demo=False,             # Disable 'Demo Trading' environment specific mode
+            api_key=active_api_key,
+            api_secret=active_api_secret,
+            demo=is_demo_mode,
             leverage=LEVERAGE,
             trades_file="trades_real.json"
         )
-        mode_text = "TESTNET" if BYBIT_TESTNET else "MAINNET"
-        logger.info(f"🔴 MODO REAL ACTIVADO - Bybit {mode_text}")
-        print(f"\n⚠️  MODO REAL ACTIVADO - Bybit {mode_text}")
+        
+        mode_text = "DEMO" if is_demo_mode else "MAINNET"
+        logger.info(f"🔴 MODO CONECTADO ACTIVADO - Bybit {mode_text}")
+        print(f"\n⚠️  MODO CONECTADO ACTIVADO - Bybit {mode_text}")
         print(f"💰 Balance: ${account.balance:.2f}")
     else:
         # Modo PAPER (default)
@@ -525,14 +582,15 @@ async def main():
             leverage=LEVERAGE,
             trades_file=TRADES_FILE
         )
-        logger.info("📝 MODO PAPER TRADING ACTIVADO")
+        logger.info(f"📝 MODO PAPER TRADING ACTIVADO")
+        print(f"\n📝 MODO PAPER TRADING ACTIVADO")
     
     # Inicializar calculadora de métricas
     initial_balance = account.balance if TRADING_MODE == "real" else INITIAL_BALANCE
     performance_calculator.initial_balance = initial_balance
     
     # Mostrar menú de inicio (antes del loop async) - solo para paper trading
-    if TRADING_MODE != "real":
+    if TRADING_MODE == "paper":
         show_startup_menu(account)
     
     # Iniciar servidor HTTP en hilo separado (puerto 8000 - archivos generales)
@@ -776,8 +834,10 @@ async def main():
         now = datetime.now().strftime('%H:%M:%S')
         
         # Indicador de modo
-        if TRADING_MODE == "real":
-            mode_indicator = f"{C_RED}🔴 REAL TRADING{C_RESET}"
+        # Indicador de modo
+        if TRADING_MODE in ["real", "demo"]:
+            mode_text = "DEMO" if TRADING_MODE == "demo" or (TRADING_MODE == "real" and BYBIT_DEMO) else "REAL"
+            mode_indicator = f"{C_RED}🔴 {mode_text} TRADING{C_RESET}"
         else:
             mode_indicator = f"{C_GREEN}📝 PAPER TRADING{C_RESET}"
         

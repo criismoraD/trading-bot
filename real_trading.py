@@ -75,11 +75,10 @@ class RealPosition:
 class RealTradingAccount:
     """Real Trading Account using Bybit API - mirrors PaperTradingAccount interface"""
     
-    def __init__(self, api_key: str, api_secret: str, testnet: bool = False,
+    def __init__(self, api_key: str, api_secret: str,
                  demo: bool = True, leverage: int = 10, trades_file: str = "trades_real.json"):
         self.api_key = api_key
         self.api_secret = api_secret
-        self.testnet = testnet
         self.demo = demo
         self.leverage = leverage
         self.trades_file = trades_file
@@ -95,9 +94,9 @@ class RealTradingAccount:
         
         # Initialize Bybit client
         # demo=True uses api-demo.bybit.com (Bybit Demo Trading)
-        # testnet=True uses api-testnet.bybit.com (old Testnet)
+        # testnet=False uses api.bybit.com (Mainnet) or api-demo if demo=True
         self.session = HTTP(
-            testnet=testnet,
+            testnet=False, # We don't use old Testnet anymore
             demo=demo,
             api_key=api_key,
             api_secret=api_secret
@@ -140,7 +139,7 @@ class RealTradingAccount:
         # Save synced state to JSON
         self._save_trades()
         
-        logger.info(f"🔗 Bybit {'Demo' if demo else 'Testnet' if testnet else 'MAINNET'} connection initialized")
+        logger.info(f"🔗 Bybit {'Demo' if demo else 'MAINNET'} connection initialized")
         if self.open_positions:
             logger.info(f"📊 Loaded {len(self.open_positions)} existing positions from Bybit")
     
@@ -992,7 +991,7 @@ class RealTradingAccount:
             "wins": self.stats.get("wins", 0),
             "losses": self.stats.get("losses", 0),
             "win_rate": round(self.stats["wins"] / max(1, self.stats["total_trades"]) * 100, 1),
-            "mode": "TESTNET" if self.testnet else "MAINNET"
+            "mode": "DEMO" if self.demo else "MAINNET"
         }
     
     def print_status(self):

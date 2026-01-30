@@ -32,10 +32,16 @@ TRADING_MODE = env_mode if env_mode else _trading.get("mode", "paper")
 
 # Bybit Configuration (from shared_config.json and .env)
 _bybit = _trading.get("bybit", {})
-BYBIT_TESTNET = _bybit.get("testnet", True)
+BYBIT_DEMO = _bybit.get("demo", False)
 BYBIT_INITIAL_BALANCE = _bybit.get("initial_balance", 100)
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
+
+# Dual API Keys Support
+BYBIT_REAL_API_KEY = os.getenv("BYBIT_REAL_API_KEY", BYBIT_API_KEY)
+BYBIT_REAL_API_SECRET = os.getenv("BYBIT_REAL_API_SECRET", BYBIT_API_SECRET)
+BYBIT_DEMO_API_KEY = os.getenv("BYBIT_DEMO_API_KEY", "")
+BYBIT_DEMO_API_SECRET = os.getenv("BYBIT_DEMO_API_SECRET", "")
 
 # Scanner (desde shared_config o defaults)
 _scanner = _shared_config.get("scanner", {})
@@ -109,3 +115,13 @@ EXCLUDED_PAIRS = [
 
 # Archivos
 TRADES_FILE = os.getenv("BOT_TRADES_FILE", "trades.json")
+
+# Colores para consola
+C_RESET = "\033[0m"
+C_RED = "\033[91m"
+C_GREEN = "\033[92m"
+C_YELLOW = "\033[93m"
+C_BLUE = "\033[94m"
+C_MAGENTA = "\033[95m"
+C_CYAN = "\033[96m"
+C_WHITE = "\033[97m"
