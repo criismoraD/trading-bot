@@ -449,6 +449,8 @@ class RealTradingAccount:
                 "timeInForce": "GTC",
                 "takeProfit": str(take_profit),
                 "tpTriggerBy": "LastPrice",
+                "tpOrderType": "Limit",
+                "tpLimitPrice": str(take_profit),
                 "tpslMode": "Full",
                 "positionIdx": 0  # One-way mode
             }
@@ -456,6 +458,8 @@ class RealTradingAccount:
             if stop_loss:
                 order_params["stopLoss"] = str(stop_loss)
                 order_params["slTriggerBy"] = "LastPrice"
+                order_params["slOrderType"] = "Limit"
+                order_params["slLimitPrice"] = str(stop_loss)
             
             result = self.session.place_order(**order_params)
             
@@ -534,6 +538,8 @@ class RealTradingAccount:
                 "qty": str(quantity),
                 "takeProfit": str(take_profit),
                 "tpTriggerBy": "LastPrice",
+                "tpOrderType": "Limit",
+                "tpLimitPrice": str(take_profit),
                 "tpslMode": "Full",
                 "positionIdx": 0
             }
@@ -541,6 +547,8 @@ class RealTradingAccount:
             if stop_loss:
                 order_params["stopLoss"] = str(stop_loss)
                 order_params["slTriggerBy"] = "LastPrice"
+                order_params["slOrderType"] = "Limit"
+                order_params["slLimitPrice"] = str(stop_loss)
             
             result = self.session.place_order(**order_params)
             

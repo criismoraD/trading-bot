@@ -704,9 +704,8 @@ class PaperTradingAccount:
         self.balance += pnl
         
         # Cobrar comisión de cierre según el caso
-        # C1 (1, 11) y C3 son Maker (0.02%), C4 es Taker (0.055%)
-        notional_value = position.quantity * close_price
-        fee_rate = MAKER_FEE if position.strategy_case in [1, 3, 11] else TAKER_FEE
+        # Todas las estrategias (C1, C3, C4) ahora usan TP/SL Limit (Maker)
+        fee_rate = MAKER_FEE
         closing_fee = notional_value * fee_rate
         self.balance -= closing_fee
         

@@ -465,10 +465,10 @@ def setup_target_profit():
     
     while True:
         try:
-            user_input = input("Ingrese target_profit deseado (0.1 - 0.6): ").strip()
+            user_input = input("Ingrese target_profit deseado (0.1 - 1): ").strip()
             profit = float(user_input)
             
-            if 0.1 <= profit <= 0.6:
+            if 0.1 <= profit <= 1:
                 try:
                     # Leer config actual
                     with open('shared_config.json', 'r') as f:
@@ -487,7 +487,7 @@ def setup_target_profit():
                     print(f"❌ Error actualizando config: {e}")
                     break
             else:
-                print(f"⚠️ El valor debe estar entre 0.1 y 0.6 (Ingresado: {profit})")
+                print(f"⚠️ El valor debe estar entre 0.1 y 1 (Ingresado: {profit})")
         except ValueError:
             print("⚠️ Por favor ingrese un número válido")
 

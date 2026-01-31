@@ -578,7 +578,8 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
         return qty, margin, est_commission, True
 
     if case_num == 4:
-        # Caso 4: MARKET ORDER (ejecución inmediata en zona C4)
+        # Caso 4: LIMIT ORDER al nivel actual + 0.005 (0.5%)
+        # Ejemplo: Si está en 0.82, poner orden en 0.825
         if not fresh_price or fresh_price == 0.0:
             return False, None, None
         
@@ -590,33 +591,39 @@ async def _place_order_for_case(scanner, account, result, case_num, margin_per_t
             print(f"   ⚠️ {result.symbol}: Precio cambió, ya no está en zona C4")
             return False, None, None
         
+        # Calcular precio Límite: Precio Actual + 0.5% de Fib
+        # NOTA: El usuario pidió "si está en 0.82, poner en 0.825"
+        limit_price = fresh_price + (fib_range * 0.005)
+        
         # TP y SL desde configuración
         c4_config = strategies.get('c4', {'tp': 0.65, 'sl': 1.265})
         tp_price = result.fib_levels.get('low', 0) + fib_range * c4_config['tp']
         sl_price = result.fib_levels.get('low', 0) + fib_range * c4_config['sl'] if c4_config.get('sl') else None
         
-        # Calcular parámetros (Usamos fresh_price para Market Order)
-        qty, margin, est_comm, allowed = calculate_trade_params(fresh_price, tp_price)
+        # Calcular parámetros
+        qty, margin, est_comm, allowed = calculate_trade_params(limit_price, tp_price)
         
         if not allowed:
             return False, None, None
 
-        order = account.place_market_order(
+        order = account.place_limit_order(
             symbol=result.symbol,
             side=OrderSide.SELL,
-            current_price=fresh_price,
+            price=limit_price,
             margin=margin,
             take_profit=tp_price,
             stop_loss=sl_price,
             strategy_case=case_num,
             fib_high=result.fib_levels.get('high'),
             fib_low=result.fib_levels.get('low'),
-            entry_fib_level=(fresh_price - result.fib_levels.get('low', 0)) / fib_range,
+            entry_fib_level=(limit_price - result.fib_levels.get('low', 0)) / fib_range,
+            current_price=fresh_price,
             estimated_commission=est_comm
         )
         if order:
             sl_str = f" | SL ${sl_price:.4f}" if sl_price else ""
-            print(f"   🔴 CASO 4 | {result.symbol}: MARKET @ ${fresh_price:.4f} → TP ${tp_price:.4f}{sl_str}")
+            fib_entry = (limit_price - result.fib_levels.get('low', 0)) / fib_range
+            print(f"   🔴 CASO 4 | {result.symbol}: LIMIT @ ${limit_price:.4f} (Fib {fib_entry*100:.1f}%) → TP ${tp_price:.4f}{sl_str}")
             order_placed = True
             
             if isinstance(order, dict):
