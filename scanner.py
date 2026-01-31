@@ -427,7 +427,7 @@ async def run_priority_scan(scanner: MarketScanner, account, margin_per_trade: f
     # Usar cache si está definido, sino hacer fetch
     if scanner.pairs_cache:
         pairs = scanner.pairs_cache
-        print(f"📊 Usando {len(pairs)} par(es) definidos: {', '.join(pairs)}")
+        # Print removed by user request
     else:
         pairs = await scanner.get_top_pairs()
     
