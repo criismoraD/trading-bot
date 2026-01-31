@@ -451,7 +451,7 @@ class RealTradingAccount:
                 "tpTriggerBy": "LastPrice",
                 "tpOrderType": "Limit",
                 "tpLimitPrice": str(take_profit),
-                "tpslMode": "Full",
+                "tpslMode": "Partial",
                 "positionIdx": 0  # One-way mode
             }
             
@@ -540,7 +540,7 @@ class RealTradingAccount:
                 "tpTriggerBy": "LastPrice",
                 "tpOrderType": "Limit",
                 "tpLimitPrice": str(take_profit),
-                "tpslMode": "Full",
+                "tpslMode": "Partial",
                 "positionIdx": 0
             }
             

@@ -9,8 +9,8 @@ from pybit.unified_trading import HTTP
 load_dotenv()
 
 # Configuración
-API_KEY = os.getenv("BYBIT_API_KEY")
-API_SECRET = os.getenv("BYBIT_API_SECRET")
+API_KEY = os.getenv("BYBIT_DEMO_API_KEY")
+API_SECRET = os.getenv("BYBIT_DEMO_API_SECRET")
 SYMBOL = "WLDUSDT"
 LEVERAGE = 50
 
@@ -77,7 +77,11 @@ def place_market_order():
             stopLoss=str(sl_price),
             tpTriggerBy="LastPrice",
             slTriggerBy="LastPrice",
-            tpslMode="Full",
+            tpOrderType="Limit",
+            tpLimitPrice=str(tp_price),
+            slOrderType="Limit",
+            slLimitPrice=str(sl_price),
+            tpslMode="Partial",
             positionIdx=0
         )
         
@@ -123,7 +127,11 @@ def place_limit_order():
             stopLoss=str(sl_price),
             tpTriggerBy="LastPrice",
             slTriggerBy="LastPrice",
-            tpslMode="Full",
+            tpOrderType="Limit",
+            tpLimitPrice=str(tp_price),
+            slOrderType="Limit",
+            slLimitPrice=str(sl_price),
+            tpslMode="Partial",
             positionIdx=0,
             timeInForce="GTC"
         )
