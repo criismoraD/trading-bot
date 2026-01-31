@@ -866,7 +866,7 @@ function runSimulation() {
             const risk = slPrice - t.entry_price;
             if (risk > 0) {
                 const rr = reward / risk;
-                rrDisplay = '1:' + rr.toFixed(1);
+                rrDisplay = '1:' + rr.toFixed(2);
                 rrColor = rr >= 1 ? 'var(--accent-green)' : (rr >= 0.5 ? 'var(--accent-yellow)' : 'var(--accent-red)');
             }
         }

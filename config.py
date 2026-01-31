@@ -94,6 +94,7 @@ ZIGZAG_CONFIGS = {
     "5m": {"deviation": 0.5, "depth": 5, "backstep": 2},
     "15m": {"deviation": 1, "depth": 5, "backstep": 2},
     "1h": {"deviation": 2, "depth": 8, "backstep": 3},
+    "2h": {"deviation": 2.5, "depth": 9, "backstep": 3},
     "4h": {"deviation": 3, "depth": 10, "backstep": 3},
     "1d": {"deviation": 5, "depth": 10, "backstep": 3}
 }

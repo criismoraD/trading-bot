@@ -434,10 +434,15 @@ def show_startup_menu(account):
     # === SIEMPRE RESETEAR AL INICIAR ===
     import os
     
-    # Eliminar el archivo trades.json si existe
-    if os.path.exists(TRADES_FILE):
-        os.remove(TRADES_FILE)
-        print(f"   🗑️  Archivo {TRADES_FILE} eliminado")
+    # Eliminar archivos de trades si existen
+    files_to_clear = [TRADES_FILE, 'trades_2h.json', 'trades_4h.json', 'trades_real.json']
+    for filename in files_to_clear:
+        if os.path.exists(filename):
+            try:
+                os.remove(filename)
+                print(f"   🗑️  Archivo {filename} eliminado")
+            except Exception as e:
+                print(f"   ⚠️ No se pudo eliminar {filename}: {e}")
     
     # Reiniciar cuenta en memoria
     account.open_positions.clear()
@@ -512,6 +517,28 @@ def ask_trading_mode():
             print("\nSaliendo...")
             exit(0)
 
+def ask_timeframe():
+    """Pregunta al usuario el timeframe al inicio"""
+    print("\n" + "="*50)
+    print("   SELECCIONE TIMEFRAME:")
+    print("="*50)
+    print("1. 4h")
+    print("2. 2h")
+    print("="*50)
+    
+    while True:
+        try:
+            choice = input("\nSeleccione una opción (1-2): ").strip()
+            if choice == "1":
+                return "4h"
+            elif choice == "2":
+                return "2h"
+            else:
+                print("⚠️ Opción inválida. Por favor ingrese 1 o 2.")
+        except KeyboardInterrupt:
+            print("\nSaliendo...")
+            exit(0)
+
 async def main():
     """Función principal del Bot de Trading Fibonacci"""
     from scanner import MarketScanner, run_priority_scan
@@ -520,7 +547,34 @@ async def main():
     logger.info("🚀 INICIANDO BOT DE TRADING FIBONACCI")
     logger.info("=" * 60)
 
-    # Configurar Target Profit al inicio
+    # 1. Preguntar Timeframe al inicio
+    selected_tf = ask_timeframe()
+    
+    # Actualizar shared_config.json para que todos los módulos lo vean
+    try:
+        with open('shared_config.json', 'r') as f:
+            shared_cfg = json.load(f)
+        
+        if 'scanner' not in shared_cfg:
+            shared_cfg['scanner'] = {}
+        shared_cfg['scanner']['timeframe'] = selected_tf
+        
+        with open('shared_config.json', 'w') as f:
+            json.dump(shared_cfg, f, indent=4)
+        print(f"✅ Timeframe configurado a: {selected_tf}")
+        
+        # Actualizar la variable local de config (para este proceso)
+        import config as bot_config
+        bot_config.TIMEFRAME = selected_tf
+        
+        # También actualizar el import local si se está usando directamente
+        global TIMEFRAME
+        TIMEFRAME = selected_tf
+        
+    except Exception as e:
+        print(f"⚠️ Error actualizando timeframe en config: {e}")
+
+    # 2. Configurar Target Profit al inicio
     setup_target_profit()
     
     # Preguntar modo de trading al usuario

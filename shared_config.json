@@ -69,7 +69,7 @@
         "first_scan_delay": 2,
         "scan_interval": 15,
         "target_pairs": [],
-        "timeframe": "4h",
+        "timeframe": "2h",
         "top_pairs_limit": 650,
         "candle_limit": 2000
     }
